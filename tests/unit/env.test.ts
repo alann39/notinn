@@ -1,0 +1,395 @@
+import { assert, assertEquals, assertRejects } from "@std/assert";
+import {
+  describeEnvironment,
+  jwtRole,
+  loadScriptConfig,
+  loadWebhookConfig,
+  RECOGNISED_ENV_KEYS,
+  Secret,
+} from "../../supabase/functions/_shared/config/env.ts";
+import { AppError } from "../../supabase/functions/_shared/errors/app-error.ts";
+import { ERROR_CODES } from "../../supabase/functions/_shared/errors/taxonomy.ts";
+
+/**
+ * Environment validation and the `Secret` wrapper.
+ *
+ * This module is the only place in the codebase that reads a credential, which
+ * makes it the only place where a credential can be leaked by a mistake. Two
+ * properties are asserted here: a secret cannot be printed by accident, and a
+ * dangerous misconfiguration stops the process instead of failing quietly later.
+ *
+ * Every value below is synthetic and none is a working credential.
+ */
+
+const SUPABASE_URL = "https://synthetic.supabase.co";
+const WEBHOOK_SECRET = "synthetic_webhook_secret_value";
+
+/** Build a JWT-shaped string with the given payload. Unsigned and unusable. */
+function fakeJwt(payload: Record<string, unknown>): string {
+  const encode = (value: unknown): string =>
+    btoa(JSON.stringify(value)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+  return `${encode({ alg: "HS256", typ: "JWT" })}.${encode(payload)}.${"s".repeat(32)}`;
+}
+
+const SERVICE_ROLE_JWT = fakeJwt({ role: "service_role", iss: "supabase" });
+const ANON_JWT = fakeJwt({ role: "anon", iss: "supabase" });
+
+/** A source that satisfies every requirement the webhook loader has. */
+function validSource(): Record<string, string> {
+  return {
+    SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY: SERVICE_ROLE_JWT,
+    TELEGRAM_WEBHOOK_SECRET: WEBHOOK_SECRET,
+  };
+}
+
+// --- Secret ----------------------------------------------------------------
+
+Deno.test("a secret does not print itself", () => {
+  const secret = new Secret(SERVICE_ROLE_JWT);
+
+  assertEquals(secret.toString(), "[redacted]");
+  assertEquals(String(secret), "[redacted]");
+  assertEquals(`${secret}`, "[redacted]");
+  assertEquals("value: " + secret, "value: [redacted]");
+  assertEquals(secret.toJSON(), "[redacted]");
+});
+
+Deno.test("a secret does not serialise itself", () => {
+  // The realistic accident: a config object logged or written to a report whole.
+  const config = { url: SUPABASE_URL, key: new Secret(SERVICE_ROLE_JWT) };
+  const serialised = JSON.stringify(config);
+
+  assertEquals(serialised, `{"url":"${SUPABASE_URL}","key":"[redacted]"}`);
+  assert(!serialised.includes(SERVICE_ROLE_JWT));
+});
+
+Deno.test("a secret does not inspect itself", () => {
+  // Deno's console.log and console.dir honour this hook, so an accidental
+  // console.log(config) prints no credential.
+  const secret = new Secret(SERVICE_ROLE_JWT);
+  const inspectors = secret as unknown as Record<symbol, (this: Secret) => string>;
+  const inspect = inspectors[Symbol.for("Deno.customInspect")];
+
+  assert(typeof inspect === "function", "the secret exposes no inspection hook");
+  assertEquals(inspect.call(secret), "[redacted]");
+});
+
+Deno.test("the value is reachable only by asking for it", () => {
+  const secret = new Secret(SERVICE_ROLE_JWT);
+
+  assertEquals(secret.reveal(), SERVICE_ROLE_JWT);
+  assertEquals(secret.length, SERVICE_ROLE_JWT.length);
+});
+
+Deno.test("a fingerprint identifies a secret without revealing it", async () => {
+  // This is what makes "is the deployed function using the same secret I think
+  // it is?" answerable by comparing two log lines.
+  const secret = new Secret(SERVICE_ROLE_JWT);
+  const fingerprint = await secret.fingerprint();
+
+  assertEquals(fingerprint.length, 12);
+  assertEquals(fingerprint, await new Secret(SERVICE_ROLE_JWT).fingerprint());
+  assert(!SERVICE_ROLE_JWT.includes(fingerprint));
+  assert(!fingerprint.includes("service_role"));
+});
+
+// --- jwtRole ---------------------------------------------------------------
+
+Deno.test("a JWT's role is readable without verifying the signature", () => {
+  // A diagnostic, not an authorisation check. It inspects a key the operator
+  // supplied in order to decide whether to start.
+  assertEquals(jwtRole(SERVICE_ROLE_JWT), "service_role");
+  assertEquals(jwtRole(ANON_JWT), "anon");
+});
+
+Deno.test("anything that is not a three-part JWT has no readable role", () => {
+  // Includes the newer `sb_secret_…` format, which carries no readable role and
+  // is therefore trusted as given.
+  assertEquals(jwtRole("sb_secret_abcdefghijklmnop"), null);
+  assertEquals(jwtRole("not-a-jwt"), null);
+  assertEquals(jwtRole(""), null);
+  assertEquals(jwtRole("a.b"), null);
+  assertEquals(jwtRole("a..c"), null);
+  assertEquals(jwtRole("a.!!!not-base64!!!.c"), null);
+});
+
+Deno.test("a JWT whose payload is not an object has no readable role", () => {
+  const encode = (value: unknown): string =>
+    btoa(JSON.stringify(value)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+  assertEquals(jwtRole(`h.${encode("just a string")}.s`), null);
+  assertEquals(jwtRole(`h.${encode(null)}.s`), null);
+  assertEquals(jwtRole(`h.${encode(["role", "service_role"])}.s`), null);
+  assertEquals(jwtRole(`h.${encode({})}.s`), null);
+});
+
+// --- loadWebhookConfig -----------------------------------------------------
+
+Deno.test("a valid environment produces a usable config", async () => {
+  const config = await loadWebhookConfig(validSource());
+
+  assertEquals(config.supabaseUrl, SUPABASE_URL);
+  assertEquals(config.serviceRoleKey.reveal(), SERVICE_ROLE_JWT);
+  assertEquals(config.webhookSecret.reveal(), WEBHOOK_SECRET);
+  assertEquals(config.environment, "local");
+});
+
+Deno.test("the bot token is not required by the webhook, and is not carried by it either", async () => {
+  // The Phase 0 webhook acknowledges and enqueues; it never calls the Bot API.
+  // Requiring a token it does not need would widen the blast radius of a
+  // compromised function for no benefit. The second half matters as much as the
+  // first: a token present in the environment must still not reach the function's
+  // configuration, or the blast radius is unchanged. See
+  // docs/ADR/0002-phase-0-scope.md.
+  const withoutToken = await loadWebhookConfig(validSource());
+  assertEquals(Object.keys(withoutToken).includes("botToken"), false);
+
+  const withToken = await loadWebhookConfig({
+    ...validSource(),
+    TELEGRAM_BOT_TOKEN: "123456789:AAFakeTokenValueThatIsLongEnoughToMatch",
+  });
+  assertEquals(Object.keys(withToken).includes("botToken"), false);
+  assert(!JSON.stringify(withToken).includes("AAFake"));
+});
+
+Deno.test("a config that is missing its URL is refused", async () => {
+  const source = validSource();
+  delete source["SUPABASE_URL"];
+
+  const error = await assertRejects(() => loadWebhookConfig(source), AppError);
+  assertEquals(error.code, ERROR_CODES.CONFIGURATION_ERROR);
+});
+
+Deno.test("a URL that is not a URL is refused", async () => {
+  const error = await assertRejects(
+    () => loadWebhookConfig({ ...validSource(), SUPABASE_URL: "not-a-url" }),
+    AppError,
+  );
+  assertEquals(error.code, ERROR_CODES.CONFIGURATION_ERROR);
+});
+
+Deno.test("a config with no server-side key is refused", async () => {
+  const source = validSource();
+  delete source["SUPABASE_SERVICE_ROLE_KEY"];
+
+  const error = await assertRejects(() => loadWebhookConfig(source), AppError);
+  assertEquals(error.code, ERROR_CODES.CONFIGURATION_ERROR);
+  assert((error.internalDetail ?? "").includes("no server-side key"));
+});
+
+Deno.test("an anon key is refused, because RLS would silently deny every write", async () => {
+  // The commonest and most damaging Supabase mistake. Nothing fails loudly when
+  // it happens — row level security simply denies every write and the
+  // application looks broken for no visible reason.
+  const error = await assertRejects(
+    () => loadWebhookConfig({ ...validSource(), SUPABASE_SERVICE_ROLE_KEY: ANON_JWT }),
+    AppError,
+  );
+
+  assertEquals(error.code, ERROR_CODES.CONFIGURATION_ERROR);
+  assert((error.internalDetail ?? "").includes("anon"));
+  // And the refusal must not have echoed the key itself.
+  assert(!(error.internalDetail ?? "").includes(ANON_JWT));
+});
+
+Deno.test("a missing webhook secret is refused rather than accepted", async () => {
+  // Without a secret the webhook cannot distinguish Telegram from an arbitrary
+  // caller, so it refuses to serve rather than accepting everything.
+  const source = validSource();
+  delete source["TELEGRAM_WEBHOOK_SECRET"];
+
+  const error = await assertRejects(() => loadWebhookConfig(source), AppError);
+  assertEquals(error.code, ERROR_CODES.CONFIGURATION_ERROR);
+  assert((error.internalDetail ?? "").includes("TELEGRAM_WEBHOOK_SECRET"));
+});
+
+Deno.test("a webhook secret Telegram would not store is refused", async () => {
+  // Telegram enforces A-Z, a-z, 0-9, underscore and hyphen. Registering with
+  // anything else fails at Telegram's end, after the operator has moved on.
+  const error = await assertRejects(
+    () =>
+      loadWebhookConfig({ ...validSource(), TELEGRAM_WEBHOOK_SECRET: "has spaces and $ymbols" }),
+    AppError,
+  );
+
+  assertEquals(error.code, ERROR_CODES.CONFIGURATION_ERROR);
+});
+
+Deno.test("an empty environment variable reads as absent, not as empty", async () => {
+  // Setting a variable to an empty string is a configuration mistake, and
+  // "absent" produces the clearer error message.
+  const error = await assertRejects(
+    () => loadWebhookConfig({ ...validSource(), TELEGRAM_WEBHOOK_SECRET: "   " }),
+    AppError,
+  );
+  assertEquals(error.code, ERROR_CODES.CONFIGURATION_ERROR);
+});
+
+Deno.test("the log level follows the environment, and can be overridden", async () => {
+  assertEquals((await loadWebhookConfig(validSource())).logLevel, "debug");
+  assertEquals(
+    (await loadWebhookConfig({ ...validSource(), NOTINN_ENV: "production" })).logLevel,
+    "info",
+  );
+  assertEquals(
+    (await loadWebhookConfig({
+      ...validSource(),
+      NOTINN_ENV: "production",
+      NOTINN_LOG_LEVEL: "warn",
+    }))
+      .logLevel,
+    "warn",
+  );
+});
+
+Deno.test("an unrecognised environment name is refused", async () => {
+  const error = await assertRejects(
+    () => loadWebhookConfig({ ...validSource(), NOTINN_ENV: "prod" }),
+    AppError,
+  );
+  assertEquals(error.code, ERROR_CODES.CONFIGURATION_ERROR);
+});
+
+Deno.test("a configuration error never carries the credential in its message", async () => {
+  const error = await assertRejects(
+    () => loadWebhookConfig({ ...validSource(), SUPABASE_SERVICE_ROLE_KEY: ANON_JWT }),
+    AppError,
+  );
+
+  assert(!error.message.includes(ANON_JWT));
+  assert(!JSON.stringify(error).includes(ANON_JWT));
+});
+
+// --- The alternate key naming scheme ---------------------------------------
+
+Deno.test("the service-role key is found under either naming scheme", async () => {
+  // Supabase is migrating from a single SUPABASE_SERVICE_ROLE_KEY to a
+  // SUPABASE_SECRET_KEYS collection. Both are accepted.
+  const fromCollection = await loadWebhookConfig({
+    SUPABASE_URL,
+    SUPABASE_SECRET_KEYS: JSON.stringify({ default: SERVICE_ROLE_JWT }),
+    TELEGRAM_WEBHOOK_SECRET: WEBHOOK_SECRET,
+  });
+  assertEquals(fromCollection.serviceRoleKey.reveal(), SERVICE_ROLE_JWT);
+
+  const fromJsonString = await loadWebhookConfig({
+    SUPABASE_URL,
+    SUPABASE_SECRET_KEYS: JSON.stringify(SERVICE_ROLE_JWT),
+    TELEGRAM_WEBHOOK_SECRET: WEBHOOK_SECRET,
+  });
+  assertEquals(fromJsonString.serviceRoleKey.reveal(), SERVICE_ROLE_JWT);
+
+  const fromRawValue = await loadWebhookConfig({
+    SUPABASE_URL,
+    SUPABASE_SECRET_KEYS: SERVICE_ROLE_JWT,
+    TELEGRAM_WEBHOOK_SECRET: WEBHOOK_SECRET,
+  });
+  assertEquals(fromRawValue.serviceRoleKey.reveal(), SERVICE_ROLE_JWT);
+});
+
+Deno.test("the explicit service-role key wins over the collection", async () => {
+  const config = await loadWebhookConfig({
+    ...validSource(),
+    SUPABASE_SECRET_KEYS: JSON.stringify({ default: ANON_JWT }),
+  });
+
+  assertEquals(config.serviceRoleKey.reveal(), SERVICE_ROLE_JWT);
+});
+
+Deno.test("a collection with no usable default is refused", async () => {
+  const error = await assertRejects(
+    () =>
+      loadWebhookConfig({
+        SUPABASE_URL,
+        SUPABASE_SECRET_KEYS: JSON.stringify({ default: 42 }),
+        TELEGRAM_WEBHOOK_SECRET: WEBHOOK_SECRET,
+      }),
+    AppError,
+  );
+  assertEquals(error.code, ERROR_CODES.CONFIGURATION_ERROR);
+});
+
+// --- loadScriptConfig ------------------------------------------------------
+
+Deno.test("the scripts require a bot token, which the webhook does not", async () => {
+  const error = await assertRejects(
+    () => loadScriptConfig(validSource()),
+    AppError,
+  );
+  assertEquals(error.code, ERROR_CODES.CONFIGURATION_ERROR);
+  assert((error.internalDetail ?? "").includes("TELEGRAM_BOT_TOKEN"));
+});
+
+Deno.test("the scripts tolerate a missing webhook secret, which only exists after registration", async () => {
+  // The operator's first run is `webhook:set`, which is what creates the
+  // secret. Requiring it beforehand would make the tool that sets it unusable
+  // until it had already been run.
+  const source: Record<string, string> = {
+    ...validSource(),
+    TELEGRAM_BOT_TOKEN: "123456789:AAFakeTokenValueThatIsLongEnoughToMatch",
+  };
+  delete source["TELEGRAM_WEBHOOK_SECRET"];
+
+  const config = await loadScriptConfig(source);
+
+  assertEquals(config.webhookSecret, null);
+  assertEquals(config.webhookUrl, null);
+  assertEquals(config.fingerprints.webhookSecret, undefined);
+});
+
+Deno.test("the scripts read the bot token and the webhook URL", async () => {
+  const config = await loadScriptConfig({
+    ...validSource(),
+    TELEGRAM_BOT_TOKEN: "123456789:AAFakeTokenValueThatIsLongEnoughToMatch",
+    TELEGRAM_WEBHOOK_URL: "https://synthetic.supabase.co/functions/v1/telegram-webhook",
+  });
+
+  assertEquals(config.botToken.reveal(), "123456789:AAFakeTokenValueThatIsLongEnoughToMatch");
+  assertEquals(config.webhookUrl, "https://synthetic.supabase.co/functions/v1/telegram-webhook");
+  assertEquals(config.webhookSecret?.reveal(), WEBHOOK_SECRET);
+  assertEquals(typeof config.fingerprints.webhookSecret, "string");
+});
+
+// --- describeEnvironment ---------------------------------------------------
+
+Deno.test("the environment report reveals no secret", () => {
+  // This is what `verify-env` shows an operator. It must be safe to paste into
+  // a ticket, which is exactly what people do with it.
+  const report = describeEnvironment({
+    ...validSource(),
+    TELEGRAM_BOT_TOKEN: "123456789:AAFakeTokenValueThatIsLongEnoughToMatch",
+  });
+
+  const serialised = JSON.stringify(report);
+  assert(!serialised.includes(SERVICE_ROLE_JWT));
+  assert(!serialised.includes(WEBHOOK_SECRET));
+  assert(!serialised.includes("AAFakeTokenValueThatIsLongEnoughToMatch"));
+
+  // Presence, lengths and the role are what make it useful.
+  assertEquals(report.present.SUPABASE_SERVICE_ROLE_KEY, true);
+  assertEquals(report.present.TELEGRAM_WEBHOOK_SECRET, true);
+  assertEquals(report.serviceRoleKeyRole, "service_role");
+  assertEquals(report.serviceRoleKeyLength, SERVICE_ROLE_JWT.length);
+  assertEquals(report.webhookSecretFormatValid, true);
+});
+
+Deno.test("an empty environment reports everything absent rather than throwing", () => {
+  // A diagnostic that throws on the broken environment it exists to diagnose is
+  // useless.
+  const report = describeEnvironment({});
+
+  assertEquals(report.supabaseUrl, "(unset)");
+  assertEquals(report.serviceRoleKeyRole, null);
+  assertEquals(report.serviceRoleKeyLength, null);
+  assertEquals(report.webhookSecretFormatValid, null);
+  assertEquals(Object.values(report.present).some(Boolean), false);
+});
+
+Deno.test("the report covers every recognised key", () => {
+  // A key that appears in neither the report nor the schema is one an operator
+  // can set with no effect and no warning.
+  const report = describeEnvironment({});
+  assertEquals(Object.keys(report.present).sort(), [...RECOGNISED_ENV_KEYS].sort());
+});

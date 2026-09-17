@@ -1,0 +1,10 @@
+# Line endings.
+#
+# `deno fmt --check` fails on a CRLF working tree, and this project is developed
+# on Windows where core.autocrlf=true — which rewrites every file to CRLF on
+# checkout. Without this file a fresh clone could not reproduce the documented
+# verification command, which is exit criterion 8.
+#
+# `eol=lf` takes precedence over core.autocrlf, so the working tree matches what
+# the tests and the formatter expect on every platform.
+* text=auto eol=lf

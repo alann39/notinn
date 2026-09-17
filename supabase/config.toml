@@ -1,0 +1,72 @@
+# Supabase local development configuration.
+#
+# Only settings that differ from the CLI defaults, or that carry a decision
+# worth recording, appear here. Anything absent is Supabase's default.
+#
+# `supabase start` uses this file to build the local stack. The deployed project
+# takes its configuration from the dashboard, so the two can drift — the
+# `verify-env` script and the deployment checklist in docs/IMPLEMENTATION_STATUS.md
+# exist to catch the settings that matter.
+
+project_id = "notinn"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+# Matches the deployed development project, which runs PostgreSQL 17.
+major_version = 17
+
+[db.seed]
+# Seeds are local-only. The 11 system templates are inserted by a migration, not
+# here, because they are product configuration that must exist in every
+# environment including production. See supabase/seed.sql.
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+# Local mail capture. Unused by Phase 0, which sends no email.
+enabled = true
+port = 54324
+
+[storage]
+enabled = true
+# Telegram's Bot API caps downloads at 20 MB, so nothing Notinn stores can
+# exceed that. A per-object limit well above it would be capacity Notinn cannot
+# fill; this bounds the damage from a misconfigured or hostile upload instead.
+file_size_limit = "25MiB"
+
+[auth]
+enabled = true
+# Notinn has no end-user login in Phase 0: the only caller is Telegram, and the
+# only identity is the service role. Email signup is disabled so that the local
+# stack matches the deployed posture rather than silently offering an
+# authentication surface the product does not use.
+enable_signup = false
+
+[auth.email]
+enable_signup = false
+enable_confirmations = false
+
+[functions.telegram-webhook]
+# REQUIRED, and the single most important line in this file.
+#
+# Supabase Edge Functions verify a JWT on every request by default. Telegram
+# cannot present one — it is not a Supabase client and has no way to obtain a
+# token. Leaving JWT verification on would reject every genuine delivery with a
+# 401 and the bot would appear completely dead.
+#
+# Disabling it does not leave the endpoint unauthenticated. Requests are
+# authenticated by the secret token Telegram echoes back in
+# X-Telegram-Bot-Api-Secret-Token, which is compared in constant time before any
+# other work happens. See docs/ADR/0005-access-model.md.
+verify_jwt = false

@@ -1,0 +1,56 @@
+{
+  "imports": {
+    "@std/assert": "jsr:@std/assert@^1.0.0",
+    "zod": "npm:zod@4.6.5",
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2.116.0"
+  },
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "fmt": {
+    "lineWidth": 100,
+    "indentWidth": 2,
+    "semiColons": true,
+    "singleQuote": false,
+    "proseWrap": "preserve",
+    "exclude": [
+      "node_modules",
+      "supabase/migrations",
+      "supabase/functions/_shared/schemas/database.types.ts",
+      "docs/Master_Blueprint.md"
+    ]
+  },
+  "lint": {
+    "rules": {
+      "tags": ["recommended"]
+    },
+    "exclude": [
+      "node_modules",
+      "supabase/functions/_shared/schemas/database.types.ts"
+    ]
+  },
+  "test": {
+    "include": ["tests/**/*.test.ts"],
+    "exclude": ["node_modules"]
+  },
+  "tasks": {
+    "test": "deno test --allow-read --allow-env tests/unit tests/contract tests/security",
+    "check": "deno check \"supabase/**/*.ts\" \"scripts/**/*.ts\" \"tests/**/*.ts\"",
+    "test:unit": "deno test --allow-read --allow-env tests/unit",
+    "test:security": "deno test --allow-read --allow-env tests/security",
+    "test:contract": "deno test --allow-read --allow-env tests/contract",
+    "test:integration": "deno test --allow-read --allow-env --allow-net tests/integration tests/e2e",
+    "verify-env": "deno run --allow-read --allow-env scripts/verify-env.ts",
+    "clear-test-data": "deno run --allow-read --allow-env --allow-net scripts/clear-test-data.ts",
+    "webhook:set": "deno run --allow-read --allow-env --allow-net scripts/set-webhook.ts",
+    "webhook:delete": "deno run --allow-read --allow-env --allow-net scripts/delete-webhook.ts",
+    "webhook:info": "deno run --allow-read --allow-env --allow-net scripts/webhook-info.ts",
+    "smoke": "deno run --allow-read --allow-env --allow-net scripts/smoke-test.ts"
+  },
+  "nodeModulesDir": "auto"
+}

@@ -1,0 +1,37 @@
+# --- Secrets: never commit -------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Supabase CLI local state ---------------------------------------------
+supabase/.branches/
+supabase/.temp/
+supabase/.env
+supabase/functions/.env
+
+# --- Deno ------------------------------------------------------------------
+.deno/
+deno.lock
+
+# --- Node tooling ----------------------------------------------------------
+node_modules/
+npm-debug.log*
+.npm/
+
+# --- Editors / OS ----------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+
+# --- Claude Code -----------------------------------------------------------
+# settings.local.json is machine-local by convention. settings.json, if it
+# appears, is the shareable one and is deliberately not ignored. .mcp.json is
+# committed on purpose: it holds the dev project ref, which is not a secret.
+.claude/settings.local.json
+
+# --- Build / coverage ------------------------------------------------------
+coverage/
+*.lcov

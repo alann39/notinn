@@ -1,0 +1,21 @@
+-- Local development seed data.
+--
+-- This file is intentionally empty, and that is a decision rather than an
+-- omission.
+--
+-- The obvious candidate for a seed is the 11-row system template catalogue. It
+-- lives in a migration instead (20260916161246_phase0_templates.sql) because
+-- those rows are product configuration: the application cannot route a single
+-- message without them, so they must exist in staging and production too, not
+-- only on a developer's machine. Seeding them here as well would create two
+-- sources for the same rows and a class of bug where a local database has a
+-- template that production does not.
+--
+-- The second candidate is a synthetic user, and that is deliberately not seeded
+-- either. Phase 0 has no signup path and no way to log in. The only way a user
+-- row comes into existence is a genuine Telegram message, which is exactly the
+-- behaviour the integration tests need to exercise. A pre-seeded user would let
+-- a broken `ensure_telegram_user` pass every local test.
+--
+-- Test fixtures live in tests/fixtures/ and are synthetic and redacted. No
+-- production data ever enters this repository.

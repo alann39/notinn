@@ -1,0 +1,33 @@
+{
+  "name": "notinn",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Notinn - Telegram-first note capture. This package.json exists only for repository tooling; the application itself runs on Supabase Edge Functions (Deno).",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "fmt": "deno fmt",
+    "fmt:check": "deno fmt --check",
+    "lint": "deno lint",
+    "check": "deno check \"supabase/**/*.ts\" \"scripts/**/*.ts\" \"tests/**/*.ts\"",
+    "test": "deno task test",
+    "test:integration": "deno task test:integration",
+    "clear-test-data": "deno task clear-test-data",
+    "verify-env": "deno task verify-env",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:reset": "supabase db reset",
+    "db:push": "supabase db push",
+    "db:types": "supabase gen types typescript --local --schema public > supabase/functions/_shared/schemas/database.types.ts",
+    "webhook:set": "deno task webhook:set",
+    "webhook:delete": "deno task webhook:delete",
+    "webhook:info": "deno task webhook:info",
+    "smoke": "deno task smoke"
+  },
+  "devDependencies": {
+    "deno": "^2.9.6",
+    "supabase": "^2.117.0"
+  }
+}
