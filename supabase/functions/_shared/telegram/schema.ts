@@ -111,6 +111,22 @@ export const TelegramMessageSchema = z.object({
   forward_date: z.number().int().optional(),
 });
 
+/**
+ * A button tap delivered by Telegram.
+ *
+ * `message` is absent for inline-mode messages. Notinn does not use inline mode,
+ * but the field is optional at the public boundary so those updates can be
+ * acknowledged and ignored instead of failing schema validation and being
+ * retried forever.
+ */
+export const TelegramCallbackQuerySchema = z.object({
+  id: z.string().min(1),
+  from: TelegramUserSchema,
+  message: TelegramMessageSchema.optional(),
+  chat_instance: z.string().optional(),
+  data: z.string().min(1).max(64).optional(),
+});
+
 export const TelegramUpdateSchema = z.object({
   /**
    * Telegram's sequential update counter. It is the deduplication key: it is
@@ -131,7 +147,7 @@ export const TelegramUpdateSchema = z.object({
   edited_message: TelegramMessageSchema.optional(),
   channel_post: TelegramMessageSchema.optional(),
   edited_channel_post: TelegramMessageSchema.optional(),
-  callback_query: z.object({ id: z.string() }).optional(),
+  callback_query: TelegramCallbackQuerySchema.optional(),
   inline_query: z.object({ id: z.string() }).optional(),
   my_chat_member: z.object({ date: z.number().int() }).optional(),
 });
@@ -139,15 +155,15 @@ export const TelegramUpdateSchema = z.object({
 export type TelegramUser = z.infer<typeof TelegramUserSchema>;
 export type TelegramChat = z.infer<typeof TelegramChatSchema>;
 export type TelegramMessage = z.infer<typeof TelegramMessageSchema>;
+export type TelegramCallbackQuery = z.infer<typeof TelegramCallbackQuerySchema>;
 export type TelegramPhotoSize = z.infer<typeof TelegramPhotoSizeSchema>;
 export type TelegramUpdate = z.infer<typeof TelegramUpdateSchema>;
 
-/** Update kinds Notinn recognises but does not act on in Phase 0. */
+/** Update kinds Notinn recognises but does not act on. */
 export const IGNORED_UPDATE_KINDS = [
   "edited_message",
   "channel_post",
   "edited_channel_post",
-  "callback_query",
   "inline_query",
   "my_chat_member",
 ] as const;

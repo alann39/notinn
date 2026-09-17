@@ -3,6 +3,7 @@ import { MAX_PASTED_TEXT_CHARS } from "../../supabase/functions/_shared/config/c
 import { classifyUpdate } from "../../supabase/functions/_shared/telegram/parse-update.ts";
 import { TelegramUpdateSchema } from "../../supabase/functions/_shared/telegram/schema.ts";
 import {
+  actionableCallbackQueryUpdate,
   audioUpdate,
   botTextUpdate,
   callbackQueryUpdate,
@@ -202,13 +203,13 @@ Deno.test("a document with neither MIME type nor a known extension is ignored", 
 // --- Blueprint 16.4: private chats only ------------------------------------
 
 for (const chatType of ["group", "supergroup", "channel"] as const) {
-  Deno.test(`a message in a ${chatType} is ignored`, () => {
+  Deno.test(`a message in a ${chatType} is rejected for the once-per-chat reply`, () => {
     const result = classify(groupTextUpdate(chatType));
 
-    assertEquals(result.kind, "ignored");
-    if (result.kind !== "ignored") return;
+    assertEquals(result.kind, "rejected");
+    if (result.kind !== "rejected") return;
 
-    assertEquals(result.reason, "non_private_chat");
+    assertEquals(result.chat.chatType, chatType);
   });
 }
 
@@ -219,10 +220,10 @@ Deno.test("chat type is checked before the sender, so a group is never processed
   // group processing.
   const result = classify(groupTextUpdate("group", { isBot: true }));
 
-  assertEquals(result.kind, "ignored");
-  if (result.kind !== "ignored") return;
+  assertEquals(result.kind, "rejected");
+  if (result.kind !== "rejected") return;
 
-  assertEquals(result.reason, "non_private_chat");
+  assertEquals(result.chat.chatType, "group");
 });
 
 Deno.test("a message from another bot is ignored", () => {
@@ -243,7 +244,26 @@ Deno.test("a callback query is ignored by name", () => {
   if (result.kind !== "ignored") return;
 
   assertEquals(result.reason, "unsupported_update_kind");
-  assertEquals(result.detail, "callback_query");
+  assertEquals(result.detail, "inline callback_query");
+});
+
+Deno.test("a callback attached to a private bot message is classified as an action", () => {
+  const result = classify(actionableCallbackQueryUpdate({ data: "v1:save:opaque:0" }));
+
+  assertEquals(result.kind, "callback");
+  if (result.kind !== "callback") return;
+
+  assertEquals(result.callback.callbackQueryId, "synthetic-actionable-callback-id");
+  assertEquals(result.callback.data, "v1:save:opaque:0");
+});
+
+Deno.test("a slash command is not ingested as note text", () => {
+  const result = classify(textUpdate({ text: "/recent@NotinnBot" }));
+
+  assertEquals(result.kind, "command");
+  if (result.kind !== "command") return;
+
+  assertEquals(result.message.command, "recent");
 });
 
 Deno.test("a channel post is ignored by name", () => {

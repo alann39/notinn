@@ -1,4 +1,4 @@
--- Phase 1 / migration 2 of 2
+-- Phase 1 / template schemas
 -- The concrete structured-note JSON Schema on public.templates.
 --
 -- Migration 3 promised this: "Phase 0 records which contract and version applies;
@@ -14,7 +14,7 @@
 -- What this value is for, and what it is not:
 --
 --   * It is the provider-facing output contract. The Gemini adapter passes
---     `schema` to the model as responseSchema, so the model is constrained at
+--     `schema` to the model as responseJsonSchema, so the model is constrained at
 --     generation time rather than corrected afterwards.
 --
 --   * It is NOT the validation authority. Validation is the Zod schema in
@@ -28,8 +28,8 @@
 --     custom templates; keeping the schema on the row is what lets Phase 5 add
 --     them without moving anything.
 --
--- The dialect is the restricted OpenAPI 3.0 subset Gemini accepts, which is also
--- valid JSON Schema. Keywords outside that subset (pattern, minimum, maxLength)
+-- The dialect is the JSON Schema subset Gemini accepts. Keywords outside the
+-- subset used here (pattern, minLength, maxLength)
 -- are deliberately absent: Gemini rejects an unrecognised keyword, and a schema
 -- the provider refuses is a schema that cannot do its job. Those constraints are
 -- enforced by Zod instead, which is where they were always going to be believed.
@@ -82,9 +82,9 @@ update public.templates
           "type": "object",
           "properties": {
             "task": { "type": "string", "description": "What must be done, as an imperative phrase." },
-            "owner": { "type": "string", "nullable": true, "description": "Who owns it, only when the source names them. Never inferred." },
-            "due_date_text": { "type": "string", "nullable": true, "description": "The deadline exactly as the source phrased it, for example \"Friday\" or \"end of month\"." },
-            "due_date_iso": { "type": "string", "nullable": true, "description": "YYYY-MM-DD, only when the source is clear enough to normalize without guessing. Otherwise null, even when due_date_text is set." },
+            "owner": { "type": ["string", "null"], "description": "Who owns it, only when the source names them. Never inferred." },
+            "due_date_text": { "type": ["string", "null"], "description": "The deadline exactly as the source phrased it, for example \"Friday\" or \"end of month\"." },
+            "due_date_iso": { "type": ["string", "null"], "description": "YYYY-MM-DD, only when the source is clear enough to normalize without guessing. Otherwise null, even when due_date_text is set." },
             "confidence": { "type": "number", "description": "0.0 to 1.0. A product signal about how sure this item is an action item, not a statement of fact." }
           },
           "required": ["task", "owner", "due_date_text", "due_date_iso", "confidence"]
@@ -137,4 +137,4 @@ update public.templates
  where owner_user_id is null;
 
 comment on column public.templates.schema_json is
-  'The output contract this template targets, as {contract, version, schema}. `schema` is the concrete JSON Schema handed to the provider as responseSchema; it is written in the OpenAPI 3.0 subset Gemini accepts. Validation is not done against this value — it is done by the Zod schema in _shared/schemas/structured-note.ts, and a contract test asserts the two agree. A custom template (blueprint 6.2, Phase 5) supplies its own schema for this column.';
+  'The output contract this template targets, as {contract, version, schema}. `schema` is the concrete JSON Schema handed to Gemini as responseJsonSchema. Validation is not done against this value — it is done by the Zod schema in _shared/schemas/structured-note.ts, and a contract test asserts the two agree. A custom template (blueprint 6.2, Phase 5) supplies its own schema for this column.';

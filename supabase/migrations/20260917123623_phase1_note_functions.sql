@@ -1,4 +1,4 @@
--- Phase 1 / migration 3 of 3
+-- Phase 1 / note functions
 -- Note persistence and the owner-scoped note lifecycle.
 --
 -- Phase 0 created the note tables and the job state machine but no function that

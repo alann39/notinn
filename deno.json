@@ -1,6 +1,6 @@
 {
   "imports": {
-    "@std/assert": "jsr:@std/assert@^1.0.0",
+    "@std/assert": "./tests/assert.ts",
     "zod": "npm:zod@4.6.5",
     "@supabase/supabase-js": "npm:@supabase/supabase-js@2.116.0"
   },
@@ -45,12 +45,12 @@
     "test:security": "deno test --allow-read --allow-env tests/security",
     "test:contract": "deno test --allow-read --allow-env tests/contract",
     "test:integration": "deno test --allow-read --allow-env --allow-net tests/integration tests/e2e",
-    "verify-env": "deno run --allow-read --allow-env scripts/verify-env.ts",
-    "clear-test-data": "deno run --allow-read --allow-env --allow-net scripts/clear-test-data.ts",
-    "webhook:set": "deno run --allow-read --allow-env --allow-net scripts/set-webhook.ts",
-    "webhook:delete": "deno run --allow-read --allow-env --allow-net scripts/delete-webhook.ts",
-    "webhook:info": "deno run --allow-read --allow-env --allow-net scripts/webhook-info.ts",
-    "smoke": "deno run --allow-read --allow-env --allow-net scripts/smoke-test.ts"
+    "verify-env": "deno run --env-file=.env --allow-read --allow-env scripts/verify-env.ts",
+    "clear-test-data": "deno run --env-file=.env --allow-read --allow-env --allow-net scripts/clear-test-data.ts",
+    "webhook:set": "deno run --env-file=.env --allow-read --allow-env --allow-net scripts/set-webhook.ts",
+    "webhook:delete": "deno run --env-file=.env --allow-read --allow-env --allow-net scripts/delete-webhook.ts",
+    "webhook:info": "deno run --env-file=.env --allow-read --allow-env --allow-net scripts/webhook-info.ts",
+    "smoke": "deno run --env-file=.env --allow-read --allow-env --allow-net scripts/smoke-test.ts"
   },
   "nodeModulesDir": "auto"
 }

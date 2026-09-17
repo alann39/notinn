@@ -15,7 +15,7 @@ import {
  * reads, and the reason is ownership rather than transactionality. The service
  * role bypasses row level security, so the only place a note's owner can be
  * enforced is inside the statement that touches it — see
- * `supabase/migrations/20260917120200_phase1_note_functions.sql` for the argument
+ * `supabase/migrations/20260917123623_phase1_note_functions.sql` for the argument
  * in full, and docs/ADR/0005-access-model.md for the access model itself.
  *
  * The shape of this boundary is deliberate and worth stating once. A method
@@ -97,6 +97,15 @@ const RegenerationSourceRowSchema = z.object({
   source_type: z.string(),
   source_text: z.string().nullable(),
   template_key: z.string(),
+});
+
+/** One row of `find_note_for_display`'s result set. */
+const DisplayNoteRowSchema = z.object({
+  note_id: UuidSchema,
+  rendered_text: z.string(),
+  content_json: z.unknown(),
+  template_key: z.string(),
+  is_saved: z.boolean(),
 });
 
 /** The note-creation arguments, grouped so that a call site reads as one thing. */
@@ -195,6 +204,15 @@ export interface RegenerationSource {
   readonly templateKey: string;
 }
 
+/** The current output and state needed to show a note and rebuild its keyboard. */
+export interface DisplayNote {
+  readonly noteId: string;
+  readonly renderedText: string;
+  readonly contentJson: unknown;
+  readonly templateKey: string;
+  readonly isSaved: boolean;
+}
+
 export class NotesRepository {
   readonly #client: ServiceClient;
 
@@ -234,6 +252,39 @@ export class NotesRepository {
 
       const row = parseSingle(data, error, PersistNoteRowSchema, "persist_note");
 
+      return { outcome: row.outcome, noteId: row.note_id, outputId: row.output_id };
+    } catch (thrown) {
+      throw toDatabaseError(thrown);
+    }
+  }
+
+  /**
+   * Persist the first output without completing the job.
+   *
+   * Phase 2 uses this delivery-safe variant so a Telegram failure leaves the job
+   * retryable with one already-persisted note. A retry can deliver that note
+   * again without generating or inserting a duplicate.
+   */
+  async stageNoteForDelivery(input: PersistNoteInput): Promise<PersistNoteResult> {
+    try {
+      const { data, error } = await this.#client.rpc("stage_note_for_delivery", {
+        p_user_id: input.userId,
+        p_job_id: input.jobId,
+        p_title: input.title,
+        p_language: input.language,
+        p_source_type: input.sourceType,
+        p_normalized_source_text: input.normalizedSourceText,
+        p_source_text_sha256: input.sourceTextSha256,
+        p_template_key: input.templateKey,
+        p_schema_version: input.schemaVersion,
+        p_content_json: input.contentJson,
+        p_rendered_text: input.renderedText,
+        p_provider: input.provider,
+        p_model: input.model,
+        p_generation_reason: input.generationReason,
+      });
+
+      const row = parseSingle(data, error, PersistNoteRowSchema, "stage_note_for_delivery");
       return { outcome: row.outcome, noteId: row.note_id, outputId: row.output_id };
     } catch (thrown) {
       throw toDatabaseError(thrown);
@@ -424,6 +475,29 @@ export class NotesRepository {
         sourceType: row.source_type as InputType,
         sourceText: row.source_text,
         templateKey: row.template_key,
+      };
+    } catch (thrown) {
+      throw toDatabaseError(thrown);
+    }
+  }
+
+  async findNoteForDisplay(userId: string, noteId: string): Promise<DisplayNote | null> {
+    try {
+      const { data, error } = await this.#client.rpc("find_note_for_display", {
+        p_user_id: userId,
+        p_note_id: noteId,
+      });
+
+      const rows = parseMany(data, error, DisplayNoteRowSchema, "find_note_for_display");
+      const row = rows[0];
+      if (row === undefined) return null;
+
+      return {
+        noteId: row.note_id,
+        renderedText: row.rendered_text,
+        contentJson: row.content_json,
+        templateKey: row.template_key,
+        isSaved: row.is_saved,
       };
     } catch (thrown) {
       throw toDatabaseError(thrown);

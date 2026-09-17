@@ -170,8 +170,18 @@ Deno.test("each factory sets the code it is named for", () => {
   assertEquals(AppError.validation().code, ERROR_CODES.VALIDATION_FAILED);
   assertEquals(AppError.unsupportedInput().code, ERROR_CODES.UNSUPPORTED_INPUT);
   assertEquals(AppError.inputTooLarge().code, ERROR_CODES.INPUT_TOO_LARGE);
+  assertEquals(AppError.inputTooLong().code, ERROR_CODES.INPUT_TOO_LONG);
+  assertEquals(AppError.fileUnavailable().code, ERROR_CODES.FILE_UNAVAILABLE);
   assertEquals(AppError.unauthorized().code, ERROR_CODES.UNAUTHORIZED);
   assertEquals(AppError.userNotActive().code, ERROR_CODES.USER_NOT_ACTIVE);
+  assertEquals(AppError.retriesExhausted().code, ERROR_CODES.RETRIES_EXHAUSTED);
+  assertEquals(AppError.providerError().code, ERROR_CODES.PROVIDER_ERROR);
+  assertEquals(AppError.providerTimeout().code, ERROR_CODES.PROVIDER_TIMEOUT);
+  assertEquals(AppError.providerRateLimited().code, ERROR_CODES.PROVIDER_RATE_LIMITED);
+  assertEquals(AppError.telegramError().code, ERROR_CODES.TELEGRAM_ERROR);
+  assertEquals(AppError.generationFailed().code, ERROR_CODES.GENERATION_FAILED);
+  assertEquals(AppError.outputValidationFailed().code, ERROR_CODES.OUTPUT_VALIDATION_FAILED);
+  assertEquals(AppError.deliveryFailed().code, ERROR_CODES.DELIVERY_FAILED);
   assertEquals(AppError.configuration("x").code, ERROR_CODES.CONFIGURATION_ERROR);
   assertEquals(AppError.database().code, ERROR_CODES.DATABASE_ERROR);
   assertEquals(AppError.internal().code, ERROR_CODES.INTERNAL_ERROR);

@@ -82,7 +82,7 @@ export async function callTelegram<T>(
   botToken: Secret,
   method: string,
   payload: Record<string, unknown> = {},
-  options: { timeoutMs?: number } = {},
+  options: { timeoutMs?: number; fileUnavailableOn400?: boolean; fetch?: typeof fetch } = {},
 ): Promise<T> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
@@ -92,7 +92,7 @@ export async function callTelegram<T>(
   let envelope: TelegramEnvelope<T>;
 
   try {
-    const response = await fetch(endpoint, {
+    const response = await (options.fetch ?? fetch)(endpoint, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
@@ -109,6 +109,9 @@ export async function callTelegram<T>(
   }
 
   if (!envelope.ok) {
+    if (options.fileUnavailableOn400 === true && envelope.error_code === 400) {
+      throw AppError.fileUnavailable("telegram getFile no longer recognises the file id");
+    }
     throw new AppError(ERROR_CODES.TELEGRAM_ERROR, {
       internalDetail: `telegram ${method} refused: ${
         redactText(envelope.description ?? "(no description)")
@@ -165,6 +168,97 @@ export function deleteWebhook(
   return callTelegram<boolean>(botToken, "deleteWebhook", {
     drop_pending_updates: options.dropPendingUpdates ?? false,
   });
+}
+
+// --- Private file retrieval ------------------------------------------------
+
+const TelegramFileSchema = z.object({
+  file_id: z.string().min(1),
+  file_unique_id: z.string().min(1),
+  file_size: z.number().int().nonnegative().optional(),
+  file_path: z.string().min(1).optional(),
+});
+
+/**
+ * Fetch a Telegram upload into memory with a hard byte ceiling.
+ *
+ * The download URL embeds the bot token. It exists only in this scope and is
+ * never returned, logged, stored, included in an exception or sent to Gemini.
+ */
+export async function downloadFile(
+  botToken: Secret,
+  fileId: string,
+  maxBytes: number,
+  options: { timeoutMs?: number; fetch?: typeof fetch } = {},
+): Promise<Uint8Array> {
+  const rawFile = await callTelegram<unknown>(botToken, "getFile", { file_id: fileId }, {
+    timeoutMs: options.timeoutMs,
+    fileUnavailableOn400: true,
+    fetch: options.fetch,
+  });
+  const file = TelegramFileSchema.safeParse(rawFile);
+  if (!file.success || file.data.file_path === undefined) {
+    throw AppError.fileUnavailable("telegram getFile returned no downloadable path");
+  }
+  if (file.data.file_size !== undefined && file.data.file_size > maxBytes) {
+    throw AppError.inputTooLarge("telegram file metadata exceeded the download limit");
+  }
+
+  // Credential-bearing URL. It must never cross this function boundary.
+  const endpoint = `${TELEGRAM_API_BASE}/file/bot${botToken.reveal()}/${file.data.file_path}`;
+  const fetchImpl = options.fetch ?? fetch;
+  let response: Response;
+  try {
+    response = await fetchImpl(endpoint, {
+      signal: AbortSignal.timeout(options.timeoutMs ?? 30_000),
+    });
+  } catch (thrown) {
+    if (thrown instanceof DOMException && thrown.name === "TimeoutError") {
+      throw AppError.telegramError("telegram file download timed out", thrown);
+    }
+    throw AppError.telegramError("telegram file download was unreachable", thrown);
+  }
+
+  if (response.status === 404) {
+    throw AppError.fileUnavailable("telegram file download returned 404");
+  }
+  if (!response.ok || response.body === null) {
+    throw AppError.telegramError(`telegram file download returned ${response.status}`);
+  }
+
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    await response.body.cancel();
+    throw AppError.inputTooLarge("telegram download content-length exceeded the limit");
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw AppError.inputTooLarge("telegram download exceeded the streamed byte limit");
+      }
+      chunks.push(value);
+    }
+  } catch (thrown) {
+    if (thrown instanceof AppError) throw thrown;
+    throw AppError.telegramError("telegram file stream failed", thrown);
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
 }
 
 // --- Sending ---------------------------------------------------------------
@@ -312,4 +406,74 @@ export function answerCallbackQuery(
     ...(options.text === undefined ? {} : { text: options.text }),
     ...(options.showAlert === undefined ? {} : { show_alert: options.showAlert }),
   });
+}
+
+/** Replace the buttons beneath an existing bot message. */
+export function editMessageReplyMarkup(
+  botToken: Secret,
+  chatId: number,
+  messageId: number,
+  inlineKeyboard: InlineKeyboardMarkup,
+): Promise<unknown> {
+  return callTelegram<unknown>(botToken, "editMessageReplyMarkup", {
+    chat_id: chatId,
+    message_id: messageId,
+    reply_markup: inlineKeyboard,
+  });
+}
+
+/** Replace a bot message and, optionally, its keyboard. */
+export function editMessageText(
+  botToken: Secret,
+  chatId: number,
+  messageId: number,
+  text: string,
+  options: SendMessageOptions = {},
+): Promise<unknown> {
+  return callTelegram<unknown>(botToken, "editMessageText", {
+    chat_id: chatId,
+    message_id: messageId,
+    text,
+    link_preview_options: { is_disabled: options.allowLinkPreview !== true },
+    ...(options.parseMode === undefined ? {} : { parse_mode: options.parseMode }),
+    ...(options.inlineKeyboard === undefined ? {} : { reply_markup: options.inlineKeyboard }),
+  });
+}
+
+/** Injectable transport used by services and backed by the Bot API in production. */
+export interface TelegramGateway {
+  sendMessage(
+    chatId: number,
+    text: string,
+    options?: SendMessageOptions,
+  ): Promise<TelegramSentMessage>;
+  answerCallbackQuery(
+    callbackQueryId: string,
+    options?: { text?: string; showAlert?: boolean },
+  ): Promise<boolean>;
+  editMessageReplyMarkup(
+    chatId: number,
+    messageId: number,
+    inlineKeyboard: InlineKeyboardMarkup,
+  ): Promise<unknown>;
+  editMessageText(
+    chatId: number,
+    messageId: number,
+    text: string,
+    options?: SendMessageOptions,
+  ): Promise<unknown>;
+  downloadFile(fileId: string, maxBytes: number): Promise<Uint8Array>;
+}
+
+export function createTelegramGateway(botToken: Secret): TelegramGateway {
+  return {
+    sendMessage: (chatId, text, options) => sendMessage(botToken, chatId, text, options),
+    answerCallbackQuery: (callbackQueryId, options) =>
+      answerCallbackQuery(botToken, callbackQueryId, options),
+    editMessageReplyMarkup: (chatId, messageId, keyboard) =>
+      editMessageReplyMarkup(botToken, chatId, messageId, keyboard),
+    editMessageText: (chatId, messageId, text, options) =>
+      editMessageText(botToken, chatId, messageId, text, options),
+    downloadFile: (fileId, maxBytes) => downloadFile(botToken, fileId, maxBytes),
+  };
 }

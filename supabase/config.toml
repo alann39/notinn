@@ -70,3 +70,9 @@ enable_confirmations = false
 # X-Telegram-Bot-Api-Secret-Token, which is compared in constant time before any
 # other work happens. See docs/ADR/0005-access-model.md.
 verify_jwt = false
+
+[functions.process-job]
+# Internal callers authenticate with X-Notinn-Worker-Secret. Keeping JWT
+# verification off avoids coupling Cron or another server-side scheduler to an
+# end-user Supabase session; the function performs its own constant-time check.
+verify_jwt = false

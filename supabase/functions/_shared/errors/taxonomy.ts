@@ -42,6 +42,8 @@ export const ERROR_CODES = {
    * operator than "a user uploaded a 40 MB PDF".
    */
   INPUT_TOO_LONG: "input_too_long",
+  /** Telegram no longer has the referenced upload; the user must resend it. */
+  FILE_UNAVAILABLE: "file_unavailable",
   /** The Telegram update was addressed to something other than a private chat. */
   NON_PRIVATE_CHAT: "non_private_chat",
 
@@ -58,6 +60,8 @@ export const ERROR_CODES = {
   RATE_LIMITED: "rate_limited",
   /** The user's plan quota for this operation is exhausted. Not retryable. */
   QUOTA_EXCEEDED: "quota_exceeded",
+  /** A durable job reached its configured maximum attempts. */
+  RETRIES_EXHAUSTED: "retries_exhausted",
 
   // --- Upstream providers --------------------------------------------------
   /** Gemini returned an error. Retryable only for the subsets we classify. */
@@ -146,6 +150,12 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = {
     publicMessage: "That's longer than I can take in one note. Try sending it in two parts.",
     logLevel: "info",
   },
+  [ERROR_CODES.FILE_UNAVAILABLE]: {
+    httpStatus: 410,
+    retryable: false,
+    publicMessage: "I can't retrieve that file anymore. Please send it again.",
+    logLevel: "info",
+  },
   [ERROR_CODES.NON_PRIVATE_CHAT]: {
     httpStatus: 403,
     retryable: false,
@@ -184,6 +194,12 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = {
     retryable: false,
     publicMessage: "You've reached your plan's limit for this month.",
     logLevel: "info",
+  },
+  [ERROR_CODES.RETRIES_EXHAUSTED]: {
+    httpStatus: 500,
+    retryable: false,
+    publicMessage: "I couldn't finish that note after several tries. Please send it again.",
+    logLevel: "error",
   },
 
   [ERROR_CODES.PROVIDER_ERROR]: {

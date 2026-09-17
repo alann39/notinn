@@ -2,49 +2,56 @@
 
 Five suites, layered by what they need to run. The layering is not decoration: it
 is what lets a developer without Docker (see
-[ADR 0006](ADR/0006-pinned-dependencies.md)) still prove almost all of Phase 0.
+[ADR 0006](ADR/0006-pinned-dependencies.md)) still prove the hermetic Phase 2
+surface.
 
 | Suite                       | Files | Tests | Needs               | Command                      |
 | --------------------------- | ----- | ----: | ------------------- | ---------------------------- |
-| [unit](#unit)               | 8     |   178 | nothing             | `deno task test:unit`        |
-| [contract](#contract)       | 1     |    33 | nothing             | `deno task test:contract`    |
-| [security](#security)       | 2     |    52 | nothing             | `deno task test:security`    |
-| [integration](#integration) | 3     |    22 | a Supabase project  | `deno task test:integration` |
+| [unit](#unit)               | 19    |   303 | nothing             | `deno task test:unit`        |
+| [contract](#contract)       | 2     |    85 | nothing             | `deno task test:contract`    |
+| [security](#security)       | 3     |    56 | nothing             | `deno task test:security`    |
+| [integration](#integration) | 4     |    25 | a Supabase project  | `deno task test:integration` |
 | [e2e](#e2e)                 | 1     |     8 | a deployed function | `deno task test:integration` |
 
-`deno task test` runs unit + contract + security: **263 tests, no database, no
-network.** Running `deno test` across every suite is **264**, because the e2e file
-contributes one test that runs unconditionally — the guard against
-`NOTINN_ENV=production` being set alongside a configured webhook target. That
-guard must never be skippable, which is why it is not gated on the e2e target.
+`deno task test` runs unit + contract + security: **445 tests, no database and no
+outbound network.**
 
 The integration and e2e suites are _ignored_, not failed, when no target is
 configured, so the number of ignored tests is the count of checks that need
 infrastructure rather than checks that were skipped to make a run go green.
 
-Last full run (`deno test`, all five suites, 2026-09-17): **264 passed, 0 failed,
-29 ignored.**
+Latest hermetic run (unit + contract + security, 2026-09-17): **445 passed, 0
+failed.** Integration and e2e were not run because Docker/Podman and a deployed
+test target are unavailable.
 
 ---
 
-## Unit — 178 tests
+## Unit — 303 tests
 
 Pure functions, no I/O, no doubles where a real call is possible.
 
-| File                     | Covers                                                                                                                                                                                                                           |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `env.test.ts`            | Config validation: which variables are required, which are optional, format rules for the bot token and the webhook secret, JWT role decoding, and that `describeEnvironment` never returns a value                              |
-| `errors.test.ts`         | The taxonomy: every code has a retryable flag and a log level; `AppError` keeps the public message and the internal detail apart; `httpStatusForError` maps `401`/`500`/`200`                                                    |
-| `input-routing.test.ts`  | Default template per input type, forwarded-text override, MIME and extension resolution, and that every template the router can produce exists in the catalogue                                                                  |
-| `job-state.test.ts`      | The transition table's shape: every terminal state has no outgoing edges, every non-terminal state can reach a terminal one, `CANCELLED` is reachable from every non-terminal state, creation states are `RECEIVED` and `QUEUED` |
-| `logger.test.ts`         | The allowlist: unknown fields dropped, objects and arrays dropped, denied fields dropped even when explicitly passed, level filtering, child context                                                                             |
-| `parse-update.test.ts`   | Classification: private vs group vs channel, bots, service messages, one-content-kind rule, unsupported kinds, forwarded detection                                                                                               |
-| `redaction.test.ts`      | Redaction of values that reach a log line: bearer tokens, bot-token URLs, signed URLs, private key blocks, newline collapsing (so a value cannot forge a line), truncation                                                       |
-| `webhook-secret.test.ts` | Constant-time comparison: prefix, suffix, length and case differences all refused; the mismatched value never appears in the thrown error                                                                                        |
+| File                           | Covers                                                                                                                                                                                                                           |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `env.test.ts`                  | Webhook/worker config validation, secret strength, provider/model requirements, JWT role decoding, and safe environment reporting                                                                                                |
+| `errors.test.ts`               | The taxonomy: every code has a retryable flag and a log level; `AppError` keeps the public message and the internal detail apart; `httpStatusForError` maps `401`/`500`/`200`                                                    |
+| `input-routing.test.ts`        | Default template per input type, forwarded-text override, MIME and extension resolution, and that every template the router can produce exists in the catalogue                                                                  |
+| `job-state.test.ts`            | The transition table's shape: every terminal state has no outgoing edges, every non-terminal state can reach a terminal one, `CANCELLED` is reachable from every non-terminal state, creation states are `RECEIVED` and `QUEUED` |
+| `logger.test.ts`               | The allowlist: unknown fields dropped, objects and arrays dropped, denied fields dropped even when explicitly passed, level filtering, child context                                                                             |
+| `parse-update.test.ts`         | Classification: private vs group vs channel, bots, service messages, one-content-kind rule, unsupported kinds, forwarded detection                                                                                               |
+| `callback.test.ts`             | Versioned callback payload encoding, UUID opacity, action vocabulary, and Telegram's 64-byte limit                                                                                                                               |
+| `gemini-note-provider.test.ts` | Gemini text/audio inline requests, response schemas, transcript/note validation, usage metadata, wrong-template rejection, invalid JSON, and rate-limit mapping                                                                  |
+| `job-worker-service.test.ts`   | Text/audio state paths, in-memory buffer scrubbing, note staging, delivery retry idempotency, transient retry, missing-file handling, and audio duration limit                                                                   |
+| `note-rendering.test.ts`       | Telegram-safe HTML, semantic splitting, inline keyboards, and callback round-trips                                                                                                                                               |
+| `structured-note.test.ts`      | Application-authoritative structured-note validation and non-fabrication bounds                                                                                                                                                  |
+| `text-note-service.test.ts`    | The inline job path, persistence, usage metering, delivery, and retryable provider failure                                                                                                                                       |
+| `telegram-download.test.ts`    | Private `getFile` flow, metadata/content-length/stream byte limits, expired file mapping, and token-bearing URL containment                                                                                                      |
+| `worker-invoker.test.ts`       | Background worker URL/header/body contract and non-2xx handling; only opaque `job_id` crosses the boundary                                                                                                                       |
+| `redaction.test.ts`            | Redaction of values that reach a log line: bearer tokens, bot-token URLs, signed URLs, private key blocks, newline collapsing (so a value cannot forge a line), truncation                                                       |
+| `webhook-secret.test.ts`       | Constant-time comparison: prefix, suffix, length and case differences all refused; the mismatched value never appears in the thrown error                                                                                        |
 
 ---
 
-## Contract — 33 tests
+## Contract — 85 tests
 
 `contract/migration-constants.test.ts` is the drift guard. It reads the migration
 SQL from disk and asserts the TypeScript mirrors in `config/constants.ts` agree
@@ -82,10 +89,9 @@ migration fixes, not test weakening.
 
 ---
 
-## Security — 52 tests
+## Security — 56 tests
 
-Two suites, both hermetic, both exercising the **real** code path rather than a
-stubbed layer.
+Three suites, all hermetic and exercising the real authentication boundary.
 
 The technique both share: `createClient` is given a `global.fetch` that answers
 from a table of canned responses. The handler, the service, the repository and the
@@ -102,7 +108,7 @@ is not the property anyone cares about.
 | Non-updates          | GET, empty body, non-JSON, oversized body, a body without `update_id` — each acknowledged `200` with zero calls                                                                                 |
 | Ignores              | 7 delivery kinds (group, supergroup, channel, channel post, bot, callback query, sticker) each acknowledged `200`, zero calls, exactly one `webhook.ignored` carrying a reason                  |
 | Indistinguishability | The ignored response and the accepted response are byte-identical, so a probe cannot tell them apart                                                                                            |
-| The accepted path    | Exactly `["ensure_telegram_user", "accept_telegram_update"]` in that order                                                                                                                      |
+| The accepted path    | Exactly `["ensure_telegram_user", "accept_and_enqueue_telegram_update"]` in that order                                                                                                          |
 | Duplicates           | A replay is acknowledged `200`, is not logged as an error, and its response is byte-identical to the first                                                                                      |
 | Failure mapping      | Transient → `500`; a constraint violation → `200`; a malformed row → `200` with exactly one error-level `INTERNAL_ERROR`; every failure body empty; no database message echoed                  |
 | Response shape       | `{"ok":true}` and nothing else — no job id, user id, state or `update_id`                                                                                                                       |
@@ -114,6 +120,12 @@ username, filename, `file_id`, `file_unique_id`, forward sender name, forward ch
 title). Every captured log line **and** every response body is searched for every
 marker, across text, document, photo, voice, ignored, channel-post, malformed,
 schema-invalid, rejected and database-failure paths.
+
+### `worker-auth.test.ts` — 4 tests
+
+Missing and wrong internal secrets produce a bare `401` before a queue read, a
+valid batch trigger reads the queue exactly once, and a malformed authenticated
+body produces a bare `400`. The planted wrong secret is absent from every log.
 
 Two details make the suite meaningful rather than reassuring:
 
@@ -128,7 +140,7 @@ Two details make the suite meaningful rather than reassuring:
 
 ---
 
-## Integration — 22 tests (ignored without a target)
+## Integration — 25 tests (ignored without a target)
 
 These are the only tests that touch a real database, and they exist for the
 guarantees the database owns. See [harness.ts](../tests/integration/harness.ts).
@@ -137,6 +149,8 @@ guarantees the database owns. See [harness.ts](../tests/integration/harness.ts).
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ingestion.test.ts`     | Exit criteria **1** and **2**: a first delivery creates exactly one job, asserted by counting rows and checking the job's columns; three replays yield `accepted`/`duplicate`/`duplicate` with one job id and one row; a replay with _different_ bytes still creates no second job; an unknown template key is refused by the foreign key; the ledger row records the digest and the job link; the catalogue is applied and every entry is active; first contact creates one `active` user                                                     |
 | `state-machine.test.ts` | A job cannot be created terminal; both creation states are accepted; four full paths walked one step at a time (`COMPLETED`, retry-then-requeue, `EXPIRED`, `CANCELLED`); the pipeline cannot be short-circuited; an illegal transition is refused; a terminal job cannot be reopened; `completed_at` enforced in both directions; one `update_id` backs one job; a negative attempt count is refused; **a client-role key reads nothing and cannot call the functions**; the expected tables exist; the migration ledger records ≥ 9 versions |
+| `phase1.test.ts`        | Owner-scoped note lifecycle, append-only regeneration/current-output move, and once-per-chat rejection claim                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `phase2.test.ts`        | Atomic ingestion returns a queue message id, the job resolves to the same PGMQ id, and the first claim moves exactly to `ACQUIRING` with the expected opaque job link                                                                                                                                                                                                                                                                                                                                                                          |
 
 Note on why `ingestion.test.ts` counts rows rather than trusting the returned
 outcome: a test that read only `result.outcome === "duplicate"` would pass even if
@@ -157,7 +171,8 @@ the wrong database takes deliberate effort:
 - Clock-seeded counters give each run its own id block, so "a first delivery
   creates one job" is exercised on a genuine first delivery every run.
 - **No test deletes anything.** Cleanup is `deno task clear-test-data`, a separate
-  program behind a confirmation prompt.
+  confirmation-guarded program that acknowledges synthetic PGMQ messages before
+  deleting their application rows.
 
 The two RLS tests skip explicitly when no publishable key is configured, and say
 so in a comment — the alternative, asserting the negative without a key, would be
@@ -209,8 +224,9 @@ recorded under [The replay](IMPLEMENTATION_STATUS.md#the-replay).
   getters, and it is not the property that matters. The suites are organised by
   _claim_ — each file's header names the claim it proves — and the exit criteria
   are mapped to tests in the report rather than to a number.
-- **No browser or UI tests.** No UI exists in Phase 0.
+- **No browser or UI tests.** Telegram is the MVP interface; no browser UI exists.
 - **No load or concurrency testing.** The `update_id` race is covered at the
   constraint level (a second insert is refused), which is the correctness
-  property. Throughput is Phase 2, when there is a worker to be slow.
-- **No mutation testing.** Worth doing; not Phase 0.
+  property. Worker throughput and queue-depth testing require an applied PGMQ
+  migration and are part of deployment verification.
+- **No mutation testing.** Worth doing after the multimodal paths stabilise.

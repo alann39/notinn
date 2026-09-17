@@ -1,4 +1,4 @@
-import { loadScriptConfig, type ScriptConfig } from "../supabase/functions/_shared/config/env.ts";
+import { loadSmokeConfig, type SmokeConfig } from "../supabase/functions/_shared/config/env.ts";
 import { TELEGRAM_SECRET_HEADER } from "../supabase/functions/_shared/config/constants.ts";
 import {
   createServiceClient,
@@ -124,7 +124,7 @@ async function cleanup(client: ServiceClient, updateId: number, userId: number):
   }
 }
 
-async function run(config: ScriptConfig): Promise<void> {
+async function run(config: SmokeConfig): Promise<void> {
   if (config.webhookUrl === null) {
     console.error("TELEGRAM_WEBHOOK_URL is not set; there is nothing to test.");
     Deno.exit(1);
@@ -248,7 +248,7 @@ async function run(config: ScriptConfig): Promise<void> {
 
 if (import.meta.main) {
   try {
-    const config = await loadScriptConfig();
+    const config = await loadSmokeConfig();
     await run(config);
 
     const failed = results.filter((result) => !result.passed);

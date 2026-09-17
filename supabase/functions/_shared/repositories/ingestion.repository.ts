@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { JobState } from "../config/constants.ts";
 import type { ServiceClient } from "../db/client.ts";
 import { AppError } from "../errors/app-error.ts";
-import type { AcceptedMessage } from "../telegram/parse-update.ts";
+import type { AcceptedMessage, TelegramIdentity } from "../telegram/parse-update.ts";
 import { classifyPostgresError, toDatabaseError } from "./postgres-errors.ts";
 
 /**
@@ -24,7 +24,7 @@ import { classifyPostgresError, toDatabaseError } from "./postgres-errors.ts";
 const UuidSchema = z.uuid();
 const IdSchema = z.coerce.number().int();
 
-/** One row of `accept_telegram_update`'s result set. */
+/** One row of `accept_and_enqueue_telegram_update`'s result set. */
 const AcceptRowSchema = z.object({
   update_id: IdSchema,
   user_id: UuidSchema.nullable(),
@@ -33,6 +33,7 @@ const AcceptRowSchema = z.object({
   job_state: z.string().nullable(),
   chat_id: IdSchema.nullable(),
   message_id: IdSchema.nullable(),
+  queue_message_id: IdSchema.nullable(),
 });
 
 export type IngestionOutcome = "accepted" | "duplicate" | "user_not_active";
@@ -43,6 +44,9 @@ export interface AcceptResult {
   readonly userId: string | null;
   readonly jobId: string | null;
   readonly jobState: JobState | null;
+  readonly queueMessageId: number | null;
+  /** Null for a first delivery or when the ledger had no digest. */
+  readonly payloadDigestMatches: boolean | null;
 }
 
 export class IngestionRepository {
@@ -59,7 +63,7 @@ export class IngestionRepository {
    * Idempotent. Concurrent first messages from the same account converge on one
    * row because `telegram_user_id` is unique and the function uses an upsert.
    */
-  async ensureUser(message: AcceptedMessage): Promise<string> {
+  async ensureUser(message: TelegramIdentity): Promise<string> {
     try {
       const { data, error } = await this.#client.rpc("ensure_telegram_user", {
         p_telegram_user_id: message.telegramUserId,
@@ -95,7 +99,7 @@ export class IngestionRepository {
     payloadDigest: string,
   ): Promise<AcceptResult> {
     try {
-      const { data, error } = await this.#client.rpc("accept_telegram_update", {
+      const { data, error } = await this.#client.rpc("accept_and_enqueue_telegram_update", {
         p_update_id: message.updateId,
         p_update_type: "message",
         p_user_id: userId,
@@ -118,12 +122,29 @@ export class IngestionRepository {
       const rows = Array.isArray(data) ? data : [data];
       const first = rows[0];
       if (first === undefined) {
-        throw AppError.internal("accept_telegram_update returned no rows");
+        throw AppError.internal("accept_and_enqueue_telegram_update returned no rows");
       }
 
       const parsed = AcceptRowSchema.safeParse(first);
       if (!parsed.success) {
-        throw AppError.internal("accept_telegram_update returned an unexpected row shape");
+        throw AppError.internal(
+          "accept_and_enqueue_telegram_update returned an unexpected row shape",
+        );
+      }
+
+      let payloadDigestMatches: boolean | null = null;
+      if (parsed.data.outcome === "duplicate") {
+        const comparison = await this.#client.rpc("telegram_update_digest_matches", {
+          p_update_id: message.updateId,
+          p_payload_digest: payloadDigest,
+        });
+        if (comparison.error !== null) throw classifyPostgresError(comparison.error);
+
+        const match = z.boolean().nullable().safeParse(comparison.data);
+        if (!match.success) {
+          throw AppError.internal("telegram_update_digest_matches returned an unexpected value");
+        }
+        payloadDigestMatches = match.data;
       }
 
       return {
@@ -132,6 +153,8 @@ export class IngestionRepository {
         userId: parsed.data.user_id,
         jobId: parsed.data.job_id,
         jobState: parsed.data.job_state as JobState | null,
+        queueMessageId: parsed.data.queue_message_id,
+        payloadDigestMatches,
       };
     } catch (thrown) {
       throw toDatabaseError(thrown);

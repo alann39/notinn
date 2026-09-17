@@ -1,55 +1,47 @@
 # Architecture
 
-Phase 0. One Edge Function, one database, one adapter to the outside world
-(Telegram). Everything else is deliberately absent — see
-[ADR 0002](ADR/0002-phase-0-scope.md) for what is missing and why.
+Phase 2. Telegram ingestion is separated from processing by an atomic PGMQ
+message. One Gemini adapter handles both text and audio. See
+[ADR 0008](ADR/0008-phase-2-durable-worker.md).
 
 ## The shape
 
 ```
-            Telegram
-               │  POST + X-Telegram-Bot-Api-Secret-Token
-               ▼
-┌──────────────────────────────┐
-│  telegram-webhook (Edge Fn)  │   verify_jwt = false
-└──────────────────────────────┘
-               │
-       telegram/handler.ts
-       method → secret → read → parse → classify
-               │
-       services/ingestion.service.ts
-          resolve sender → record update + job
-               │
-    repositories/ingestion.repository.ts
-               │
-          PostgREST  (service role)
-               │
-┌──────────────────────────────┐
-│          PostgreSQL          │
-│  RLS on, zero policies       │
-│  state machine by trigger    │
-│  update_id unique            │
-└──────────────────────────────┘
+Telegram → telegram-webhook → atomic job + PGMQ message
+                  │                       │
+                  └─ background nudge ───┤
+                                          ▼
+recovery Cron ─────────────────────→ process-job
+                                          │
+                         Telegram file → memory → Gemini
+                                          │
+                         staged note → Telegram delivery
+                                          │
+                              COMPLETED + queue ack
 ```
 
-No queue, no worker, no provider call. A `QUEUED` job row **is** the work item;
-Phase 2's worker drains it.
+The background nudge is an optimisation, not the durability boundary. If it is
+lost, recovery Cron reads the same PGMQ message. If two workers race, the database
+claim permits only one legal `QUEUED → ACQUIRING` transition.
 
 ## Directory map
 
 ```
 supabase/
-  migrations/          nine ordered migrations; the schema's source of truth
+  migrations/          fourteen ordered migrations; the schema's source of truth
   functions/
-    telegram-webhook/index.ts     composition root — config, client, wiring
+    telegram-webhook/index.ts     ingestion composition root
+    process-job/index.ts          worker composition root
     _shared/
       config/          constants.ts (mirrors of DB enums) · env.ts (validated config)
       db/              client.ts (service-role client, timeout)
       errors/          taxonomy.ts · app-error.ts · http.ts
       observability/   logger.ts (allowlist) · correlation.ts · levels.ts · redaction.ts
-      repositories/    ingestion.repository.ts — every DB call in the system
+      providers/       NoteAIProvider · GeminiNoteProvider
+      repositories/    all PostgREST and usage writes
       security/        webhook-secret.ts (constant-time) · hashing.ts
-      services/        ingestion.service.ts · input-routing.ts
+      services/        ingestion, callbacks, rendering, and durable job worker
+      worker/          internal HTTP handler and background invoker
       telegram/        schema.ts (Zod) · parse-update.ts (classify) · handler.ts
   config.toml          local stack config; carries verify_jwt = false
   seed.sql             local-only; the template catalogue is a migration, not a seed
@@ -70,11 +62,9 @@ linter, so it is written down:
 | `repositories/`             | the Supabase client, errors     | The transport, the request               |
 | `errors/`, `observability/` | each other only                 | Everything above them                    |
 
-The load-bearing consequence: **every database call in the system is in one file**,
-`repositories/ingestion.repository.ts`. There are two, both RPC calls to
-`SECURITY DEFINER` functions. When Phase 1 adds provider calls, the same rule
-applies — a service that talks to PostgREST directly is a service whose SQL is
-untestable without a database.
+The load-bearing consequence: every database call is in `repositories/`. A
+service that talks to PostgREST directly is a service whose SQL contract cannot
+be tested independently.
 
 The other consequence: `services/` never sees a status code. The handler decides
 that a retryable error becomes a `500` and a deterministic one becomes a `200`;
@@ -84,10 +74,8 @@ the service only reports what happened. This is what let the
 
 ## The composition root
 
-`telegram-webhook/index.ts` is the only place that runs at module scope, and the
-only place that reads configuration. It caches the config per isolate, because
-Deno Deploy reuses an isolate across requests and re-validating the environment on
-every delivery would be work with no benefit.
+Each Edge Function's `index.ts` is a composition root and the only module in that
+function that runs at module scope. Configuration is cached per isolate.
 
 A configuration failure returns a bare `500` with an empty body and logs the
 reason — never the value. That is correct and deliberate: a delivery that arrives
@@ -147,7 +135,9 @@ than assert that a function was called.
 
 ## The database
 
-Nine migrations, applied in order. The design decisions that shape them:
+Sixteen migrations are the current source of truth. The first nine were replayed
+against a disposable project and all Phase 1/2 migrations are applied to the
+development project. The design decisions that shape them:
 
 - **PostgreSQL is the enforcement point** for the state machine, `update_id`
   deduplication and row level security. See [ADR 0004](ADR/0004-job-state-machine.md)
@@ -159,8 +149,8 @@ Nine migrations, applied in order. The design decisions that shape them:
   active-job limit, the expiry sweep.
 - **`update_id` is the deduplication key**, and its uniqueness is a constraint
   rather than a convention.
-- **The two RPC functions are `SECURITY DEFINER`** because RLS is on with no
-  policies; they are the only way in, and they are granted to `service_role` only.
+- **Every public RPC is `SECURITY DEFINER`** because RLS is on with no policies;
+  each pins an empty `search_path` and is granted to `service_role` only.
 
 `tests/contract/migration-constants.test.ts` is the drift guard: it parses the
 migration SQL and asserts that the TypeScript mirrors in `config/constants.ts`

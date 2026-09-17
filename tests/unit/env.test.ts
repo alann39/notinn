@@ -3,7 +3,9 @@ import {
   describeEnvironment,
   jwtRole,
   loadScriptConfig,
+  loadSmokeConfig,
   loadWebhookConfig,
+  loadWorkerConfig,
   RECOGNISED_ENV_KEYS,
   Secret,
 } from "../../supabase/functions/_shared/config/env.ts";
@@ -26,6 +28,7 @@ const WEBHOOK_SECRET = "synthetic_webhook_secret_value";
 const BOT_TOKEN = "123456789:AAFakeTokenValueThatIsLongEnoughToMatch";
 const GEMINI_API_KEY = "synthetic-gemini-api-key-value";
 const GEMINI_MODEL = "gemini-synthetic-flash";
+const INTERNAL_WORKER_SECRET = "synthetic-internal-worker-secret-value";
 
 /** Build a JWT-shaped string with the given payload. Unsigned and unusable. */
 function fakeJwt(payload: Record<string, unknown>): string {
@@ -48,6 +51,7 @@ function validSource(): Record<string, string> {
     AI_PROVIDER: "gemini",
     GEMINI_API_KEY,
     GEMINI_MODEL,
+    INTERNAL_WORKER_SECRET,
   };
 }
 
@@ -219,6 +223,31 @@ Deno.test("a model identifier that is not an identifier is refused", async () =>
       AppError,
     );
     assertEquals(error.code, ERROR_CODES.CONFIGURATION_ERROR, `${model} was accepted`);
+  }
+});
+
+// --- loadWorkerConfig ------------------------------------------------------
+
+Deno.test("the worker has one private trigger secret and the shared Gemini config", async () => {
+  const config = await loadWorkerConfig(validSource());
+
+  assertEquals(config.internalWorkerSecret.reveal(), INTERNAL_WORKER_SECRET);
+  assertEquals(config.botToken.reveal(), BOT_TOKEN);
+  assertEquals(config.ai.provider, "gemini");
+  assertEquals(config.ai.model, GEMINI_MODEL);
+  assert(!JSON.stringify(config).includes(INTERNAL_WORKER_SECRET));
+});
+
+Deno.test("the worker refuses to start without a sufficiently strong trigger secret", async () => {
+  for (const secret of [undefined, "too-short"]) {
+    const source = validSource();
+    if (secret === undefined) delete source["INTERNAL_WORKER_SECRET"];
+    else source["INTERNAL_WORKER_SECRET"] = secret;
+
+    const error = await assertRejects(() => loadWorkerConfig(source), AppError);
+    assertEquals(error.code, ERROR_CODES.CONFIGURATION_ERROR);
+    assert((error.internalDetail ?? "").includes("INTERNAL_WORKER_SECRET"));
+    assert(!(error.internalDetail ?? "").includes("too-short"));
   }
 });
 
@@ -397,10 +426,20 @@ Deno.test("the scripts do not require the generation provider's key", async () =
   delete source["GEMINI_API_KEY"];
   delete source["AI_PROVIDER"];
   delete source["GEMINI_MODEL"];
+  delete source["SUPABASE_URL"];
+  delete source["SUPABASE_SERVICE_ROLE_KEY"];
 
   const config = await loadScriptConfig(source);
   assertEquals(config.botToken.reveal(), BOT_TOKEN);
   assertEquals(Object.keys(config).includes("ai"), false);
+  assertEquals(Object.keys(config).includes("serviceRoleKey"), false);
+});
+
+Deno.test("only the smoke test config carries database credentials", async () => {
+  const config = await loadSmokeConfig(validSource());
+
+  assertEquals(config.supabaseUrl, SUPABASE_URL);
+  assertEquals(config.serviceRoleKey.reveal(), SERVICE_ROLE_JWT);
 });
 
 Deno.test("the scripts tolerate a missing webhook secret, which only exists after registration", async () => {

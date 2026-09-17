@@ -2,7 +2,7 @@
 
 **Status:** Accepted, Phase 0
 **Date:** 2026-09-16
-**Supersedes:** nothing. **Superseded by:** the Phase 1 ADR, when it exists.
+**Supersedes:** nothing. **Superseded by:** [ADR 0007](0007-phase-1-scope.md).
 
 ## Context
 

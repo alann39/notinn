@@ -93,6 +93,7 @@ export const CALLBACK_ACTIONS = [
   "detailed",
   "delete",
   "delete_confirm",
+  "cancel_delete",
   "show",
 ] as const;
 

@@ -1,13 +1,75 @@
 # Implementation status
 
-**Phase:** 0 — ingestion spine
+**Phase:** 2 — durable jobs and voice/audio (runtime and Cron active; webhook pending)
 **Date:** 2026-09-17
 **Last verified:** the commands in [Verification](#verification) were run and their
 output is quoted verbatim below.
 
+## Phase 2 current snapshot
+
+Implemented in the working tree and deployed to the development project
+`neqfilxouhowuyynntdh` (dashboard name: `ProjectArchii`):
+
+- Atomic ingestion plus `pgmq.send`: a committed job always has one durable queue
+  message containing only its internal UUID.
+- `process-job`, authenticated with `X-Notinn-Worker-Secret`, supports direct
+  low-latency and bounded batch/recovery invocations.
+- The webhook schedules a background direct invocation only after durable
+  ingestion. Recovery Cron runs every minute as the operational fallback.
+- Initial text generation moved off the Telegram request path. Status messages
+  are edited into the final result when possible.
+- Voice/audio is downloaded privately into memory, bounded to 14 MiB raw / 30
+  minutes so its base64 request stays below Gemini's 20 MB total-request limit,
+  sent inline to the same configured model, and zero-filled in a `finally` block.
+  Raw binary is never persisted.
+- Gemini returns transcript plus structured note in one response. The transcript
+  is delivered for review and becomes the source for later format changes,
+  including Meeting Notes.
+- Notes are staged in `DELIVERING`; completion and queue acknowledgement happen
+  only after Telegram delivery. A delivery retry reuses the staged note without
+  another Gemini request or duplicate insert.
+- Seven Phase 1/2 migrations are recorded remotely, including the Phase 2 queue
+  migration. Local migration filenames use the remote versions to prevent CLI
+  migration-history drift.
+- `telegram-webhook` and `process-job` are active as version 9 with
+  `verify_jwt=false`; each function enforces its own secret header.
+- All eight runtime variables are configured in Supabase. Live unauthenticated
+  requests to both functions return an empty HTTP 401, proving configuration
+  loads and each custom secret boundary fails closed.
+- `notinn-process-jobs-recovery` runs every minute. Its URL and worker secret are
+  read from Vault at execution time; manual and scheduled calls returned HTTP
+  200 with an empty queue. Telegram webhook registration is the remaining live
+  activation step.
+- Supabase's managed `issue_pg_net_access` event trigger restores `pg_net` ACLs
+  after DDL, so the attempted revoke migration does not suppress the advisor's
+  `extension_in_public` warning. Verification confirmed that `net` is not a Data
+  API schema and no public Notinn function wraps it; this warning is accepted
+  unless that exposure configuration changes.
+
+Verification on this machine:
+
+```text
+deno fmt --check                 clean
+deno lint                        clean
+deno check ...                   all TypeScript files checked
+unit + contract + security       445 passed, 0 failed
+```
+
+The integration/e2e command was invoked: its production-target guard passed and
+all 32 target-dependent checks were explicitly ignored because test credentials
+are not configured. The remote database verification confirmed the `notinn_jobs`
+PGMQ queue, `processing_jobs.queue_message_id`, all 11 template schemas, and
+service-role-only execution of the worker RPCs. A transaction-scoped live test
+also created a synthetic user/update/job, verified that the queue contained the
+same opaque job UUID, and rolled the transaction back; follow-up counts were
+zero for the synthetic rows and queue message. A later live check verified the
+Cron job and worker response. No Telegram webhook, commit, or push was performed.
+
+The remainder of this file preserves the Phase 0 completion record.
+
 ---
 
-## Exit criteria
+## Phase 0 exit criteria (historical)
 
 | # | Criterion                                                             | Status                                             | Evidence                                                                                                                                                                                                                                                          |
 | - | --------------------------------------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -347,40 +409,41 @@ e2e suites cannot execute locally. See
 
 ## Deployment checklist
 
-Not performed. Every item requires approval.
+Database migration and function deployment were performed on 2026-09-17 after
+the user approved continuing to the deployment stage.
 
-1. `npx supabase link --project-ref <dev-ref>` — confirm the target is the
-   **development** project.
-2. `npx supabase db push` — expect it to apply **nothing**. The replay already
-   applied all nine, and the ledger was reconciled to the filenames. A push that
-   tries to re-apply them means that reconciliation did not survive.
-3. `deno task verify-env` — all checks pass, no FAIL rows.
-4. Generate a webhook secret (`openssl rand -hex 32`), set it as a function secret
-   **and** keep it for step 6.
-5. `npx supabase functions deploy telegram-webhook --no-verify-jwt` — confirm the
-   dashboard reports `verify_jwt` off for this function.
-6. `deno task webhook:set` — registers with the secret from step 4.
+1. **Done:** confirm the development target and inspect its existing Phase 0
+   schema/data before writing.
+2. **Done:** apply all seven Phase 1/2 migrations and align local filenames with
+   the remote migration versions.
+3. **Done:** verify PGMQ, template schemas, RPC grants, and advisors against the
+   real database.
+4. **Done:** deploy `telegram-webhook` and `process-job` with custom secret-header
+   authentication and Supabase JWT verification disabled.
+5. **Done:** set `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`,
+   `INTERNAL_WORKER_SECRET`, `AI_PROVIDER=gemini`, `GEMINI_API_KEY`, and
+   `GEMINI_MODEL` plus the environment/log settings as Edge Function secrets;
+   confirm both functions now reject unsigned calls with an empty HTTP 401.
+6. **Done:** configure a recovery Cron to POST
+   `{"trigger":"recovery","batch_size":5}` every minute with the private worker
+   header. The endpoint URL and secret are read from Vault; neither is stored in
+   migration SQL or source control. A manual request returned HTTP 200 and recent
+   Cron runs report `succeeded`.
+7. **Pending:** `deno task webhook:set` — register both `message` and
+   `callback_query` with the
+   secret from step 5.
    **Requires explicit approval**: this modifies a real Telegram bot.
-7. `deno task webhook:info` — confirm the registered URL and that a secret token is
-   recorded.
-8. `deno task smoke` — a real round trip.
-9. `NOTINN_TEST_*` set → `deno task test:integration` → criteria 1 and 2 close.
-   Criterion 6 is already closed by the replay.
+8. **Pending:** `deno task webhook:info` — confirm the registered URL, allowed updates, and
+   secret token.
+9. **Pending:** `deno task smoke` — a real round trip.
+10. **Pending:** `NOTINN_TEST_*` set → run the integration and deployed e2e suites, including
+    one text and one synthetic audio job through PGMQ.
 
 ---
 
-## Recommended next prompt
+## Recommended next step
 
-> Phase 1: the text note MVP, per blueprint §25. Text and forwarded-message
-> ingestion, the five text templates (Clean Note, Short Summary, Detailed Summary,
-> Key Points, Action Items), structured-output validation, save/regenerate/recent/
-> delete, and usage events. Add the Gemini Flash provider behind the
-> `_shared/providers/` seam — one concrete provider plus a fake, no more. Add the
-> once-per-chat reply to a non-private chat that
-> [ADR 0001](ADR/0001-blueprint-deviations.md) §3 schedules for this phase, and the
-> guard that makes it safe. Do not add voice, documents, search, billing or a
-> dashboard; §25 puts voice in Phase 2 and images and documents in Phase 3. Start
-> by telling me which Phase 0 decisions this makes wrong.
-
-Phase 0 has no prompt outstanding. Its only remaining item is a credential step:
-`NOTINN_TEST_*`, which closes exit criteria 1 and 2.
+Register the Telegram webhook from a local ignored `.env`, then run one real text
+plus one voice-note round trip. The registration command now carries only the
+three Telegram variables; it does not load the Supabase service-role key. Commit
+and push remain separate repository operations.

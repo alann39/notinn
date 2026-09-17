@@ -44,6 +44,7 @@ const WEBHOOK_SECRET = "synthetic_webhook_secret_value";
 const BOT_TOKEN = "123456789:AAFakeTokenValueThatIsLongEnoughToMatch";
 const GEMINI_API_KEY = "synthetic-gemini-api-key-value";
 const GEMINI_MODEL = "gemini-synthetic-flash";
+const INTERNAL_WORKER_SECRET = "synthetic-internal-worker-secret-value";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const JOB_ID = "22222222-2222-4222-8222-222222222222";
 
@@ -158,6 +159,7 @@ async function runDelivery(
           job_state: "QUEUED",
           chat_id: 900_000_001,
           message_id: 1,
+          queue_message_id: 900_000_003,
         }];
 
         return Promise.resolve(
@@ -190,6 +192,7 @@ async function runDelivery(
       AI_PROVIDER: "gemini",
       GEMINI_API_KEY: GEMINI_API_KEY,
       GEMINI_MODEL: GEMINI_MODEL,
+      INTERNAL_WORKER_SECRET,
       NOTINN_ENV: "local",
     }),
     repository: new IngestionRepository(client),
@@ -247,6 +250,7 @@ for (const kind of ["text", "document", "photo", "voice"] as const) {
             job_state: "QUEUED",
             chat_id: 900_000_001,
             message_id: 1,
+            queue_message_id: 900_000_003,
           }],
         },
     });

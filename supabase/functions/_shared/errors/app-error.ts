@@ -98,6 +98,11 @@ export class AppError extends Error {
     return new AppError(ERROR_CODES.INPUT_TOO_LONG, { internalDetail });
   }
 
+  /** Telegram no longer has the upload referenced by the queued job. */
+  static fileUnavailable(internalDetail?: string, cause?: unknown): AppError {
+    return new AppError(ERROR_CODES.FILE_UNAVAILABLE, { internalDetail, cause });
+  }
+
   /** A webhook request did not carry a valid secret. */
   static unauthorized(internalDetail?: string): AppError {
     return new AppError(ERROR_CODES.UNAUTHORIZED, { internalDetail });
@@ -106,6 +111,11 @@ export class AppError extends Error {
   /** The account exists but may not act. */
   static userNotActive(internalDetail?: string): AppError {
     return new AppError(ERROR_CODES.USER_NOT_ACTIVE, { internalDetail });
+  }
+
+  /** The durable worker has used every configured attempt. */
+  static retriesExhausted(internalDetail?: string): AppError {
+    return new AppError(ERROR_CODES.RETRIES_EXHAUSTED, { internalDetail });
   }
 
   // --- Upstream and pipeline ----------------------------------------------

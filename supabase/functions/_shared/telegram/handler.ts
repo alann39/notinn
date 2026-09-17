@@ -2,14 +2,24 @@ import { MAX_WEBHOOK_BODY_BYTES } from "../config/constants.ts";
 import type { WebhookConfig } from "../config/env.ts";
 import { AppError, toAppError } from "../errors/app-error.ts";
 import { acceptedResponse, errorResponse } from "../errors/http.ts";
+import { definitionFor, ERROR_CODES } from "../errors/taxonomy.ts";
 import { resolveRequestId } from "../observability/correlation.ts";
 import type { Logger } from "../observability/logger.ts";
 import { sha256Hex } from "../security/hashing.ts";
 import { assertWebhookSecret } from "../security/webhook-secret.ts";
 import type { IngestionRepository } from "../repositories/ingestion.repository.ts";
+import type { NotesRepository } from "../repositories/notes.repository.ts";
+import type { ProcessingJobsRepository } from "../repositories/processing-jobs.repository.ts";
+import type { RejectedChatsRepository } from "../repositories/rejected-chats.repository.ts";
+import type { TemplatesRepository } from "../repositories/templates.repository.ts";
+import type { UsageRepository } from "../repositories/usage.repository.ts";
+import type { NoteAIProvider } from "../providers/note-ai.provider.ts";
+import { handleCallback } from "../services/callback.service.ts";
+import { handleCommand } from "../services/command.service.ts";
 import { ingestMessage } from "../services/ingestion.service.ts";
 import { classifyUpdate } from "./parse-update.ts";
 import { TelegramUpdateSchema } from "./schema.ts";
+import type { TelegramGateway } from "./client.ts";
 
 /**
  * The Telegram webhook request handler.
@@ -37,6 +47,24 @@ export interface WebhookDependencies {
   readonly config: WebhookConfig;
   readonly repository: IngestionRepository;
   readonly logger: Logger;
+  /**
+   * Phase 1 application services. Optional only for the Phase 0 boundary tests;
+   * the production composition root always supplies it.
+   */
+  readonly phase1?: {
+    readonly notes: NotesRepository;
+    readonly jobs: ProcessingJobsRepository;
+    readonly rejectedChats: RejectedChatsRepository;
+    readonly templates: TemplatesRepository;
+    readonly usage: UsageRepository;
+    readonly provider: Pick<NoteAIProvider, "generateText">;
+    readonly telegram: Pick<
+      TelegramGateway,
+      "sendMessage" | "answerCallbackQuery" | "editMessageReplyMarkup" | "editMessageText"
+    >;
+    /** Schedules a non-blocking worker call. The durable queue remains authoritative. */
+    readonly triggerWorker?: (jobId: string) => void;
+  };
 }
 
 /** Reject anything that is not a POST before touching the request body. */
@@ -128,8 +156,103 @@ export async function handleWebhookRequest(
       return acceptedResponse();
     }
 
+    if (classification.kind === "rejected") {
+      if (deps.phase1 !== undefined) {
+        const claimed = await deps.phase1.rejectedChats.claimReply(
+          classification.chat.telegramChatId,
+        );
+        if (claimed) {
+          await deps.phase1.telegram.sendMessage(
+            classification.chat.telegramChatId,
+            definitionFor(ERROR_CODES.NON_PRIVATE_CHAT).publicMessage,
+          );
+        }
+      }
+      log.info("webhook.rejected", {
+        update_id: classification.chat.updateId,
+        chat_id: classification.chat.telegramChatId,
+        reason: "non_private_chat",
+        source: classification.chat.chatType,
+      });
+      return acceptedResponse();
+    }
+
+    if (classification.kind === "command") {
+      if (deps.phase1 !== undefined) {
+        await handleCommand(classification.message, {
+          users: repository,
+          notes: deps.phase1.notes,
+          telegram: deps.phase1.telegram,
+        });
+      }
+      log.info("webhook.command", {
+        update_id: classification.message.updateId,
+        chat_id: classification.message.telegramChatId,
+      });
+      return acceptedResponse();
+    }
+
+    if (classification.kind === "callback") {
+      if (deps.phase1 !== undefined) {
+        await handleCallback(classification.callback, {
+          users: repository,
+          notes: deps.phase1.notes,
+          templates: deps.phase1.templates,
+          usage: deps.phase1.usage,
+          provider: deps.phase1.provider,
+          telegram: deps.phase1.telegram,
+          logger: log,
+        });
+      }
+      return acceptedResponse();
+    }
+
     // --- 4. Ingestion -----------------------------------------------------
-    await ingestMessage(classification.message, digest, { repository, logger: log });
+    const ingestion = await ingestMessage(classification.message, digest, {
+      repository,
+      logger: log,
+    });
+
+    if (ingestion.outcome === "user_not_active" && deps.phase1 !== undefined) {
+      await deps.phase1.telegram.sendMessage(
+        classification.message.telegramChatId,
+        AppError.userNotActive().publicMessage,
+      );
+    }
+
+    if (ingestion.outcome === "accepted" && ingestion.jobId !== null && deps.phase1 !== undefined) {
+      try {
+        const status = await deps.phase1.telegram.sendMessage(
+          classification.message.telegramChatId,
+          classification.message.inputType === "voice" ||
+            classification.message.inputType === "audio"
+            ? "Got it — transcribing your audio now."
+            : "Got it — organizing your note now.",
+        );
+        await deps.phase1.jobs.setStatusMessage(
+          ingestion.userId,
+          ingestion.jobId,
+          status.messageId,
+        );
+      } catch (thrown) {
+        const error = toAppError(thrown);
+        // The job is already durable and queued. A status-message failure must
+        // not make Telegram redeliver the original update and cannot lose the
+        // work; the worker falls back to sending a fresh result message.
+        log[error.logLevel]("job.status_message_failed", {
+          update_id: classification.message.updateId,
+          job_id: ingestion.jobId,
+          user_id: ingestion.userId,
+          error_code: error.code,
+          error_detail: error.internalDetail,
+        });
+      }
+
+      // The queue write committed before this point. This call is only the
+      // low-latency nudge; if the isolate disappears or the request fails, the
+      // recovery scheduler will read the same durable pgmq message later.
+      deps.phase1.triggerWorker?.(ingestion.jobId);
+    }
 
     log.info("webhook.accepted", {
       update_id: classification.message.updateId,

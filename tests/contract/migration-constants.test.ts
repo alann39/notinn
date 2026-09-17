@@ -40,6 +40,9 @@ const REPOSITORY_DIR = new URL(
 );
 const INGESTION_REPOSITORY = new URL("ingestion.repository.ts", REPOSITORY_DIR);
 const NOTES_REPOSITORY = new URL("notes.repository.ts", REPOSITORY_DIR);
+const REJECTED_CHATS_REPOSITORY = new URL("rejected-chats.repository.ts", REPOSITORY_DIR);
+const TEMPLATES_REPOSITORY = new URL("templates.repository.ts", REPOSITORY_DIR);
+const PROCESSING_JOBS_REPOSITORY = new URL("processing-jobs.repository.ts", REPOSITORY_DIR);
 
 /** Read every migration, concatenated, with its filename attached for messages. */
 async function loadMigrations(): Promise<{ name: string; sql: string }[]> {
@@ -70,6 +73,10 @@ const FILE_SUFFIXES = [
   "phase1_rejected_chats.sql",
   "phase1_template_schemas.sql",
   "phase1_note_functions.sql",
+  "phase1_pipeline_functions.sql",
+  "phase2_durable_queue_worker.sql",
+  "phase2_recovery_extensions.sql",
+  "phase2_pg_net_least_privilege.sql",
 ] as const;
 
 /** Read the one migration whose filename ends with `suffix`. */
@@ -87,7 +94,10 @@ const ENUMS_SQL = await loadMigration("phase0_enums_and_helpers.sql");
 const TEMPLATES_SQL = await loadMigration("phase0_templates.sql");
 const JOBS_SQL = await loadMigration("phase0_processing_jobs.sql");
 const INGESTION_SQL = await loadMigration("phase0_ingestion_functions.sql");
+const REJECTED_CHATS_SQL = await loadMigration("phase1_rejected_chats.sql");
 const NOTE_FUNCTIONS_SQL = await loadMigration("phase1_note_functions.sql");
+const PIPELINE_FUNCTIONS_SQL = await loadMigration("phase1_pipeline_functions.sql");
+const PHASE2_WORKER_SQL = await loadMigration("phase2_durable_queue_worker.sql");
 const ALL_MIGRATIONS = await loadMigrations();
 const ALL_SQL = ALL_MIGRATIONS.map((migration) => migration.sql).join("\n");
 
@@ -598,7 +608,8 @@ function declaredParameters(
  */
 const RPC_CONTRACTS = [
   [INGESTION_REPOSITORY, "ensure_telegram_user", INGESTION_SQL],
-  [INGESTION_REPOSITORY, "accept_telegram_update", INGESTION_SQL],
+  [INGESTION_REPOSITORY, "accept_and_enqueue_telegram_update", PHASE2_WORKER_SQL],
+  [INGESTION_REPOSITORY, "telegram_update_digest_matches", PIPELINE_FUNCTIONS_SQL],
   [NOTES_REPOSITORY, "persist_note", NOTE_FUNCTIONS_SQL],
   [NOTES_REPOSITORY, "regenerate_note_output", NOTE_FUNCTIONS_SQL],
   [NOTES_REPOSITORY, "set_current_output", NOTE_FUNCTIONS_SQL],
@@ -606,6 +617,12 @@ const RPC_CONTRACTS = [
   [NOTES_REPOSITORY, "delete_note", NOTE_FUNCTIONS_SQL],
   [NOTES_REPOSITORY, "list_recent_saved_notes", NOTE_FUNCTIONS_SQL],
   [NOTES_REPOSITORY, "find_note_for_regeneration", NOTE_FUNCTIONS_SQL],
+  [NOTES_REPOSITORY, "find_note_for_display", PIPELINE_FUNCTIONS_SQL],
+  [REJECTED_CHATS_REPOSITORY, "claim_rejected_chat_reply", REJECTED_CHATS_SQL],
+  [TEMPLATES_REPOSITORY, "find_template_for_generation", PIPELINE_FUNCTIONS_SQL],
+  [PROCESSING_JOBS_REPOSITORY, "read_processing_queue", PHASE2_WORKER_SQL],
+  [PROCESSING_JOBS_REPOSITORY, "find_processing_queue_message_id", PHASE2_WORKER_SQL],
+  [PROCESSING_JOBS_REPOSITORY, "claim_processing_job", PHASE2_WORKER_SQL],
 ] as const;
 
 for (const [repository, name, sql] of RPC_CONTRACTS) {
@@ -650,8 +667,9 @@ for (const [repository, name, sql] of RPC_CONTRACTS) {
 const OUTCOME_VOCABULARIES = [
   {
     repository: INGESTION_REPOSITORY,
-    fn: "accept_telegram_update",
-    sql: INGESTION_SQL,
+    fn: "accept_and_enqueue_telegram_update",
+    // The wrapper forwards the Phase 0 ingestion function's outcome verbatim.
+    sql: `${PHASE2_WORKER_SQL}\n${INGESTION_SQL}`,
     outcomes: ["accepted", "duplicate", "user_not_active"],
   },
   {

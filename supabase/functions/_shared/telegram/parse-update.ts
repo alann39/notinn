@@ -2,7 +2,7 @@ import { type InputType, MAX_PASTED_TEXT_CHARS } from "../config/constants.ts";
 import type { SystemTemplateKey } from "../config/constants.ts";
 import { documentInputType, routeInput, type RoutingReason } from "../services/input-routing.ts";
 import { normaliseSourceText } from "../services/text-normalisation.ts";
-import type { TelegramMessage, TelegramUpdate } from "./schema.ts";
+import type { TelegramMessage, TelegramUpdate, TelegramUser } from "./schema.ts";
 
 /**
  * Classify an incoming Telegram update.
@@ -22,7 +22,6 @@ import type { TelegramMessage, TelegramUpdate } from "./schema.ts";
 
 /** Why an update was not acted on. Every value is a safe, fixed string. */
 export type IgnoreReason =
-  | "non_private_chat"
   | "from_bot"
   | "no_sender"
   | "no_message"
@@ -32,15 +31,39 @@ export type IgnoreReason =
   | "unsupported_document_type"
   | "source_text_too_long";
 
-/** A message Notinn will turn into a job. */
-export interface AcceptedMessage {
-  readonly updateId: number;
-
-  // --- Sender --------------------------------------------------------------
+/** The Telegram identity fields every user-scoped action needs. */
+export interface TelegramIdentity {
   readonly telegramUserId: number;
   readonly telegramChatId: number;
   readonly telegramUsername: string | null;
   readonly displayName: string | null;
+}
+
+/** A slash command sent in a private chat. */
+export interface CommandMessage extends TelegramIdentity {
+  readonly updateId: number;
+  readonly messageId: number;
+  readonly command: string;
+}
+
+/** An inline-button action sent in a private chat. */
+export interface CallbackActionRequest extends TelegramIdentity {
+  readonly updateId: number;
+  readonly callbackQueryId: string;
+  readonly messageId: number;
+  readonly data: string;
+}
+
+/** A non-private chat that receives the fixed refusal at most once. */
+export interface RejectedChat {
+  readonly updateId: number;
+  readonly telegramChatId: number;
+  readonly chatType: "group" | "supergroup" | "channel";
+}
+
+/** A message Notinn will turn into a job. */
+export interface AcceptedMessage extends TelegramIdentity {
+  readonly updateId: number;
 
   // --- Message -------------------------------------------------------------
   readonly messageId: number;
@@ -67,6 +90,9 @@ export interface AcceptedMessage {
 
 export type UpdateClassification =
   | { readonly kind: "accepted"; readonly message: AcceptedMessage }
+  | { readonly kind: "command"; readonly message: CommandMessage }
+  | { readonly kind: "callback"; readonly callback: CallbackActionRequest }
+  | { readonly kind: "rejected"; readonly chat: RejectedChat }
   | {
     readonly kind: "ignored";
     readonly reason: IgnoreReason;
@@ -112,16 +138,28 @@ function isForwarded(message: TelegramMessage): boolean {
 }
 
 /** Best-effort human name for the sender, for the user's own records. */
-function displayNameOf(message: TelegramMessage): string | null {
-  const from = message.from;
-  if (from === undefined) return null;
-
+function displayNameOf(from: TelegramUser): string | null {
   const parts = [from.first_name, from.last_name].filter(
     (part): part is string => typeof part === "string" && part.trim() !== "",
   );
 
   const name = parts.join(" ").trim();
   return name === "" ? null : name;
+}
+
+function identityOf(from: TelegramUser, chatId: number): TelegramIdentity {
+  return {
+    telegramUserId: from.id,
+    telegramChatId: chatId,
+    telegramUsername: from.username ?? null,
+    displayName: displayNameOf(from),
+  };
+}
+
+/** A Telegram command without arguments, normalised to lower case. */
+function commandOf(text: string): string | null {
+  const match = /^\/([a-z0-9_]+)(?:@[a-z0-9_]+)?(?:\s|$)/i.exec(text);
+  return match?.[1]?.toLowerCase() ?? null;
 }
 
 /**
@@ -159,6 +197,41 @@ function ignored(
 export function classifyUpdate(update: TelegramUpdate): UpdateClassification {
   const updateId = update.update_id;
 
+  const callback = update.callback_query;
+  if (callback !== undefined) {
+    const message = callback.message;
+    if (message === undefined) {
+      return ignored("unsupported_update_kind", "inline callback_query", updateId);
+    }
+    if (message.chat.type !== "private") {
+      return {
+        kind: "rejected",
+        chat: {
+          updateId,
+          telegramChatId: message.chat.id,
+          chatType: message.chat.type,
+        },
+      };
+    }
+    if (callback.from.is_bot) {
+      return ignored("from_bot", "callback sender is a bot", updateId);
+    }
+    if (callback.data === undefined) {
+      return ignored("unsupported_content", "callback carried no data", updateId);
+    }
+
+    return {
+      kind: "callback",
+      callback: {
+        updateId,
+        callbackQueryId: callback.id,
+        messageId: message.message_id,
+        data: callback.data,
+        ...identityOf(callback.from, message.chat.id),
+      },
+    };
+  }
+
   const message = update.message;
   if (message === undefined) {
     // Name the kind when it is one we recognise, so the log distinguishes
@@ -168,7 +241,6 @@ export function classifyUpdate(update: TelegramUpdate): UpdateClassification {
         "edited_message",
         "channel_post",
         "edited_channel_post",
-        "callback_query",
         "inline_query",
         "my_chat_member",
       ] as const
@@ -181,7 +253,14 @@ export function classifyUpdate(update: TelegramUpdate): UpdateClassification {
 
   // --- Private chats only (blueprint 16.4) ---------------------------------
   if (message.chat.type !== "private") {
-    return ignored("non_private_chat", message.chat.type, updateId);
+    return {
+      kind: "rejected",
+      chat: {
+        updateId,
+        telegramChatId: message.chat.id,
+        chatType: message.chat.type,
+      },
+    };
   }
 
   // --- No bots (blueprint 16.4) --------------------------------------------
@@ -201,10 +280,7 @@ export function classifyUpdate(update: TelegramUpdate): UpdateClassification {
   }
 
   const sender = {
-    telegramUserId: from.id,
-    telegramChatId: message.chat.id,
-    telegramUsername: from.username ?? null,
-    displayName: displayNameOf(message),
+    ...identityOf(from, message.chat.id),
     messageId: message.message_id,
   };
 
@@ -214,6 +290,20 @@ export function classifyUpdate(update: TelegramUpdate): UpdateClassification {
     // empty or oversized. The bounds are read from the normalised form rather
     // than the raw body, so a note is measured as it will be stored.
     const normalised = normaliseSourceText(message.text ?? "");
+
+    if (normalised.kind === "text") {
+      const command = commandOf(normalised.text);
+      if (command !== null) {
+        return {
+          kind: "command",
+          message: {
+            updateId,
+            ...sender,
+            command,
+          },
+        };
+      }
+    }
 
     if (normalised.kind === "empty") {
       return ignored("empty_message", "text was empty or whitespace", updateId);

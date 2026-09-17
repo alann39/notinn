@@ -17,8 +17,8 @@ import { structuredNoteFixtureFor } from "../fixtures/notes/builders.ts";
  *
  * Blueprint 12.4's contract exists in two copies, and both are needed:
  *
- *   * The JSON Schema in migration `20260917120100_phase1_template_schemas.sql` is
- *     what the Gemini adapter hands the model as `responseSchema`. It constrains
+ *   * The JSON Schema in migration `20260917123607_phase1_template_schemas.sql` is
+ *     what the Gemini adapter hands the model as its response schema. It constrains
  *     generation, which is cheap, and it is written in a dialect that cannot
  *     express a pattern or a numeric range — so it is deliberately the weaker of
  *     the two.
@@ -190,14 +190,15 @@ Deno.test("the action item's five fields match the contract's", () => {
 });
 
 Deno.test("the three fields that may be null are the three the contract allows", () => {
-  // Blueprint 12.4's first rule reaches the provider as `nullable`. A provider
+  // Blueprint 12.4's first rule reaches the provider through JSON Schema's
+  // string-or-null type array. A provider
   // schema that omits it invites a model to invent an owner rather than say null,
   // which is the failure the rule exists to prevent.
   const actionItems = schema.properties.action_items as {
-    items: { properties: Record<string, { nullable?: boolean }> };
+    items: { properties: Record<string, { type?: string | string[] }> };
   };
   const nullable = Object.entries(actionItems.items.properties)
-    .filter(([, definition]) => definition.nullable === true)
+    .filter(([, definition]) => Array.isArray(definition.type) && definition.type.includes("null"))
     .map(([name]) => name)
     .sort();
 

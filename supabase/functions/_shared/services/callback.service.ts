@@ -1,0 +1,302 @@
+import {
+  type GenerationReason,
+  SYSTEM_TEMPLATE_KEYS,
+  type SystemTemplateKey,
+} from "../config/constants.ts";
+import { AppError, toAppError } from "../errors/app-error.ts";
+import type { Logger } from "../observability/logger.ts";
+import type { NoteAIProvider } from "../providers/note-ai.provider.ts";
+import type { IngestionRepository } from "../repositories/ingestion.repository.ts";
+import type { NotesRepository } from "../repositories/notes.repository.ts";
+import type { TemplatesRepository } from "../repositories/templates.repository.ts";
+import type { UsageRepository } from "../repositories/usage.repository.ts";
+import { actionToken, decodeCallbackPayload } from "../schemas/callback.ts";
+import { parseStructuredNote, STRUCTURED_NOTE_VERSION } from "../schemas/structured-note.ts";
+import type { TelegramGateway } from "../telegram/client.ts";
+import type { CallbackActionRequest } from "../telegram/parse-update.ts";
+import {
+  buildDeleteConfirmationKeyboard,
+  buildNoteKeyboard,
+  renderNoteOutput,
+} from "./note-rendering.ts";
+
+const NOTE_GONE = "That note is no longer available.";
+
+export interface CallbackDependencies {
+  readonly users: Pick<IngestionRepository, "ensureUser">;
+  readonly notes: Pick<
+    NotesRepository,
+    | "findNoteForDisplay"
+    | "findNoteForRegeneration"
+    | "regenerateNoteOutput"
+    | "setCurrentOutput"
+    | "setNoteSaved"
+    | "deleteNote"
+  >;
+  readonly templates: Pick<TemplatesRepository, "findForGeneration" | "listSystemLabels">;
+  readonly usage: Pick<UsageRepository, "recordGeneration">;
+  readonly provider: Pick<NoteAIProvider, "generateText">;
+  readonly telegram: Pick<
+    TelegramGateway,
+    "sendMessage" | "answerCallbackQuery" | "editMessageReplyMarkup" | "editMessageText"
+  >;
+  readonly logger: Logger;
+}
+
+function systemTemplateKey(value: string): SystemTemplateKey {
+  if (!(SYSTEM_TEMPLATE_KEYS as readonly string[]).includes(value)) {
+    throw AppError.internal("stored note names an unknown system template");
+  }
+  return value as SystemTemplateKey;
+}
+
+async function sendCurrentNote(
+  callback: CallbackActionRequest,
+  userId: string,
+  noteId: string,
+  deps: CallbackDependencies,
+): Promise<boolean> {
+  const display = await deps.notes.findNoteForDisplay(userId, noteId);
+  if (display === null) return false;
+
+  const note = parseStructuredNote(display.contentJson, AppError.outputValidationFailed);
+  const rendered = renderNoteOutput(note);
+  const labels = await deps.templates.listSystemLabels();
+  const keyboard = {
+    inline_keyboard: buildNoteKeyboard({
+      noteId,
+      templateKey: systemTemplateKey(display.templateKey),
+      isSaved: display.isSaved,
+      templateLabels: labels,
+    }),
+  };
+
+  for (let index = 0; index < rendered.pages.length; index += 1) {
+    const isLast = index === rendered.pages.length - 1;
+    await deps.telegram.sendMessage(callback.telegramChatId, rendered.pages[index] ?? "", {
+      parseMode: "HTML",
+      ...(isLast ? { inlineKeyboard: keyboard } : {}),
+    });
+  }
+  return true;
+}
+
+async function regenerate(
+  callback: CallbackActionRequest,
+  userId: string,
+  noteId: string,
+  targetTemplate: SystemTemplateKey | null,
+  reason: GenerationReason,
+  deps: CallbackDependencies,
+): Promise<boolean> {
+  const source = await deps.notes.findNoteForRegeneration(userId, noteId);
+  if (source === null || source.sourceText === null) return false;
+
+  const templateKey = targetTemplate ?? systemTemplateKey(source.templateKey);
+  const template = await deps.templates.findForGeneration(userId, templateKey);
+  const generation = await deps.provider.generateText({
+    sourceText: source.sourceText,
+    template,
+    templateKey,
+    reason,
+    outputLanguage: source.language,
+  });
+  const rendered = renderNoteOutput(generation.note);
+
+  await deps.usage.recordGeneration({
+    userId,
+    jobId: null,
+    provider: generation.provider,
+    model: generation.model,
+    inputTokens: generation.inputTokens,
+    outputTokens: generation.outputTokens,
+    providerRequestId: generation.providerRequestId,
+  });
+
+  const output = await deps.notes.regenerateNoteOutput({
+    userId,
+    noteId,
+    templateKey,
+    schemaVersion: STRUCTURED_NOTE_VERSION,
+    contentJson: generation.note,
+    renderedText: rendered.html,
+    provider: generation.provider,
+    model: generation.model,
+    generationReason: reason,
+  });
+  if (output.outcome !== "created" || output.outputId === null) return false;
+
+  const display = await deps.notes.findNoteForDisplay(userId, noteId);
+  if (display === null) return false;
+  const labels = await deps.templates.listSystemLabels();
+  const keyboard = {
+    inline_keyboard: buildNoteKeyboard({
+      noteId,
+      templateKey,
+      isSaved: display.isSaved,
+      templateLabels: labels,
+    }),
+  };
+
+  for (let index = 0; index < rendered.pages.length; index += 1) {
+    const isLast = index === rendered.pages.length - 1;
+    await deps.telegram.sendMessage(callback.telegramChatId, rendered.pages[index] ?? "", {
+      parseMode: "HTML",
+      ...(isLast ? { inlineKeyboard: keyboard } : {}),
+    });
+  }
+
+  const current = await deps.notes.setCurrentOutput(userId, noteId, output.outputId);
+  if (current.outcome !== "updated") {
+    throw AppError.internal("delivered regeneration could not become current");
+  }
+
+  return true;
+}
+
+/** Resolve ownership and execute one decoded Telegram button action. */
+export async function handleCallback(
+  callback: CallbackActionRequest,
+  deps: CallbackDependencies,
+): Promise<void> {
+  let payload;
+  try {
+    payload = decodeCallbackPayload(callback.data);
+  } catch {
+    await deps.telegram.answerCallbackQuery(callback.callbackQueryId, {
+      text: "That action is no longer available.",
+    });
+    return;
+  }
+
+  const action = actionToken(payload.action);
+
+  // Stop Telegram's progress indicator before ownership resolution or any
+  // provider call. Follow-up failures are sent as ordinary messages because a
+  // callback can be answered only once.
+  await deps.telegram.answerCallbackQuery(callback.callbackQueryId);
+
+  const userId = await deps.users.ensureUser(callback);
+  const log = deps.logger.child({
+    update_id: callback.updateId,
+    user_id: userId,
+    note_id: payload.resourceId,
+  });
+
+  try {
+    const noteId = payload.resourceId;
+    let found = true;
+
+    switch (payload.action.kind) {
+      case "save":
+      case "unsave": {
+        const saved = payload.action.kind === "save";
+        const result = await deps.notes.setNoteSaved(userId, noteId, saved);
+        if (result.outcome !== "updated") {
+          found = false;
+          break;
+        }
+        const display = await deps.notes.findNoteForDisplay(userId, noteId);
+        if (display === null) {
+          found = false;
+          break;
+        }
+        const labels = await deps.templates.listSystemLabels();
+        await deps.telegram.editMessageReplyMarkup(
+          callback.telegramChatId,
+          callback.messageId,
+          {
+            inline_keyboard: buildNoteKeyboard({
+              noteId,
+              templateKey: systemTemplateKey(display.templateKey),
+              isSaved: saved,
+              templateLabels: labels,
+            }),
+          },
+        );
+        break;
+      }
+      case "delete": {
+        const display = await deps.notes.findNoteForDisplay(userId, noteId);
+        if (display === null) {
+          found = false;
+          break;
+        }
+        await deps.telegram.editMessageReplyMarkup(
+          callback.telegramChatId,
+          callback.messageId,
+          { inline_keyboard: buildDeleteConfirmationKeyboard(noteId) },
+        );
+        break;
+      }
+      case "delete_confirm": {
+        const result = await deps.notes.deleteNote(userId, noteId);
+        if (result.outcome !== "deleted") {
+          found = false;
+          break;
+        }
+        await deps.telegram.editMessageText(
+          callback.telegramChatId,
+          callback.messageId,
+          "Note deleted.",
+        );
+        break;
+      }
+      case "cancel_delete": {
+        const display = await deps.notes.findNoteForDisplay(userId, noteId);
+        if (display === null) {
+          found = false;
+          break;
+        }
+        const labels = await deps.templates.listSystemLabels();
+        await deps.telegram.editMessageReplyMarkup(
+          callback.telegramChatId,
+          callback.messageId,
+          {
+            inline_keyboard: buildNoteKeyboard({
+              noteId,
+              templateKey: systemTemplateKey(display.templateKey),
+              isSaved: display.isSaved,
+              templateLabels: labels,
+            }),
+          },
+        );
+        break;
+      }
+      case "show":
+        found = await sendCurrentNote(callback, userId, noteId, deps);
+        break;
+      case "shorter":
+        found = await regenerate(callback, userId, noteId, null, "shorter", deps);
+        break;
+      case "detailed":
+        found = await regenerate(callback, userId, noteId, null, "detailed", deps);
+        break;
+      case "format":
+        found = await regenerate(
+          callback,
+          userId,
+          noteId,
+          payload.action.templateKey,
+          "custom",
+          deps,
+        );
+        break;
+    }
+
+    if (!found) {
+      await deps.telegram.sendMessage(callback.telegramChatId, NOTE_GONE);
+      return;
+    }
+
+    log.info("callback.completed", { callback_action: action, outcome: "completed" });
+  } catch (thrown) {
+    const error = toAppError(thrown);
+    log[error.logLevel]("callback.failed", {
+      callback_action: action,
+      error_code: error.code,
+      error_detail: error.internalDetail,
+    });
+    await deps.telegram.sendMessage(callback.telegramChatId, error.publicMessage);
+  }
+}

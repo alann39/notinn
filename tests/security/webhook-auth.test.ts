@@ -35,7 +35,7 @@ import {
  * implementation that authenticated *after* writing a row.
  *
  * What is deliberately NOT proven here is deduplication. `update_id` uniqueness
- * is enforced by a unique index inside `accept_telegram_update`; a fake
+ * is enforced by a unique index inside `accept_and_enqueue_telegram_update`; a fake
  * transport can only assert that the application asks the database to dedup, not
  * that the database does. That proof needs a real instance and lives in
  * tests/integration/.
@@ -47,6 +47,7 @@ const WEBHOOK_SECRET = "synthetic_webhook_secret_value";
 const BOT_TOKEN = "123456789:AAFakeTokenValueThatIsLongEnoughToMatch";
 const GEMINI_API_KEY = "synthetic-gemini-api-key-value";
 const GEMINI_MODEL = "gemini-synthetic-flash";
+const INTERNAL_WORKER_SECRET = "synthetic-internal-worker-secret-value";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const JOB_ID = "22222222-2222-4222-8222-222222222222";
@@ -106,7 +107,7 @@ function stubTransport(respond: (fn: string, args: Record<string, unknown>) => R
 function happyPath(fn: string): RpcResponse {
   if (fn === "ensure_telegram_user") return { status: 200, body: USER_ID };
 
-  if (fn === "accept_telegram_update") {
+  if (fn === "accept_and_enqueue_telegram_update") {
     return {
       status: 200,
       body: [{
@@ -117,6 +118,7 @@ function happyPath(fn: string): RpcResponse {
         job_state: "QUEUED",
         chat_id: SYNTHETIC_ID_BASE + 1,
         message_id: SYNTHETIC_ID_BASE + 2,
+        queue_message_id: SYNTHETIC_ID_BASE + 3,
       }],
     };
   }
@@ -166,6 +168,7 @@ async function deliver(
     AI_PROVIDER: "gemini",
     GEMINI_API_KEY: GEMINI_API_KEY,
     GEMINI_MODEL: GEMINI_MODEL,
+    INTERNAL_WORKER_SECRET,
     NOTINN_ENV: "local",
   });
 
@@ -320,8 +323,10 @@ for (const [description, build] of IGNORED_DELIVERIES) {
     assertEquals(response.status, 200, `${description} was not acknowledged`);
     assertEquals(calls, [], `${description} reached the database`);
 
-    const ignored = lines.filter((line) => line.includes("webhook.ignored"));
-    assertEquals(ignored.length, 1, `${description} did not log exactly one ignore`);
+    const ignored = lines.filter((line) =>
+      line.includes("webhook.ignored") || line.includes("webhook.rejected")
+    );
+    assertEquals(ignored.length, 1, `${description} did not log exactly one drop`);
     assert(
       JSON.parse(ignored[0] as string).reason !== undefined,
       "the ignore was logged without a reason",
@@ -347,7 +352,10 @@ Deno.test("a private text message is accepted and creates one job", async () => 
   assertEquals(response.status, 200);
   assertEquals(await response.json(), { ok: true });
 
-  assertEquals(calls.map((call) => call.fn), ["ensure_telegram_user", "accept_telegram_update"]);
+  assertEquals(calls.map((call) => call.fn), [
+    "ensure_telegram_user",
+    "accept_and_enqueue_telegram_update",
+  ]);
   assertEquals(calls[1]?.args["p_update_id"], 900_000_017);
   assertEquals(calls[1]?.args["p_template_key"], "clean_note");
   assertEquals(calls[1]?.args["p_input_type"], "text");
@@ -366,7 +374,10 @@ Deno.test("each accepted delivery creates exactly one job", async () => {
   // One update, one accept call. Two would be a duplicate job for one message.
   const { calls } = await deliver(textUpdate());
 
-  assertEquals(calls.filter((call) => call.fn === "accept_telegram_update").length, 1);
+  assertEquals(
+    calls.filter((call) => call.fn === "accept_and_enqueue_telegram_update").length,
+    1,
+  );
 });
 
 Deno.test("a replayed update is acknowledged without being reported as failed", async () => {
@@ -376,23 +387,28 @@ Deno.test("a replayed update is acknowledged without being reported as failed", 
   // guarantee and is proven against a real instance in tests/integration/.
   const { response, calls, lines } = await deliver(textUpdate(), {
     respond: (fn) =>
-      fn === "ensure_telegram_user" ? { status: 200, body: USER_ID } : {
-        status: 200,
-        body: [{
-          update_id: SYNTHETIC_ID_BASE + 1,
-          user_id: USER_ID,
-          job_id: JOB_ID,
-          outcome: "duplicate",
-          job_state: "QUEUED",
-          chat_id: SYNTHETIC_ID_BASE + 1,
-          message_id: SYNTHETIC_ID_BASE + 2,
-        }],
-      },
+      fn === "ensure_telegram_user"
+        ? { status: 200, body: USER_ID }
+        : fn === "telegram_update_digest_matches"
+        ? { status: 200, body: true }
+        : {
+          status: 200,
+          body: [{
+            update_id: SYNTHETIC_ID_BASE + 1,
+            user_id: USER_ID,
+            job_id: JOB_ID,
+            outcome: "duplicate",
+            job_state: "QUEUED",
+            chat_id: SYNTHETIC_ID_BASE + 1,
+            message_id: SYNTHETIC_ID_BASE + 2,
+            queue_message_id: SYNTHETIC_ID_BASE + 3,
+          }],
+        },
   });
 
   assertEquals(response.status, 200);
   assertEquals(await response.json(), { ok: true });
-  assertEquals(calls.length, 2);
+  assertEquals(calls.length, 3);
 
   for (const line of lines) {
     assertEquals(
@@ -408,18 +424,23 @@ Deno.test("a reply to a duplicate is byte-identical to a reply to a new update",
   const accepted = await deliver(textUpdate());
   const duplicate = await deliver(textUpdate(), {
     respond: (fn) =>
-      fn === "ensure_telegram_user" ? { status: 200, body: USER_ID } : {
-        status: 200,
-        body: [{
-          update_id: SYNTHETIC_ID_BASE + 1,
-          user_id: USER_ID,
-          job_id: JOB_ID,
-          outcome: "duplicate",
-          job_state: "QUEUED",
-          chat_id: SYNTHETIC_ID_BASE + 1,
-          message_id: SYNTHETIC_ID_BASE + 2,
-        }],
-      },
+      fn === "ensure_telegram_user"
+        ? { status: 200, body: USER_ID }
+        : fn === "telegram_update_digest_matches"
+        ? { status: 200, body: true }
+        : {
+          status: 200,
+          body: [{
+            update_id: SYNTHETIC_ID_BASE + 1,
+            user_id: USER_ID,
+            job_id: JOB_ID,
+            outcome: "duplicate",
+            job_state: "QUEUED",
+            chat_id: SYNTHETIC_ID_BASE + 1,
+            message_id: SYNTHETIC_ID_BASE + 2,
+            queue_message_id: SYNTHETIC_ID_BASE + 3,
+          }],
+        },
   });
 
   assertEquals(accepted.response.status, duplicate.response.status);
@@ -439,6 +460,7 @@ Deno.test("a refusal for an inactive account is acknowledged without creating a 
           job_state: null,
           chat_id: null,
           message_id: null,
+          queue_message_id: null,
         }],
       },
   });
@@ -458,7 +480,10 @@ Deno.test("every media kind that Phase 0 accepts reaches the database once", asy
     const { response, calls } = await deliver(update);
 
     assertEquals(response.status, 200);
-    assertEquals(calls.map((call) => call.fn), ["ensure_telegram_user", "accept_telegram_update"]);
+    assertEquals(calls.map((call) => call.fn), [
+      "ensure_telegram_user",
+      "accept_and_enqueue_telegram_update",
+    ]);
   }
 });
 
@@ -538,7 +563,7 @@ Deno.test("a malformed reply is never reported to the caller as its detail", asy
   });
 
   const body = await response.text();
-  assertEquals(body.includes("accept_telegram_update"), false);
+  assertEquals(body.includes("accept_and_enqueue_telegram_update"), false);
   assertEquals(body.includes("shape"), false);
 });
 

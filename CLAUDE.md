@@ -3,13 +3,17 @@
 Telegram-first note capture. Supabase (PostgreSQL 17 + Deno Edge Functions),
 TypeScript, one configurable Gemini Flash model behind one provider adapter.
 
-Phase 0 is the ingestion spine: messages are received, authenticated,
-deduplicated and turned into durable jobs. Nothing processes them yet.
+Phase 2 is deployed to the development Supabase project: atomic PGMQ ingestion,
+a background/recovery worker, text generation, and ephemeral voice/audio
+processing. Runtime secrets are configured and unauthenticated smoke tests return
+the expected empty `401`. Recovery Cron runs every minute and has returned
+successful authenticated worker calls; Telegram webhook registration remains
+pending. Images and documents remain Phase 3.
 
 ## Commands
 
 ```bash
-npx deno task test              # 263 tests, no database, no network
+npx deno task test              # 445 tests, no database, no network
 npx deno task test:integration  # needs NOTINN_TEST_* to be set
 npx deno fmt                    # lineWidth 100
 npx deno lint
@@ -64,9 +68,9 @@ through `npx`, because there is no Docker and no WSL on this machine.
 
 - **Layering is one-way.** `telegram/` → `services/` → `repositories/`. Services
   must not know about HTTP or status codes; the handler must not know about SQL.
-- **Every database call lives in `_shared/repositories/`.** One file today.
-- **`telegram-webhook/index.ts` is the only composition root.** It is the only
-  place that reads configuration, and it caches per isolate.
+- **Every database call lives in `_shared/repositories/`.**
+- **The Edge Function `index.ts` files are composition roots only.** They read
+  configuration, wire adapters, and cache config per isolate.
 - **Errors go through the taxonomy**, never a bare `throw new Error` at a boundary.
   `INTERNAL_ERROR` is non-retryable on purpose: a bug reproduces on retry.
 - **A failure response body is empty.** Telegram discards it; its only audience is
@@ -101,8 +105,8 @@ through `npx`, because there is no Docker and no WSL on this machine.
 
 ## Do not
 
-- Implement Gemini processing, transcription, document processing, search, billing
-  or a dashboard in Phase 0 — except for the seams `docs/ADR/0002` names.
+- Implement image/document processing, search, billing, or a dashboard before its
+  blueprint phase is explicitly started.
 - Register or modify a real Telegram webhook without explicit approval.
 - Create commits, push, open PRs, deploy, or spend money unless asked.
 - Reinterpret a product rule silently. If the blueprint and an implementation

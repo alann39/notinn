@@ -49,6 +49,7 @@ export const RECOGNISED_ENV_KEYS = [
   "TELEGRAM_BOT_TOKEN",
   "TELEGRAM_WEBHOOK_SECRET",
   "TELEGRAM_WEBHOOK_URL",
+  "INTERNAL_WORKER_SECRET",
   "AI_PROVIDER",
   "GEMINI_API_KEY",
   "GEMINI_MODEL",
@@ -125,6 +126,8 @@ export interface AiConfig {
 
 export interface WebhookConfig extends BaseConfig {
   readonly webhookSecret: Secret;
+  /** Authenticates the webhook's background invocation of the queue worker. */
+  readonly internalWorkerSecret: Secret;
   /**
    * The bot token, required from Phase 1 onwards.
    *
@@ -137,7 +140,13 @@ export interface WebhookConfig extends BaseConfig {
   readonly ai: AiConfig;
 }
 
-export interface ScriptConfig extends BaseConfig {
+export interface WorkerConfig extends BaseConfig {
+  readonly internalWorkerSecret: Secret;
+  readonly botToken: Secret;
+  readonly ai: AiConfig;
+}
+
+export interface ScriptConfig {
   readonly botToken: Secret;
   /** Absent until the webhook has been registered at least once. */
   readonly webhookSecret: Secret | null;
@@ -148,7 +157,11 @@ export interface ScriptConfig extends BaseConfig {
    * it is environment-specific, so it is configuration rather than a constant.
    */
   readonly webhookUrl: string | null;
+  readonly fingerprints: { readonly webhookSecret?: string };
 }
+
+/** Full database access needed only by the synthetic end-to-end smoke test. */
+export type SmokeConfig = ScriptConfig & BaseConfig;
 
 // --- Schema -----------------------------------------------------------------
 
@@ -167,13 +180,14 @@ const TELEGRAM_SECRET_PATTERN = /^[A-Za-z0-9_-]{1,256}$/;
 const MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 const RawSchema = z.object({
-  SUPABASE_URL: z.url(),
+  SUPABASE_URL: z.url().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
   SUPABASE_SECRET_KEYS: z.string().min(1).optional(),
   SUPABASE_ANON_KEY: z.string().min(1).optional(),
   TELEGRAM_BOT_TOKEN: z.string().min(1).optional(),
   TELEGRAM_WEBHOOK_SECRET: z.string().min(1).optional(),
   TELEGRAM_WEBHOOK_URL: z.url().optional(),
+  INTERNAL_WORKER_SECRET: z.string().min(32).max(256).optional(),
   AI_PROVIDER: z.enum(AI_PROVIDERS).optional(),
   GEMINI_API_KEY: z.string().min(1).optional(),
   GEMINI_MODEL: z.string().min(1).optional(),
@@ -300,6 +314,13 @@ function resolveLogLevel(raw: RawEnv, environment: NotinnEnvironment): LogLevel 
   return environment === "local" ? "debug" : "info";
 }
 
+function requireSupabaseUrl(raw: RawEnv): string {
+  if (raw.SUPABASE_URL === undefined) {
+    throw AppError.configuration("SUPABASE_URL is not set: database access is unavailable.");
+  }
+  return raw.SUPABASE_URL;
+}
+
 // --- Loaders ----------------------------------------------------------------
 
 /**
@@ -396,6 +417,13 @@ export async function loadWebhookConfig(
     );
   }
 
+  const internalWorkerSecret = raw.INTERNAL_WORKER_SECRET;
+  if (internalWorkerSecret === undefined) {
+    throw AppError.configuration(
+      "INTERNAL_WORKER_SECRET is not set: the webhook cannot trigger the queue worker.",
+    );
+  }
+
   const ai = resolveAiConfig(raw);
 
   const serviceSecret = new Secret(serviceRoleKey);
@@ -403,9 +431,10 @@ export async function loadWebhookConfig(
 
   return {
     environment,
-    supabaseUrl: raw.SUPABASE_URL,
+    supabaseUrl: requireSupabaseUrl(raw),
     serviceRoleKey: serviceSecret,
     webhookSecret: webhookSecretValue,
+    internalWorkerSecret: new Secret(internalWorkerSecret),
     botToken: new Secret(botToken),
     ai,
     logLevel: resolveLogLevel(raw, environment),
@@ -416,16 +445,10 @@ export async function loadWebhookConfig(
   };
 }
 
-/**
- * Configuration for the operational scripts.
- *
- * These run on an operator's machine, not inside Supabase, so they need the bot
- * token to call the Bot API. The webhook secret is optional: it only exists once
- * a webhook has been registered.
- */
-export async function loadScriptConfig(
+/** Configuration for the authenticated queue consumer Edge Function. */
+export async function loadWorkerConfig(
   source: Record<string, string | undefined> = Deno.env.toObject(),
-): Promise<ScriptConfig> {
+): Promise<WorkerConfig> {
   const raw = parseRaw(source);
   const environment = resolveEnvironment(raw);
 
@@ -437,6 +460,51 @@ export async function loadScriptConfig(
   }
   assertServiceRoleKey(serviceRoleKey);
 
+  const internalWorkerSecret = raw.INTERNAL_WORKER_SECRET;
+  if (internalWorkerSecret === undefined) {
+    throw AppError.configuration(
+      "INTERNAL_WORKER_SECRET is not set: the queue worker would be unauthenticated.",
+    );
+  }
+
+  const botToken = raw.TELEGRAM_BOT_TOKEN;
+  if (botToken === undefined) {
+    throw AppError.configuration(
+      "TELEGRAM_BOT_TOKEN is not set: the worker cannot retrieve or deliver files.",
+    );
+  }
+
+  const serviceSecret = new Secret(serviceRoleKey);
+  const workerSecret = new Secret(internalWorkerSecret);
+
+  return {
+    environment,
+    supabaseUrl: requireSupabaseUrl(raw),
+    serviceRoleKey: serviceSecret,
+    internalWorkerSecret: workerSecret,
+    botToken: new Secret(botToken),
+    ai: resolveAiConfig(raw),
+    logLevel: resolveLogLevel(raw, environment),
+    fingerprints: {
+      serviceRoleKey: await serviceSecret.fingerprint(),
+    },
+  };
+}
+
+/**
+ * Configuration for the operational scripts.
+ *
+ * These run on an operator's machine, not inside Supabase, so they need only the
+ * bot token to call the Bot API. Deliberately do not load a Supabase service-role
+ * key: webhook registration cannot use it, so carrying it only widens the blast
+ * radius of the operator command. The webhook secret is optional because the
+ * read-only inspection and deletion commands do not need it.
+ */
+export async function loadScriptConfig(
+  source: Record<string, string | undefined> = Deno.env.toObject(),
+): Promise<ScriptConfig> {
+  const raw = parseRaw(source);
+
   const botToken = raw.TELEGRAM_BOT_TOKEN;
   if (botToken === undefined) {
     throw AppError.configuration(
@@ -444,7 +512,6 @@ export async function loadScriptConfig(
     );
   }
 
-  const serviceSecret = new Secret(serviceRoleKey);
   const botTokenSecret = new Secret(botToken);
 
   const webhookSecretRaw = raw.TELEGRAM_WEBHOOK_SECRET;
@@ -459,16 +526,42 @@ export async function loadScriptConfig(
   }
 
   return {
-    environment,
-    supabaseUrl: raw.SUPABASE_URL,
-    serviceRoleKey: serviceSecret,
     botToken: botTokenSecret,
     webhookSecret,
     webhookUrl: raw.TELEGRAM_WEBHOOK_URL ?? null,
+    fingerprints: {
+      ...(webhookSecret === null ? {} : { webhookSecret: await webhookSecret.fingerprint() }),
+    },
+  };
+}
+
+/** Configuration for the synthetic smoke test, which also inspects database rows. */
+export async function loadSmokeConfig(
+  source: Record<string, string | undefined> = Deno.env.toObject(),
+): Promise<SmokeConfig> {
+  const raw = parseRaw(source);
+  const environment = resolveEnvironment(raw);
+  const serviceRoleKey = resolveServiceRoleKey(raw);
+
+  if (serviceRoleKey === undefined) {
+    throw AppError.configuration(
+      "no server-side key found: set SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SECRET_KEYS).",
+    );
+  }
+  assertServiceRoleKey(serviceRoleKey);
+
+  const script = await loadScriptConfig(source);
+  const serviceSecret = new Secret(serviceRoleKey);
+
+  return {
+    ...script,
+    environment,
+    supabaseUrl: requireSupabaseUrl(raw),
+    serviceRoleKey: serviceSecret,
     logLevel: resolveLogLevel(raw, environment),
     fingerprints: {
       serviceRoleKey: await serviceSecret.fingerprint(),
-      ...(webhookSecret === null ? {} : { webhookSecret: await webhookSecret.fingerprint() }),
+      ...script.fingerprints,
     },
   };
 }
@@ -494,6 +587,7 @@ export interface EnvironmentReport {
   readonly aiProvider: string | null;
   readonly geminiModel: string | null;
   readonly geminiApiKeyLength: number | null;
+  readonly internalWorkerSecretLength: number | null;
 }
 
 export function describeEnvironment(
@@ -509,6 +603,7 @@ export function describeEnvironment(
   const botToken = picked["TELEGRAM_BOT_TOKEN"] ?? null;
   const webhookSecret = picked["TELEGRAM_WEBHOOK_SECRET"] ?? null;
   const geminiApiKey = picked["GEMINI_API_KEY"] ?? null;
+  const internalWorkerSecret = picked["INTERNAL_WORKER_SECRET"] ?? null;
 
   return {
     environment: (picked["NOTINN_ENV"] as NotinnEnvironment | undefined) ?? "local",
@@ -528,5 +623,6 @@ export function describeEnvironment(
     aiProvider: picked["AI_PROVIDER"] ?? null,
     geminiModel: picked["GEMINI_MODEL"] ?? null,
     geminiApiKeyLength: geminiApiKey?.length ?? null,
+    internalWorkerSecretLength: internalWorkerSecret?.length ?? null,
   };
 }

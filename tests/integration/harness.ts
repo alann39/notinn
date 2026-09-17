@@ -74,7 +74,7 @@ export function acceptedMessage(update: Record<string, unknown>): AcceptedMessag
 
   const classification = classifyUpdate(parsed.data);
   if (classification.kind !== "accepted") {
-    throw new Error(`the fixture was not accepted: ${classification.reason}`);
+    throw new Error(`the fixture was not accepted: ${classification.kind}`);
   }
 
   return classification.message;

@@ -72,6 +72,12 @@ export async function ingestMessage(
       job_id: result.jobId,
       job_state: result.jobState,
     });
+    if (result.payloadDigestMatches === false) {
+      log.warn("ingestion.duplicate_payload_mismatch", {
+        outcome: result.outcome,
+        reason: "payload_digest_mismatch",
+      });
+    }
     return { outcome: result.outcome, userId, jobId: result.jobId, jobState: result.jobState };
   }
 

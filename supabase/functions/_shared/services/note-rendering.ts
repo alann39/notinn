@@ -6,10 +6,10 @@ import {
 import { AppError } from "../errors/app-error.ts";
 import { encodeCallbackPayload } from "../schemas/callback.ts";
 import type { StructuredNote } from "../schemas/structured-note.ts";
-import type {
-  InlineKeyboardButton,
-  InlineKeyboardMarkup,
-} from "../telegram/client.ts";
+import type { InlineKeyboardButton, InlineKeyboardMarkup } from "../telegram/client.ts";
+
+/** The rows inside Telegram's reply_markup object. */
+type InlineKeyboard = InlineKeyboardMarkup["inline_keyboard"];
 
 /**
  * Deterministic Telegram rendering of a structured note (blueprint 16.2).
@@ -381,6 +381,19 @@ export function renderNoteOutput(
   };
 }
 
+/** Render a provider transcript as escaped, length-bounded Telegram pages. */
+export function renderTranscriptPages(
+  transcript: string,
+  limit: number = TELEGRAM_MAX_MESSAGE_LENGTH,
+): readonly string[] {
+  const blocks: Block[] = [{ style: "bold", text: "Transcript" }];
+  if (transcript.trim() !== "") {
+    blocks.push(spacer());
+    pushParagraphs(blocks, transcript);
+  }
+  return splitNoteBlocks(blocks, limit).map(renderPage);
+}
+
 // --- The inline keyboard ----------------------------------------------------
 
 /**
@@ -487,13 +500,13 @@ export function buildNoteKeyboard(options: NoteKeyboardOptions): InlineKeyboard 
  * replaces the note's keyboard on the message the user just read — there is no way
  * to be looking at one note and confirming the deletion of another.
  *
- * Cancel is the `show` action. It re-renders the note's current output and changes
- * nothing, which is precisely what cancelling means here, and it avoids inventing
- * a cancel action that would only ever do that.
+ * Cancel has its own idempotent action so it can restore this message's normal
+ * keyboard. Reusing `show` would leave the confirmation buttons active on the old
+ * message and send a duplicate note instead of actually cancelling.
  */
 export function buildDeleteConfirmationKeyboard(noteId: string): InlineKeyboard {
   return [[
     button("Yes, delete", { kind: "delete_confirm" }, noteId),
-    button("Cancel", { kind: "show" }, noteId),
+    button("Cancel", { kind: "cancel_delete" }, noteId),
   ]];
 }

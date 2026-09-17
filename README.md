@@ -3,12 +3,12 @@
 Telegram-first note capture. Send Notinn a message, a voice note, a screenshot, a
 PDF or a document, and get back a structured, searchable note.
 
-**Status: Phase 0 — the ingestion spine.** Messages are received, authenticated,
-deduplicated and durably recorded as jobs. Nothing reads them yet: no
-transcription, no extraction, no generation. That is deliberate — see
-[docs/ADR/0002](docs/ADR/0002-phase-0-scope.md) for what is absent and why, and
-[docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) for exactly where
-the project stands.
+**Status: Phase 2 database, Edge Functions, runtime secrets, and recovery Cron
+are active in development; only Telegram webhook registration remains.** Text and
+voice/audio are processed by a durable PGMQ worker using one configured Gemini
+model. Raw audio is downloaded into memory, never stored, and discarded after
+the request. Images and documents remain Phase 3. See
+[docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
 
 ---
 
@@ -51,7 +51,7 @@ npx supabase link --project-ref <ref>   # confirm the target first
 npx supabase db push                    # apply migrations
 ```
 
-Nine migrations in `supabase/migrations/`. They are the schema's source of truth;
+Sixteen migrations in `supabase/migrations/`. They are the schema's source of truth;
 migrations are never edited after being applied to a shared project (one
 pre-release exception is recorded in
 [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md)).
@@ -67,12 +67,12 @@ npx supabase db reset      # DESTRUCTIVE: drops and re-applies. Local only.
 
 ```bash
 npx supabase functions deploy telegram-webhook --no-verify-jwt
+npx supabase functions deploy process-job --no-verify-jwt
 ```
 
-`--no-verify-jwt` is required. Telegram cannot present a Supabase JWT, so
-verification must be off or every delivery is refused with a `401`. Requests are
-authenticated by the secret token Telegram echoes instead —
-[docs/ADR/0005](docs/ADR/0005-access-model.md).
+`--no-verify-jwt` is required for both endpoints. Telegram authenticates with its
+webhook secret; trusted worker callers authenticate with
+`X-Notinn-Worker-Secret`. Both are checked in constant time.
 
 ## Webhook
 
@@ -91,10 +91,16 @@ npx deno task smoke             # one real round trip
 unauthenticated and every delivery that does carry a secret is refused — the two
 failure modes are indistinguishable from the bot appearing to be dead.
 
+The webhook commands load `.env` automatically and need only
+`TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, and `TELEGRAM_WEBHOOK_URL`.
+They deliberately do not load the Supabase service-role key. The `smoke` command
+also inspects database rows, so it still needs `SUPABASE_URL` and the service-role
+key.
+
 ## Testing
 
 ```bash
-npx deno task test                  # 263 tests, no database, no network
+npx deno task test                  # 445 tests, no database, no network
 npx deno task test:unit             # pure functions
 npx deno task test:contract         # migrations vs. the TypeScript mirrors
 npx deno task test:security         # auth + log redaction
@@ -125,9 +131,10 @@ prompt, and it will not touch a row below the reserved floor.
 ## Layout
 
 ```
-supabase/migrations/         9 migrations — the schema's source of truth
+supabase/migrations/         16 migrations — the schema's source of truth
 supabase/functions/
-  telegram-webhook/          the only Edge Function
+  telegram-webhook/          authenticated ingestion + background worker trigger
+  process-job/               authenticated PGMQ consumer
   _shared/                   config · db · errors · observability · repositories
                              security · services · telegram
 scripts/                     operator tooling
@@ -138,14 +145,14 @@ docs/                        ARCHITECTURE · API_CONTRACTS · DATA_PRIVACY · TE
 
 ## Documentation
 
-|                                                           |                                                                |
-| --------------------------------------------------------- | -------------------------------------------------------------- |
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md)                   | Layering, the composition root, the database                   |
-| [API_CONTRACTS.md](docs/API_CONTRACTS.md)                 | The HTTP endpoint and the two RPCs                             |
-| [DATA_PRIVACY.md](docs/DATA_PRIVACY.md)                   | What is stored, what is never logged, why                      |
-| [TEST_PLAN.md](docs/TEST_PLAN.md)                         | Every suite, what it proves, what is untested                  |
-| [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) | Where Phase 0 stands, verbatim verification output, open items |
-| [ADR/](docs/ADR/)                                         | Six decisions, with the alternatives that were rejected        |
+|                                                           |                                                         |
+| --------------------------------------------------------- | ------------------------------------------------------- |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md)                   | Layering, the composition root, the database            |
+| [API_CONTRACTS.md](docs/API_CONTRACTS.md)                 | Telegram, worker, provider, and RPC contracts           |
+| [DATA_PRIVACY.md](docs/DATA_PRIVACY.md)                   | What is stored, what is never logged, why               |
+| [TEST_PLAN.md](docs/TEST_PLAN.md)                         | Every suite, what it proves, what is untested           |
+| [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) | Current phase, verification output, and deployment gaps |
+| [ADR/](docs/ADR/)                                         | Architecture decisions and deferred work                |
 
 ## Conventions
 

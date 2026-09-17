@@ -11,15 +11,14 @@ import { SOURCE_REFERENCE_KINDS } from "../config/constants.ts";
  * passes the schema" is enforced by.
  *
  * There is a second copy of this contract, and it is deliberate. Migration
- * `20260917120100_phase1_template_schemas.sql` writes a JSON Schema onto every
+ * `20260917123607_phase1_template_schemas.sql` writes a JSON Schema onto every
  * system template, and that copy is what the provider is handed as
- * `responseSchema`. The two are not redundant:
+ * `responseJsonSchema`. The two are not redundant:
  *
  *   * The JSON Schema constrains the model at generation time, which is cheap and
  *     catches most deviations before they cost a round trip. It is written in the
- *     restricted OpenAPI 3.0 subset Gemini accepts, which cannot express
- *     `pattern`, `maxLength` or a numeric range — so it is deliberately weaker
- *     than what follows.
+ *     JSON Schema subset Gemini accepts. It deliberately omits bounds that are
+ *     better enforced by the application after generation.
  *
  *   * This schema is what the application believes. It runs on the way in, it
  *     enforces the bounds the provider's dialect cannot express, and it is the

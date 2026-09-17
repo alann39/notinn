@@ -107,6 +107,8 @@ Deno.test({
     assertEquals(first.outcome, "accepted");
     assertEquals(second.outcome, "duplicate");
     assertEquals(third.outcome, "duplicate");
+    assertEquals(second.payloadDigestMatches, true);
+    assertEquals(third.payloadDigestMatches, true);
 
     // The replay resolves to the same job rather than to nothing, so a caller
     // that lost the first response can still find out what happened.
@@ -154,6 +156,7 @@ Deno.test({
     );
 
     assertEquals(replayed.outcome, "duplicate");
+    assertEquals(replayed.payloadDigestMatches, false);
 
     const { data } = await serviceClient()
       .from("processing_jobs")

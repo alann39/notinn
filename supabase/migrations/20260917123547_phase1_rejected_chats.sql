@@ -1,4 +1,4 @@
--- Phase 1 / migration 1 of 2
+-- Phase 1 / rejected-chat guard
 -- public.rejected_chats and the once-per-chat reply guard.
 --
 -- Blueprint 16.4 requires groups and channels to be "rejected with a fixed
@@ -50,7 +50,7 @@ comment on column public.rejected_chats.first_seen_at is
   'Retention anchor: rows older than 30 days are purged by a scheduled cleanup, which re-arms the reply for that chat.';
 
 comment on column public.rejected_chats.notified_at is
-  'Set when the reply slot is claimed, before sendMessage is attempted. A send that fails leaves the row claimed and the chat silent until the retention window closes. That is a known, bounded loss — see the header comment in 20260917120000_phase1_rejected_chats.sql.';
+  'Set when the reply slot is claimed, before sendMessage is attempted. A send that fails leaves the row claimed and the chat silent until the retention window closes. That is a known, bounded loss — see the header comment in 20260917123547_phase1_rejected_chats.sql.';
 
 -- Makes the future purge a range scan rather than a sequential scan. The table
 -- is small, but the purge runs on a schedule and the index costs almost nothing.

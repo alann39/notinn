@@ -160,7 +160,7 @@ export type SystemTemplateKey = (typeof SYSTEM_TEMPLATE_KEYS)[number];
  * Phase 3 adds whatever a document renderer turns out to need.
  *
  * Written here as a mirror of the enum in migration
- * 20260917120100_phase1_template_schemas.sql rather than only in the schema module,
+ * 20260917123607_phase1_template_schemas.sql rather than only in the schema module,
  * because `tests/contract/` is where the two copies are made to agree.
  */
 export const SOURCE_REFERENCE_KINDS = ["page", "timestamp", "segment"] as const;
@@ -195,6 +195,9 @@ export const MAX_SOURCE_TEXT_LENGTH = 100_000;
 
 /** Header carrying the webhook secret, per the Telegram Bot API. */
 export const TELEGRAM_SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token";
+
+/** Header used only by trusted callers of the internal processing worker. */
+export const INTERNAL_WORKER_SECRET_HEADER = "X-Notinn-Worker-Secret";
 
 /**
  * Telegram's documented maximum length of `callback_data`, in bytes.
@@ -241,6 +244,15 @@ export const MAX_PASTED_TEXT_CHARS = 60_000;
  * by `file_id`.
  */
 export const MAX_WEBHOOK_BODY_BYTES = 1_048_576;
+
+/** Telegram Bot API's default maximum downloadable file size (20 MiB). */
+export const MAX_TELEGRAM_DOWNLOAD_BYTES = 20 * 1024 * 1024;
+
+/** Raw audio ceiling that stays below Gemini's 20 MB total request limit after base64. */
+export const MAX_INLINE_AUDIO_BYTES = 14 * 1024 * 1024;
+
+/** Alpha product limit from blueprint 6.2: 30 minutes. */
+export const MAX_AUDIO_DURATION_SECONDS = 30 * 60;
 
 /**
  * Phase 0 handles a single input category at a time. A Telegram update carrying

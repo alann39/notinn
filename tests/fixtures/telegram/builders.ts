@@ -243,6 +243,28 @@ export function callbackQueryUpdate(
   };
 }
 
+/** A callback attached to a bot message in a private chat. */
+export function actionableCallbackQueryUpdate(
+  options: { updateId?: number; userId?: number; data?: string } = {},
+): Record<string, unknown> {
+  const updateId = options.updateId ?? SYNTHETIC_ID_BASE + 51;
+  const userId = options.userId ?? SYNTHETIC_ID_BASE + 51;
+  const update = base(updateId, userId, userId, "private", true);
+  const message = update.message as Record<string, unknown>;
+  delete message["text"];
+
+  return {
+    update_id: updateId,
+    callback_query: {
+      id: "synthetic-actionable-callback-id",
+      from: sender(userId, false),
+      message,
+      chat_instance: "synthetic-chat-instance",
+      data: options.data ?? "synthetic:callback",
+    },
+  };
+}
+
 /** A channel post, which is neither private nor a message Notinn accepts. */
 export function channelPostUpdate(options: { updateId?: number } = {}): Record<string, unknown> {
   const updateId = options.updateId ?? SYNTHETIC_ID_BASE + 60;

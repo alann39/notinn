@@ -526,5 +526,5 @@ Deno.test("the delete confirmation offers a way back that changes nothing", () =
     .flat()
     .map((button) => decodeCallbackPayload(button.callback_data).action);
 
-  assertEquals(actions, [{ kind: "delete_confirm" }, { kind: "show" }]);
+  assertEquals(actions, [{ kind: "delete_confirm" }, { kind: "cancel_delete" }]);
 });

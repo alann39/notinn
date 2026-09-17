@@ -171,6 +171,23 @@ async function main(): Promise<void> {
 
   const userIds = (users ?? []).map((row) => row["id"] as string);
   const noteIds = await ownedIds(client, "notes", "user_id", userIds);
+  const queueMessageIds: number[] = [];
+  if (userIds.length > 0) {
+    const { data: jobs, error: jobsError } = await client
+      .from("processing_jobs")
+      .select("queue_message_id")
+      .in("user_id", userIds)
+      .not("queue_message_id", "is", null);
+    if (jobsError !== null) {
+      throw new Error(`could not read synthetic queue ids: ${jobsError.message}`);
+    }
+    for (const row of jobs ?? []) {
+      const id = Number(row["queue_message_id"]);
+      if (Number.isSafeInteger(id) && id > 0 && !queueMessageIds.includes(id)) {
+        queueMessageIds.push(id);
+      }
+    }
+  }
 
   // --- Count first, so the operator sees the scope before approving ---------
   const counts: { table: Table; rows: number }[] = [];
@@ -181,11 +198,12 @@ async function main(): Promise<void> {
     });
   }
 
-  const total = counts.reduce((sum, entry) => sum + entry.rows, 0);
+  const total = counts.reduce((sum, entry) => sum + entry.rows, 0) + queueMessageIds.length;
 
   for (const { table, rows } of counts) {
     console.log(`  ${String(rows).padStart(7)}  ${table}`);
   }
+  console.log(`  ${String(queueMessageIds.length).padStart(7)}  pgmq messages`);
   console.log(`  ${String(total).padStart(7)}  total\n`);
 
   if (total === 0) {
@@ -214,6 +232,23 @@ async function main(): Promise<void> {
   }
 
   await requireConfirmation(Deno.args, `Delete ${total} row(s) from ${targetHost()}?`);
+
+  // Queue messages are not foreign-key children of processing_jobs. A test row
+  // deleted without its message would later become stale recovery work, so they
+  // are acknowledged first through the same service-role-only RPC as the worker.
+  for (const queueMessageId of queueMessageIds) {
+    const { error } = await client.rpc("delete_processing_queue_message", {
+      p_queue_message_id: queueMessageId,
+    });
+    if (error !== null) {
+      console.error(`\nFAILED to delete pgmq message ${queueMessageId}: ${error.message}`);
+      console.error("Stopped before deleting application rows.");
+      Deno.exit(1);
+    }
+  }
+  if (queueMessageIds.length > 0) {
+    console.log(`  deleted ${String(queueMessageIds.length).padStart(7)}  pgmq messages`);
+  }
 
   // --- Delete, child first, under the same scope ----------------------------
   for (const table of TABLES) {

@@ -4,7 +4,15 @@ import { toAppError } from "../_shared/errors/app-error.ts";
 import { emptyResponse } from "../_shared/errors/http.ts";
 import { createLogger } from "../_shared/observability/logger.ts";
 import { IngestionRepository } from "../_shared/repositories/ingestion.repository.ts";
+import { NotesRepository } from "../_shared/repositories/notes.repository.ts";
+import { ProcessingJobsRepository } from "../_shared/repositories/processing-jobs.repository.ts";
+import { RejectedChatsRepository } from "../_shared/repositories/rejected-chats.repository.ts";
+import { TemplatesRepository } from "../_shared/repositories/templates.repository.ts";
+import { UsageRepository } from "../_shared/repositories/usage.repository.ts";
+import { GeminiNoteProvider } from "../_shared/providers/gemini-note.provider.ts";
+import { createTelegramGateway } from "../_shared/telegram/client.ts";
 import { handleWebhookRequest } from "../_shared/telegram/handler.ts";
+import { scheduleWorkerInvocation } from "../_shared/worker/invoker.ts";
 
 /**
  * Telegram webhook endpoint (blueprint 17.1).
@@ -77,7 +85,24 @@ Deno.serve(async (request: Request): Promise<Response> => {
     const client = createServiceClient(config.supabaseUrl, config.serviceRoleKey);
     const repository = new IngestionRepository(client);
 
-    return await handleWebhookRequest(request, { config, repository, logger });
+    const phase1 = {
+      notes: new NotesRepository(client),
+      jobs: new ProcessingJobsRepository(client),
+      rejectedChats: new RejectedChatsRepository(client),
+      templates: new TemplatesRepository(client),
+      usage: new UsageRepository(client),
+      provider: new GeminiNoteProvider(config.ai),
+      telegram: createTelegramGateway(config.botToken),
+      triggerWorker: (jobId: string) =>
+        scheduleWorkerInvocation(
+          config.supabaseUrl,
+          config.internalWorkerSecret,
+          jobId,
+          logger,
+        ),
+    };
+
+    return await handleWebhookRequest(request, { config, repository, logger, phase1 });
   } catch (thrown) {
     // handleWebhookRequest handles its own errors. This is a backstop for a
     // failure in the wiring above, so that no exception ever escapes to the
