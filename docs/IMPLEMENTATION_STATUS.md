@@ -316,11 +316,26 @@ confirmed the same day: `CANCELLED` keeps its edge from every non-terminal state
 and `telegram_file_id` and `note_id` stay exempt from terminal immutability.
 **Nothing in the repository is now flagged for product confirmation.**
 
-### 6. The repository is not a git repository
+### 6. Repository history — CLOSED
 
-No commits, no history. Flagged because the migration-divergence discussion above
-would normally be answered by history, and because the three post-hoc migration
-edits have no commit trail. **Say the word and it will be initialised.**
+Initialised on branch `main`. The initial commit `a3fe374` carries all 77 files of
+Phase 0. Kept in this list rather than deleted because the migration-divergence
+discussion above would normally have been answered by history, and this commit is
+the first point at which that became possible.
+
+It does not retroactively distinguish the three post-hoc migration edits described
+in item 1 — they predate it, so the commit shows the edited files as their original
+form. The replay is what settled that question. What the commit does provide is a
+baseline: from here, every migration is a reviewable diff rather than a whole-file
+snapshot with no predecessor.
+
+`.gitattributes` ships in that same commit as a Phase 0 fix rather than a Phase 1
+one. `core.autocrlf=true` on the development machine rewrites every file to CRLF on
+checkout, and `deno fmt --check` fails on a CRLF tree — so without `eol=lf` a fresh
+clone could not reproduce the command in [Verification](#verification), which is
+exit criterion 8. It was added before committing rather than after, so every path
+in the initial commit is already normalised (`i/lf w/lf`) and no later commit has to
+clean up line endings.
 
 ### 7. Not reproducible on this machine, by design
 
