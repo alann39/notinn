@@ -23,6 +23,9 @@ import { ERROR_CODES } from "../../supabase/functions/_shared/errors/taxonomy.ts
 
 const SUPABASE_URL = "https://synthetic.supabase.co";
 const WEBHOOK_SECRET = "synthetic_webhook_secret_value";
+const BOT_TOKEN = "123456789:AAFakeTokenValueThatIsLongEnoughToMatch";
+const GEMINI_API_KEY = "synthetic-gemini-api-key-value";
+const GEMINI_MODEL = "gemini-synthetic-flash";
 
 /** Build a JWT-shaped string with the given payload. Unsigned and unusable. */
 function fakeJwt(payload: Record<string, unknown>): string {
@@ -41,7 +44,25 @@ function validSource(): Record<string, string> {
     SUPABASE_URL,
     SUPABASE_SERVICE_ROLE_KEY: SERVICE_ROLE_JWT,
     TELEGRAM_WEBHOOK_SECRET: WEBHOOK_SECRET,
+    TELEGRAM_BOT_TOKEN: BOT_TOKEN,
+    AI_PROVIDER: "gemini",
+    GEMINI_API_KEY,
+    GEMINI_MODEL,
   };
+}
+
+/**
+ * The valid source with named variables deleted, as an operator would leave them.
+ *
+ * Deleting rather than assigning `undefined` is not cosmetic: the loader reads a
+ * `Record<string, string | undefined>`, and an explicitly-undefined key is the
+ * shape the tests should exercise — it is what `Deno.env.toObject()` produces for
+ * a variable that is not set.
+ */
+function sourceWithout(...keys: readonly string[]): Record<string, string> {
+  const source = validSource();
+  for (const key of keys) delete source[key];
+  return source;
 }
 
 // --- Secret ----------------------------------------------------------------
@@ -136,22 +157,69 @@ Deno.test("a valid environment produces a usable config", async () => {
   assertEquals(config.environment, "local");
 });
 
-Deno.test("the bot token is not required by the webhook, and is not carried by it either", async () => {
-  // The Phase 0 webhook acknowledges and enqueues; it never calls the Bot API.
-  // Requiring a token it does not need would widen the blast radius of a
-  // compromised function for no benefit. The second half matters as much as the
-  // first: a token present in the environment must still not reach the function's
-  // configuration, or the blast radius is unchanged. See
-  // docs/ADR/0002-phase-0-scope.md.
-  const withoutToken = await loadWebhookConfig(validSource());
-  assertEquals(Object.keys(withoutToken).includes("botToken"), false);
+Deno.test("the webhook carries the bot token, because Phase 1 delivers notes", async () => {
+  // Phase 0 asserted the opposite: the webhook acknowledged and enqueued, never
+  // called the Bot API, and carrying a credential it did not use would have
+  // widened the blast radius of a compromise for no benefit. Phase 1 ends that
+  // condition — delivery is a Bot API call — so the token is required and carried.
+  // The widening is recorded in docs/ADR/0007-phase-1-scope.md.
+  const config = await loadWebhookConfig(validSource());
+  assertEquals(config.botToken.reveal(), BOT_TOKEN);
 
-  const withToken = await loadWebhookConfig({
-    ...validSource(),
-    TELEGRAM_BOT_TOKEN: "123456789:AAFakeTokenValueThatIsLongEnoughToMatch",
-  });
-  assertEquals(Object.keys(withToken).includes("botToken"), false);
-  assert(!JSON.stringify(withToken).includes("AAFake"));
+  // Carried is not the same as printable. The property Phase 0 was really
+  // protecting — that the credential cannot leak through the config object — still
+  // holds, and is asserted here rather than assumed.
+  assert(!JSON.stringify(config).includes("AAFake"));
+  assert(!`${config.botToken}`.includes("AAFake"));
+});
+
+Deno.test("a missing bot token is refused, because delivery would fail later instead", async () => {
+  const source = validSource();
+  delete source["TELEGRAM_BOT_TOKEN"];
+
+  const error = await assertRejects(() => loadWebhookConfig(source), AppError);
+  assertEquals(error.code, ERROR_CODES.CONFIGURATION_ERROR);
+  assert((error.internalDetail ?? "").includes("TELEGRAM_BOT_TOKEN"));
+});
+
+Deno.test("the generation provider is required, and its key is not printable", async () => {
+  // A model that is never named cannot be rolled back, and blueprint 12.3 asks for
+  // the model to be configuration precisely so that it can be.
+  const config = await loadWebhookConfig(validSource());
+  assertEquals(config.ai.provider, "gemini");
+  assertEquals(config.ai.model, GEMINI_MODEL);
+  assertEquals(config.ai.apiKey.reveal(), GEMINI_API_KEY);
+
+  assert(!JSON.stringify(config).includes(GEMINI_API_KEY));
+
+  for (const key of ["AI_PROVIDER", "GEMINI_API_KEY", "GEMINI_MODEL"]) {
+    const source = validSource();
+    delete source[key];
+
+    const error = await assertRejects(() => loadWebhookConfig(source), AppError);
+    assertEquals(error.code, ERROR_CODES.CONFIGURATION_ERROR, `${key} was not required`);
+    assert((error.internalDetail ?? "").includes(key), `${key} is not named in the error`);
+  }
+});
+
+Deno.test("an unsupported provider is refused rather than silently defaulted", async () => {
+  const error = await assertRejects(
+    () => loadWebhookConfig({ ...validSource(), AI_PROVIDER: "openai" }),
+    AppError,
+  );
+  assertEquals(error.code, ERROR_CODES.CONFIGURATION_ERROR);
+});
+
+Deno.test("a model identifier that is not an identifier is refused", async () => {
+  // The value is interpolated into the provider's request path, so the place to
+  // refuse a path is here, where the message can say why.
+  for (const model of ["../other-model", "gemini/x?key=y", "  ", "gemini flash"]) {
+    const error = await assertRejects(
+      () => loadWebhookConfig({ ...validSource(), GEMINI_MODEL: model }),
+      AppError,
+    );
+    assertEquals(error.code, ERROR_CODES.CONFIGURATION_ERROR, `${model} was accepted`);
+  }
 });
 
 Deno.test("a config that is missing its URL is refused", async () => {
@@ -268,23 +336,20 @@ Deno.test("the service-role key is found under either naming scheme", async () =
   // Supabase is migrating from a single SUPABASE_SERVICE_ROLE_KEY to a
   // SUPABASE_SECRET_KEYS collection. Both are accepted.
   const fromCollection = await loadWebhookConfig({
-    SUPABASE_URL,
+    ...sourceWithout("SUPABASE_SERVICE_ROLE_KEY"),
     SUPABASE_SECRET_KEYS: JSON.stringify({ default: SERVICE_ROLE_JWT }),
-    TELEGRAM_WEBHOOK_SECRET: WEBHOOK_SECRET,
   });
   assertEquals(fromCollection.serviceRoleKey.reveal(), SERVICE_ROLE_JWT);
 
   const fromJsonString = await loadWebhookConfig({
-    SUPABASE_URL,
+    ...sourceWithout("SUPABASE_SERVICE_ROLE_KEY"),
     SUPABASE_SECRET_KEYS: JSON.stringify(SERVICE_ROLE_JWT),
-    TELEGRAM_WEBHOOK_SECRET: WEBHOOK_SECRET,
   });
   assertEquals(fromJsonString.serviceRoleKey.reveal(), SERVICE_ROLE_JWT);
 
   const fromRawValue = await loadWebhookConfig({
-    SUPABASE_URL,
+    ...sourceWithout("SUPABASE_SERVICE_ROLE_KEY"),
     SUPABASE_SECRET_KEYS: SERVICE_ROLE_JWT,
-    TELEGRAM_WEBHOOK_SECRET: WEBHOOK_SECRET,
   });
   assertEquals(fromRawValue.serviceRoleKey.reveal(), SERVICE_ROLE_JWT);
 });
@@ -302,9 +367,8 @@ Deno.test("a collection with no usable default is refused", async () => {
   const error = await assertRejects(
     () =>
       loadWebhookConfig({
-        SUPABASE_URL,
+        ...sourceWithout("SUPABASE_SERVICE_ROLE_KEY"),
         SUPABASE_SECRET_KEYS: JSON.stringify({ default: 42 }),
-        TELEGRAM_WEBHOOK_SECRET: WEBHOOK_SECRET,
       }),
     AppError,
   );
@@ -313,13 +377,30 @@ Deno.test("a collection with no usable default is refused", async () => {
 
 // --- loadScriptConfig ------------------------------------------------------
 
-Deno.test("the scripts require a bot token, which the webhook does not", async () => {
+Deno.test("the scripts require a bot token", async () => {
+  const source = validSource();
+  delete source["TELEGRAM_BOT_TOKEN"];
+
   const error = await assertRejects(
-    () => loadScriptConfig(validSource()),
+    () => loadScriptConfig(source),
     AppError,
   );
   assertEquals(error.code, ERROR_CODES.CONFIGURATION_ERROR);
   assert((error.internalDetail ?? "").includes("TELEGRAM_BOT_TOKEN"));
+});
+
+Deno.test("the scripts do not require the generation provider's key", async () => {
+  // The scripts never generate, so requiring GEMINI_API_KEY of them would be the
+  // Phase 0 blast-radius mistake in reverse. A script that carries a credential it
+  // cannot use is a credential that can leak from an operator's machine.
+  const source = validSource();
+  delete source["GEMINI_API_KEY"];
+  delete source["AI_PROVIDER"];
+  delete source["GEMINI_MODEL"];
+
+  const config = await loadScriptConfig(source);
+  assertEquals(config.botToken.reveal(), BOT_TOKEN);
+  assertEquals(Object.keys(config).includes("ai"), false);
 });
 
 Deno.test("the scripts tolerate a missing webhook secret, which only exists after registration", async () => {

@@ -150,6 +150,36 @@ export const SYSTEM_TEMPLATE_KEYS = [
 
 export type SystemTemplateKey = (typeof SYSTEM_TEMPLATE_KEYS)[number];
 
+/**
+ * Where in a source a claim came from (blueprint 12.4, `source_references`).
+ *
+ * A closed vocabulary because each kind is addressed a different way and a reader
+ * has to know which. A `page` is a PDF page number, a `timestamp` is an offset
+ * into audio or video, a `segment` is a position in text that has been split. The
+ * kinds named here are the ones the sources in blueprint 5.1 can actually produce;
+ * Phase 3 adds whatever a document renderer turns out to need.
+ *
+ * Written here as a mirror of the enum in migration
+ * 20260917120100_phase1_template_schemas.sql rather than only in the schema module,
+ * because `tests/contract/` is where the two copies are made to agree.
+ */
+export const SOURCE_REFERENCE_KINDS = ["page", "timestamp", "segment"] as const;
+
+export type SourceReferenceKind = (typeof SOURCE_REFERENCE_KINDS)[number];
+
+/**
+ * The model providers Notinn can be configured to use (blueprint 12.3).
+ *
+ * One entry, and that is the point. Blueprint 12.3 fixes `AI_PROVIDER=gemini` for
+ * the MVP and requires every model call to go through the `NoteAIProvider`
+ * interface, so this list is a mirror of a decision rather than a catalogue. The
+ * factory in `_shared/providers/` is total over it — a second value here without a
+ * case there is a compile error, not a runtime surprise.
+ */
+export const AI_PROVIDERS = ["gemini"] as const;
+
+export type AiProvider = (typeof AI_PROVIDERS)[number];
+
 /** Telegram's documented maximum length for a text message. */
 export const TELEGRAM_MAX_MESSAGE_LENGTH = 4096;
 
@@ -165,6 +195,37 @@ export const MAX_SOURCE_TEXT_LENGTH = 100_000;
 
 /** Header carrying the webhook secret, per the Telegram Bot API. */
 export const TELEGRAM_SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token";
+
+/**
+ * Telegram's documented maximum length of `callback_data`, in bytes.
+ *
+ * A limit and not a target. The payload contract in blueprint 17.4 is what keeps
+ * the encoding small; this constant exists so that a rendered payload can be
+ * asserted to fit before it is attached to a button, rather than discovered by
+ * the Bot API refusing the call.
+ */
+export const TELEGRAM_MAX_CALLBACK_DATA_BYTES = 64;
+
+/**
+ * The largest pasted or forwarded text Notinn accepts (blueprint 5.1).
+ *
+ * Deliberately tighter than `MAX_SOURCE_TEXT_LENGTH`, and the two answer
+ * different questions. This is the product limit: the number blueprint 5.1 names
+ * as a configurable safeguard and the number a user is told about. The other is
+ * the structural bound that keeps `source_text` from being an unbounded blob.
+ * `tests/unit/text-normalisation.test.ts` asserts that this one is the tighter, so
+ * the structural bound is implied by the product limit rather than restated at
+ * every call site — and only the product limit is enforced at ingestion, by
+ * `_shared/services/text-normalisation.ts`.
+ *
+ * A reader may notice that Telegram caps message text at 4096 characters, so no
+ * text message can reach this limit today. That does not make it dead code: it is
+ * the product limit for text however it arrives, and text arrives by other routes
+ * — a `.txt` or `.md` document in Phase 3, a fetched article in Phase 4. The
+ * transport's own cap is a fact about one route, which is why it is not used as
+ * the product limit.
+ */
+export const MAX_PASTED_TEXT_CHARS = 60_000;
 
 /**
  * The largest webhook body Notinn will parse.

@@ -61,6 +61,16 @@ export const ALLOWED_LOG_FIELDS = [
   "to_state",
   "outcome",
   "generation_reason",
+  /**
+   * The inline action that was clicked, from the closed vocabulary in
+   * _shared/schemas/callback.ts (Phase 1).
+   *
+   * Safe to allow because the value is never user input: the decoder only ever
+   * yields a member of an application-owned union, and an unrecognised token is
+   * rejected before it reaches a logger. It is what makes blueprint 21.2's
+   * "callback" behaviour countable without recording anything a user typed.
+   */
+  "callback_action",
 
   // --- Request and response shape ------------------------------------------
   "method",

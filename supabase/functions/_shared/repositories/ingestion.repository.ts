@@ -3,6 +3,7 @@ import type { JobState } from "../config/constants.ts";
 import type { ServiceClient } from "../db/client.ts";
 import { AppError } from "../errors/app-error.ts";
 import type { AcceptedMessage } from "../telegram/parse-update.ts";
+import { classifyPostgresError, toDatabaseError } from "./postgres-errors.ts";
 
 /**
  * The database operations the webhook performs.
@@ -42,54 +43,6 @@ export interface AcceptResult {
   readonly userId: string | null;
   readonly jobId: string | null;
   readonly jobState: JobState | null;
-}
-
-/** The error shape PostgREST and PostgreSQL produce. */
-interface PostgresErrorLike {
-  readonly code?: string | null;
-  readonly message?: string | null;
-  readonly details?: string | null;
-  readonly hint?: string | null;
-}
-
-/**
- * Translate a database failure into the error taxonomy.
- *
- * The retryable verdict is decided by SQLSTATE class rather than by "a database
- * call failed", because one class demands the opposite response from all the
- * others:
- *
- *   * Class 23 is an integrity constraint violation. It is deterministic — the
- *     same statement against the same data will violate the same constraint — so
- *     a retry is pure waste. It also means something is wrong that a retry
- *     cannot fix: a routing table naming a template that does not exist, or a
- *     state transition the guard rejected. It is classified as internal because
- *     it is a bug, and it is logged at error level so it is noticed.
- *
- *   * Everything else is treated as transient, including class 08 (connection),
- *     40 (transaction rollback) and 57 (operator intervention). Guessing
- *     "retryable" when wrong costs a duplicate delivery, which update_id
- *     deduplication absorbs; guessing "not retryable" when wrong loses a user's
- *     note. The asymmetry decides it.
- */
-export function classifyPostgresError(error: PostgresErrorLike): AppError {
-  const code = error.code ?? "";
-  const detail = `postgres ${code || "(no code)"}: ${error.message ?? "(no message)"}`;
-
-  if (code.startsWith("23")) {
-    return AppError.internal(detail);
-  }
-
-  return AppError.database(detail);
-}
-
-/** Translate a thrown value from the client into the error taxonomy. */
-function toDatabaseError(thrown: unknown): AppError {
-  if (thrown instanceof Error && (thrown.name === "TimeoutError" || thrown.name === "AbortError")) {
-    return AppError.database("database request exceeded its timeout", thrown);
-  }
-  if (thrown instanceof AppError) return thrown;
-  return AppError.database("database call failed", thrown);
 }
 
 export class IngestionRepository {

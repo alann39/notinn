@@ -1,6 +1,11 @@
 import { loadScriptConfig } from "../supabase/functions/_shared/config/env.ts";
 import { toAppError } from "../supabase/functions/_shared/errors/app-error.ts";
-import { getMe, getWebhookInfo, setWebhook, SUBSCRIBED_UPDATE_KINDS } from "./lib/telegram-api.ts";
+import {
+  getMe,
+  getWebhookInfo,
+  setWebhook,
+  SUBSCRIBED_UPDATE_KINDS,
+} from "../supabase/functions/_shared/telegram/client.ts";
 import { requireConfirmation } from "./lib/prompt.ts";
 
 /**

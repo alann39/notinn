@@ -3,10 +3,11 @@ import {
   loadScriptConfig,
   loadWebhookConfig,
 } from "../supabase/functions/_shared/config/env.ts";
+import { AI_PROVIDERS } from "../supabase/functions/_shared/config/constants.ts";
 import { toAppError } from "../supabase/functions/_shared/errors/app-error.ts";
 
 /**
- * Verify that the environment is configured well enough to run Phase 0.
+ * Verify that the environment is configured well enough to run Notinn.
  *
  * Run with `deno task verify-env`.
  *
@@ -103,6 +104,38 @@ async function main(): Promise<void> {
     failures.push(
       "TELEGRAM_WEBHOOK_SECRET must match [A-Za-z0-9_-]{1,256}; Telegram rejects anything else.",
     );
+  }
+
+  // --- Generation provider -------------------------------------------------
+  section("Generation provider");
+
+  if (report.aiProvider === null) {
+    line("provider", "not set", "fail");
+    failures.push("AI_PROVIDER is not set; the webhook refuses to start without it.");
+  } else if (!(AI_PROVIDERS as readonly string[]).includes(report.aiProvider)) {
+    line("provider", `${report.aiProvider} — NOT SUPPORTED`, "fail");
+    failures.push(
+      `AI_PROVIDER is "${report.aiProvider}"; the only supported value is ` +
+        `${AI_PROVIDERS.join(", ")}.`,
+    );
+  } else {
+    line("provider", report.aiProvider, "ok");
+  }
+
+  if (report.geminiModel === null) {
+    line("model", "not set", "fail");
+    failures.push("GEMINI_MODEL is not set; name the model explicitly.");
+  } else {
+    line("model", report.geminiModel, "ok");
+  }
+
+  if (report.geminiApiKeyLength === null) {
+    line("provider key", "not set", "fail");
+    failures.push("GEMINI_API_KEY is not set; notes cannot be generated without it.");
+  } else {
+    // Length only. The key's own shape is Google's business, and a provider key
+    // that is present but wrong produces a clear 401 from the provider.
+    line("provider key length", String(report.geminiApiKeyLength));
   }
 
   // --- Configuration loads -------------------------------------------------

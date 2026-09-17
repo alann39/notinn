@@ -34,10 +34,12 @@ import {
  */
 
 const MIGRATIONS_DIR = new URL("../../supabase/migrations/", import.meta.url);
-const REPOSITORY_FILE = new URL(
-  "../../supabase/functions/_shared/repositories/ingestion.repository.ts",
+const REPOSITORY_DIR = new URL(
+  "../../supabase/functions/_shared/repositories/",
   import.meta.url,
 );
+const INGESTION_REPOSITORY = new URL("ingestion.repository.ts", REPOSITORY_DIR);
+const NOTES_REPOSITORY = new URL("notes.repository.ts", REPOSITORY_DIR);
 
 /** Read every migration, concatenated, with its filename attached for messages. */
 async function loadMigrations(): Promise<{ name: string; sql: string }[]> {
@@ -65,6 +67,9 @@ const FILE_SUFFIXES = [
   "phase0_notes.sql",
   "phase0_usage_events.sql",
   "phase0_ingestion_functions.sql",
+  "phase1_rejected_chats.sql",
+  "phase1_template_schemas.sql",
+  "phase1_note_functions.sql",
 ] as const;
 
 /** Read the one migration whose filename ends with `suffix`. */
@@ -82,6 +87,7 @@ const ENUMS_SQL = await loadMigration("phase0_enums_and_helpers.sql");
 const TEMPLATES_SQL = await loadMigration("phase0_templates.sql");
 const JOBS_SQL = await loadMigration("phase0_processing_jobs.sql");
 const INGESTION_SQL = await loadMigration("phase0_ingestion_functions.sql");
+const NOTE_FUNCTIONS_SQL = await loadMigration("phase1_note_functions.sql");
 const ALL_MIGRATIONS = await loadMigrations();
 const ALL_SQL = ALL_MIGRATIONS.map((migration) => migration.sql).join("\n");
 
@@ -422,8 +428,21 @@ Deno.test("every function is either SECURITY DEFINER or a trigger function", () 
   // asserted below.
   for (const { name, migration } of createdFunctions()) {
     const body = normalise(migration.sql);
-    const signature = new RegExp(`function public\\.${name}\\([^)]*\\)[^;]*?returns (\\w+)`);
-    const returnsTrigger = signature.test(body);
+    // `returns trigger` specifically. An earlier version of this matched
+    // `returns (\w+)`, which is true of every function — so the test asserted
+    // nothing and a function that was neither SECURITY DEFINER nor a trigger
+    // would have passed. Found by reading in Phase 1; the migrations were
+    // already correct, the guard was not. Removing the `security definer` line
+    // from a Phase 1 migration now fails this test, which is the only proof that
+    // matters.
+    //
+    // It remains a textual guard, so its blind spot is a *commented-out* phrase
+    // matching the pattern. That is the correct trade for a drift guard: it
+    // catches the forgotten line, which is the accident, rather than defending
+    // against an author who is trying to defeat it.
+    const returnsTrigger = new RegExp(
+      `function public\\.${name}\\([^)]*\\)[^;]*?returns trigger\\b`,
+    ).test(body);
     const isDefiner = new RegExp(
       `function public\\.${name}\\([^)]*\\)[^;]*?security definer`,
     ).test(body);
@@ -500,14 +519,47 @@ Deno.test("the revoke precedes the grant for every function", () => {
   }
 });
 
+// --- Deletion semantics ----------------------------------------------------
+//
+// `delete_note` is one statement — `delete from public.notes` — and relies on the
+// schema for everything else blueprint 11.5 requires it to remove. That reliance
+// is only safe while the foreign keys are what they are, so the two that carry
+// the requirement are asserted here. Without this, changing a cascade to RESTRICT
+// would turn deletion into a runtime 500 with nothing in the test suite
+// objecting.
+
+Deno.test("deleting a note cascades to its generated outputs", () => {
+  // Blueprint 11.5: "Deleting a note must remove: … Generated outputs and
+  // versions." This is the constraint that does it.
+  assert(
+    normalise(ALL_SQL).includes(
+      "note_id uuid not null references public.notes (id) on delete cascade",
+    ),
+    "note_outputs.note_id no longer cascades, so deleting a note leaves its outputs behind",
+  );
+});
+
+Deno.test("deleting a note leaves its processing job standing with note_id cleared", () => {
+  // The other half of blueprint 11.5's design: the job survives, minus the note
+  // it produced, which is what makes the job row the non-content deletion record
+  // of blueprint 8.4. A cascade here instead would delete the job and with it the
+  // record that the work ever happened.
+  assert(
+    normalise(ALL_SQL).includes(
+      "foreign key (note_id) references public.notes (id) on delete set null",
+    ),
+    "processing_jobs.note_id no longer clears itself, so a note cannot be deleted",
+  );
+});
+
 // --- The repository against the function signatures ------------------------
 
 /** The argument names the repository passes to an RPC, read from its source. */
-async function rpcArgumentNames(rpcName: string): Promise<string[]> {
-  const source = await Deno.readTextFile(REPOSITORY_FILE);
+async function rpcArgumentNames(repository: URL, rpcName: string): Promise<string[]> {
+  const source = await Deno.readTextFile(repository);
   const call = source.match(new RegExp(`rpc\\("${rpcName}", \\{([\\s\\S]*?)\\}\\)`));
 
-  assert(call !== null, `the repository does not call ${rpcName}`);
+  assert(call !== null, `${repository.pathname} does not call ${rpcName}`);
 
   return [...(call[1] ?? "").matchAll(/^\s*(p_\w+):/gm)].map((match) => match[1] as string);
 }
@@ -534,18 +586,35 @@ function declaredParameters(
     });
 }
 
+/**
+ * Every RPC the application calls, with the migration that declares it and the
+ * repository file that calls it.
+ *
+ * The repository is named per entry rather than assumed, because there is more
+ * than one now. `rpcArgumentNames` reads the call by regex, so the call must be
+ * written as a literal object with one `p_name: value,` per line — a spread or a
+ * computed key would be invisible to this test, and the test would then assert
+ * that a repository supplying nothing supplies everything.
+ */
 const RPC_CONTRACTS = [
-  ["ensure_telegram_user", INGESTION_SQL],
-  ["accept_telegram_update", INGESTION_SQL],
+  [INGESTION_REPOSITORY, "ensure_telegram_user", INGESTION_SQL],
+  [INGESTION_REPOSITORY, "accept_telegram_update", INGESTION_SQL],
+  [NOTES_REPOSITORY, "persist_note", NOTE_FUNCTIONS_SQL],
+  [NOTES_REPOSITORY, "regenerate_note_output", NOTE_FUNCTIONS_SQL],
+  [NOTES_REPOSITORY, "set_current_output", NOTE_FUNCTIONS_SQL],
+  [NOTES_REPOSITORY, "set_note_saved", NOTE_FUNCTIONS_SQL],
+  [NOTES_REPOSITORY, "delete_note", NOTE_FUNCTIONS_SQL],
+  [NOTES_REPOSITORY, "list_recent_saved_notes", NOTE_FUNCTIONS_SQL],
+  [NOTES_REPOSITORY, "find_note_for_regeneration", NOTE_FUNCTIONS_SQL],
 ] as const;
 
-for (const [name, sql] of RPC_CONTRACTS) {
+for (const [repository, name, sql] of RPC_CONTRACTS) {
   Deno.test(`the repository's ${name} arguments all exist as parameters`, async () => {
     // A renamed parameter or a typo is rejected by PostgREST at runtime, on the
     // first real message, as an opaque error. This catches it at commit time.
     const declared = new Set(declaredParameters(sql, name).map((parameter) => parameter.name));
 
-    for (const argument of await rpcArgumentNames(name)) {
+    for (const argument of await rpcArgumentNames(repository, name)) {
       assert(declared.has(argument), `${name} has no parameter ${argument}`);
     }
   });
@@ -554,7 +623,7 @@ for (const [name, sql] of RPC_CONTRACTS) {
     // Omitting one is the failure this exists for: a parameter with no default
     // that the caller never sends is a parameter PostgREST cannot fill, and the
     // call fails at runtime having compiled cleanly.
-    const supplied = new Set(await rpcArgumentNames(name));
+    const supplied = new Set(await rpcArgumentNames(repository, name));
 
     for (const parameter of declaredParameters(sql, name)) {
       if (!parameter.required) continue;
@@ -563,30 +632,130 @@ for (const [name, sql] of RPC_CONTRACTS) {
   });
 }
 
-Deno.test("the repository's outcome vocabulary matches the function's", () => {
-  // The three outcomes are a contract across the RPC boundary. A rename on
-  // either side would otherwise surface as a runtime schema-validation failure
-  // on a real user's first message.
-  const outcomes = ["accepted", "duplicate", "user_not_active"];
+/**
+ * The outcome vocabulary of each RPC that reports one.
+ *
+ * The vocabulary is a contract across the boundary in both directions. An outcome
+ * the SQL can return that the repository does not know about surfaces as a schema
+ * validation failure on a real user's message — which for `persist_note` would
+ * mean a note generated and paid for but never delivered. An outcome the
+ * repository handles that the SQL never returns is a branch that cannot run, which
+ * is invisible until somebody reads the function and wonders.
+ *
+ * The strongest form of this check is the per-type assertion below, which pins
+ * the members exactly; this one catches an outcome returned by a path the type
+ * does not mention, which the type check alone cannot see because it compares the
+ * type to a hand-written expectation rather than to the SQL.
+ */
+const OUTCOME_VOCABULARIES = [
+  {
+    repository: INGESTION_REPOSITORY,
+    fn: "accept_telegram_update",
+    sql: INGESTION_SQL,
+    outcomes: ["accepted", "duplicate", "user_not_active"],
+  },
+  {
+    repository: NOTES_REPOSITORY,
+    fn: "persist_note",
+    sql: NOTE_FUNCTIONS_SQL,
+    outcomes: ["created", "existing", "not_found", "wrong_state"],
+  },
+  {
+    repository: NOTES_REPOSITORY,
+    fn: "regenerate_note_output",
+    sql: NOTE_FUNCTIONS_SQL,
+    outcomes: ["created", "not_found"],
+  },
+  {
+    repository: NOTES_REPOSITORY,
+    fn: "set_current_output",
+    sql: NOTE_FUNCTIONS_SQL,
+    outcomes: ["updated", "not_found"],
+  },
+  {
+    repository: NOTES_REPOSITORY,
+    fn: "set_note_saved",
+    sql: NOTE_FUNCTIONS_SQL,
+    outcomes: ["updated", "not_found"],
+  },
+  {
+    repository: NOTES_REPOSITORY,
+    fn: "delete_note",
+    sql: NOTE_FUNCTIONS_SQL,
+    outcomes: ["deleted", "not_found"],
+  },
+] as const;
 
-  for (const outcome of outcomes) {
-    assert(INGESTION_SQL.includes(`'${outcome}'`), `the function never returns ${outcome}`);
-  }
-});
+for (const { repository, fn, sql, outcomes } of OUTCOME_VOCABULARIES) {
+  Deno.test(`${fn}'s outcomes are returned by the SQL and handled by the repository`, async () => {
+    const source = await Deno.readTextFile(repository);
 
-Deno.test("the repository validates the outcome against the same three values", async () => {
-  const source = await Deno.readTextFile(REPOSITORY_FILE);
+    for (const outcome of outcomes) {
+      assert(sql.includes(`'${outcome}'`), `${fn} never returns '${outcome}'`);
+      assert(
+        source.includes(`"${outcome}"`),
+        `the repository does not handle '${outcome}' from ${fn}`,
+      );
+    }
+  });
+}
 
-  for (const outcome of ["accepted", "duplicate", "user_not_active"]) {
-    assert(source.includes(`"${outcome}"`), `the repository does not handle ${outcome}`);
-  }
+/**
+ * The exported outcome types, against the members the SQL returns.
+ *
+ * Written out one per type rather than derived, because the point of the test is
+ * that a human wrote the expectation down and a change has to disagree with it.
+ * A generic version that computed the members from the SQL would agree with any
+ * SQL, including one that lost an outcome.
+ *
+ * The declaration is matched as literal text. Every one of these fits on one line
+ * within the formatter's width, so the formatting is stable — and a type alias
+ * that had to wrap would be a sign the vocabulary had grown too wide to read.
+ */
+const OUTCOME_TYPES = [
+  {
+    repository: INGESTION_REPOSITORY,
+    name: "IngestionOutcome",
+    declaration: 'export type IngestionOutcome = "accepted" | "duplicate" | "user_not_active";',
+  },
+  {
+    repository: NOTES_REPOSITORY,
+    name: "PersistNoteOutcome",
+    declaration:
+      'export type PersistNoteOutcome = "created" | "existing" | "not_found" | "wrong_state";',
+  },
+  {
+    repository: NOTES_REPOSITORY,
+    name: "NoteWriteOutcome",
+    declaration: 'export type NoteWriteOutcome = "created" | "not_found";',
+  },
+  {
+    repository: NOTES_REPOSITORY,
+    name: "SetCurrentOutputOutcome",
+    declaration: 'export type SetCurrentOutputOutcome = "updated" | "not_found";',
+  },
+  {
+    repository: NOTES_REPOSITORY,
+    name: "SetNoteSavedOutcome",
+    declaration: 'export type SetNoteSavedOutcome = "updated" | "not_found";',
+  },
+  {
+    repository: NOTES_REPOSITORY,
+    name: "DeleteNoteOutcome",
+    declaration: 'export type DeleteNoteOutcome = "deleted" | "not_found";',
+  },
+] as const;
 
-  // And the type it exposes is the same set.
-  assert(
-    /export type IngestionOutcome = "accepted" \| "duplicate" \| "user_not_active";/.test(source),
-    "the IngestionOutcome type has drifted from the outcome set",
-  );
-});
+for (const { repository, name, declaration } of OUTCOME_TYPES) {
+  Deno.test(`the ${name} type matches its outcome set`, async () => {
+    const source = await Deno.readTextFile(repository);
+
+    assert(
+      source.includes(declaration),
+      `${name} has drifted from its outcome set in ${repository.pathname}\n  expected: ${declaration}`,
+    );
+  });
+}
 
 // --- The migration set itself ----------------------------------------------
 

@@ -1,6 +1,6 @@
 import { loadScriptConfig } from "../supabase/functions/_shared/config/env.ts";
 import { toAppError } from "../supabase/functions/_shared/errors/app-error.ts";
-import { getMe, getWebhookInfo } from "./lib/telegram-api.ts";
+import { getMe, getWebhookInfo } from "../supabase/functions/_shared/telegram/client.ts";
 
 /**
  * Inspect the Telegram webhook, without changing anything.

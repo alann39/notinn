@@ -1,6 +1,10 @@
 import { loadScriptConfig } from "../supabase/functions/_shared/config/env.ts";
 import { toAppError } from "../supabase/functions/_shared/errors/app-error.ts";
-import { deleteWebhook, getMe, getWebhookInfo } from "./lib/telegram-api.ts";
+import {
+  deleteWebhook,
+  getMe,
+  getWebhookInfo,
+} from "../supabase/functions/_shared/telegram/client.ts";
 import { requireConfirmation } from "./lib/prompt.ts";
 
 /**

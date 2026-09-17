@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AI_PROVIDERS, type AiProvider } from "./constants.ts";
 import { AppError } from "../errors/app-error.ts";
 import { digestForLogging } from "../observability/redaction.ts";
 import { LOG_LEVELS, type LogLevel } from "../observability/levels.ts";
@@ -33,7 +34,13 @@ export const NOTINN_ENVIRONMENTS = ["local", "development", "staging", "producti
 
 export type NotinnEnvironment = (typeof NOTINN_ENVIRONMENTS)[number];
 
-/** The environment variables the application recognises. Nothing else is read. */
+/**
+ * The environment variables the application recognises. Nothing else is read.
+ *
+ * `AI_PROVIDER`, `GEMINI_API_KEY` and `GEMINI_MODEL` joined this list in Phase 1,
+ * when generation arrived and the webhook stopped being a function that only
+ * acknowledged and enqueued.
+ */
 export const RECOGNISED_ENV_KEYS = [
   "SUPABASE_URL",
   "SUPABASE_SERVICE_ROLE_KEY",
@@ -42,6 +49,9 @@ export const RECOGNISED_ENV_KEYS = [
   "TELEGRAM_BOT_TOKEN",
   "TELEGRAM_WEBHOOK_SECRET",
   "TELEGRAM_WEBHOOK_URL",
+  "AI_PROVIDER",
+  "GEMINI_API_KEY",
+  "GEMINI_MODEL",
   "NOTINN_ENV",
   "NOTINN_LOG_LEVEL",
 ] as const;
@@ -98,8 +108,33 @@ export interface BaseConfig {
   readonly fingerprints: { readonly serviceRoleKey: string; readonly webhookSecret?: string };
 }
 
+/**
+ * The generation provider's configuration (blueprint 12.3).
+ *
+ * The model identifier lives here and nowhere else. Blueprint 12.3 requires it to
+ * be "read from configuration rather than repeated throughout the codebase", which
+ * is why it is a string on this object and not a constant next to the adapter that
+ * uses it: changing the model is an operator's edit to an environment variable, not
+ * a code change and a redeploy.
+ */
+export interface AiConfig {
+  readonly provider: AiProvider;
+  readonly apiKey: Secret;
+  readonly model: string;
+}
+
 export interface WebhookConfig extends BaseConfig {
   readonly webhookSecret: Secret;
+  /**
+   * The bot token, required from Phase 1 onwards.
+   *
+   * Phase 0's webhook did not need it, and docs/ADR/0002-phase-0-scope.md said so
+   * explicitly. Phase 1 delivers notes, delivery is a Bot API call, and the
+   * acknowledgement path now carries the reply — so the token is required and the
+   * widening is recorded in docs/ADR/0007-phase-1-scope.md.
+   */
+  readonly botToken: Secret;
+  readonly ai: AiConfig;
 }
 
 export interface ScriptConfig extends BaseConfig {
@@ -120,6 +155,17 @@ export interface ScriptConfig extends BaseConfig {
 /** Telegram's own constraint on the secret token it will store and echo back. */
 const TELEGRAM_SECRET_PATTERN = /^[A-Za-z0-9_-]{1,256}$/;
 
+/**
+ * A model identifier: a version string, not a secret, not a URL.
+ *
+ * Constrained because the value is interpolated into the provider's request path.
+ * A model id carrying a slash or a `?` would not be a model id, it would be an
+ * attempt to choose a different endpoint — and the place to refuse that is the
+ * configuration boundary, where the message can say so, rather than deep inside an
+ * adapter that will report it as a provider error.
+ */
+const MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
 const RawSchema = z.object({
   SUPABASE_URL: z.url(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
@@ -128,6 +174,9 @@ const RawSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().min(1).optional(),
   TELEGRAM_WEBHOOK_SECRET: z.string().min(1).optional(),
   TELEGRAM_WEBHOOK_URL: z.url().optional(),
+  AI_PROVIDER: z.enum(AI_PROVIDERS).optional(),
+  GEMINI_API_KEY: z.string().min(1).optional(),
+  GEMINI_MODEL: z.string().min(1).optional(),
   NOTINN_ENV: z.enum(NOTINN_ENVIRONMENTS).optional(),
   NOTINN_LOG_LEVEL: z.enum(LOG_LEVELS).optional(),
 });
@@ -254,12 +303,59 @@ function resolveLogLevel(raw: RawEnv, environment: NotinnEnvironment): LogLevel 
 // --- Loaders ----------------------------------------------------------------
 
 /**
+ * Resolve the generation provider's configuration.
+ *
+ * Every field is required, and each failure names the variable to set. The
+ * alternative — defaulting the provider to `gemini`, or the model to something
+ * current at the time of writing — trades a startup error for a silent change of
+ * behaviour. A model that is never named cannot be rolled back, and blueprint
+ * 12.3 asks for the model to be configuration precisely so that it can be.
+ */
+function resolveAiConfig(raw: RawEnv): AiConfig {
+  const provider = raw.AI_PROVIDER;
+  if (provider === undefined) {
+    throw AppError.configuration(
+      `AI_PROVIDER is not set: set it to one of ${AI_PROVIDERS.join(", ")}.`,
+    );
+  }
+
+  const apiKey = raw.GEMINI_API_KEY;
+  if (apiKey === undefined) {
+    throw AppError.configuration(
+      "GEMINI_API_KEY is not set: notes cannot be generated without it.",
+    );
+  }
+
+  const model = raw.GEMINI_MODEL;
+  if (model === undefined) {
+    throw AppError.configuration(
+      "GEMINI_MODEL is not set: name the model explicitly so it can be changed without a deploy.",
+    );
+  }
+  if (!MODEL_ID_PATTERN.test(model)) {
+    throw AppError.configuration(
+      "GEMINI_MODEL is not a plain model identifier. Use the model name only, " +
+        "such as gemini-2.5-flash — no URL, path or query string.",
+    );
+  }
+
+  return { provider, apiKey: new Secret(apiKey), model };
+}
+
+/**
  * Configuration for the Telegram webhook Edge Function.
  *
- * The bot token is deliberately absent: the Phase 0 webhook acknowledges and
- * enqueues, and never calls the Bot API. Requiring a token the function does not
- * need would widen the blast radius of a compromised function for no benefit.
- * See docs/ADR/0002-phase-0-scope.md.
+ * The bot token is required. Phase 0 did not require it, deliberately, and
+ * docs/ADR/0002-phase-0-scope.md argued that carrying a credential the function
+ * never uses widens the blast radius of a compromise for no benefit. That argument
+ * was conditional on the webhook making no outbound call, and Phase 1 ends that
+ * condition: the webhook now delivers notes and answers callbacks. The blast radius
+ * is genuinely wider than in Phase 0, and docs/ADR/0007-phase-1-scope.md records
+ * it as an accepted cost rather than a discovered one.
+ *
+ * The same reasoning is why the generation provider's key is *not* added to
+ * `ScriptConfig`. The scripts never generate, so requiring `GEMINI_API_KEY` of them
+ * would be the Phase 0 mistake in reverse.
  */
 export async function loadWebhookConfig(
   source: Record<string, string | undefined> = Deno.env.toObject(),
@@ -290,6 +386,18 @@ export async function loadWebhookConfig(
     );
   }
 
+  // Ordered after the webhook secret on purpose: a fresh checkout has no secret
+  // yet, and that single missing variable should be the thing the operator is told
+  // about rather than one item in a list of everything that is not configured.
+  const botToken = raw.TELEGRAM_BOT_TOKEN;
+  if (botToken === undefined) {
+    throw AppError.configuration(
+      "TELEGRAM_BOT_TOKEN is not set: the webhook cannot deliver a note without it.",
+    );
+  }
+
+  const ai = resolveAiConfig(raw);
+
   const serviceSecret = new Secret(serviceRoleKey);
   const webhookSecretValue = new Secret(webhookSecret);
 
@@ -298,6 +406,8 @@ export async function loadWebhookConfig(
     supabaseUrl: raw.SUPABASE_URL,
     serviceRoleKey: serviceSecret,
     webhookSecret: webhookSecretValue,
+    botToken: new Secret(botToken),
+    ai,
     logLevel: resolveLogLevel(raw, environment),
     fingerprints: {
       serviceRoleKey: await serviceSecret.fingerprint(),
@@ -380,6 +490,10 @@ export interface EnvironmentReport {
   readonly botTokenLength: number | null;
   readonly webhookSecretLength: number | null;
   readonly webhookSecretFormatValid: boolean | null;
+  /** As configured, or null when unset. Both are public values, not secrets. */
+  readonly aiProvider: string | null;
+  readonly geminiModel: string | null;
+  readonly geminiApiKeyLength: number | null;
 }
 
 export function describeEnvironment(
@@ -394,6 +508,7 @@ export function describeEnvironment(
   const serviceRoleKey = picked["SUPABASE_SERVICE_ROLE_KEY"] ?? null;
   const botToken = picked["TELEGRAM_BOT_TOKEN"] ?? null;
   const webhookSecret = picked["TELEGRAM_WEBHOOK_SECRET"] ?? null;
+  const geminiApiKey = picked["GEMINI_API_KEY"] ?? null;
 
   return {
     environment: (picked["NOTINN_ENV"] as NotinnEnvironment | undefined) ?? "local",
@@ -408,5 +523,10 @@ export function describeEnvironment(
     webhookSecretFormatValid: webhookSecret === null
       ? null
       : TELEGRAM_SECRET_PATTERN.test(webhookSecret),
+    // Neither the provider name nor the model id is a credential — both are in
+    // the blueprint. The key is reported by length only.
+    aiProvider: picked["AI_PROVIDER"] ?? null,
+    geminiModel: picked["GEMINI_MODEL"] ?? null,
+    geminiApiKeyLength: geminiApiKey?.length ?? null,
   };
 }

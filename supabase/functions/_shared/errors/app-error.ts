@@ -93,6 +93,11 @@ export class AppError extends Error {
     return new AppError(ERROR_CODES.INPUT_TOO_LARGE, { internalDetail });
   }
 
+  /** Text exceeds blueprint 5.1's pasted-text limit. */
+  static inputTooLong(internalDetail?: string): AppError {
+    return new AppError(ERROR_CODES.INPUT_TOO_LONG, { internalDetail });
+  }
+
   /** A webhook request did not carry a valid secret. */
   static unauthorized(internalDetail?: string): AppError {
     return new AppError(ERROR_CODES.UNAUTHORIZED, { internalDetail });
@@ -101,6 +106,47 @@ export class AppError extends Error {
   /** The account exists but may not act. */
   static userNotActive(internalDetail?: string): AppError {
     return new AppError(ERROR_CODES.USER_NOT_ACTIVE, { internalDetail });
+  }
+
+  // --- Upstream and pipeline ----------------------------------------------
+  //
+  // The provider and delivery codes are added here in Phase 1 because that is
+  // when the first code that can throw them arrives. An unused factory would be a
+  // claim about the future; the taxonomy above already carries the codes.
+
+  /** The provider refused the call. `internalDetail` carries the status only. */
+  static providerError(internalDetail?: string, cause?: unknown): AppError {
+    return new AppError(ERROR_CODES.PROVIDER_ERROR, { internalDetail, cause });
+  }
+
+  /** The provider did not answer within the budget. */
+  static providerTimeout(internalDetail?: string, cause?: unknown): AppError {
+    return new AppError(ERROR_CODES.PROVIDER_TIMEOUT, { internalDetail, cause });
+  }
+
+  /** The provider refused for rate-limit reasons. */
+  static providerRateLimited(internalDetail?: string): AppError {
+    return new AppError(ERROR_CODES.PROVIDER_RATE_LIMITED, { internalDetail });
+  }
+
+  /** The Telegram Bot API refused a call. */
+  static telegramError(internalDetail?: string, cause?: unknown): AppError {
+    return new AppError(ERROR_CODES.TELEGRAM_ERROR, { internalDetail, cause });
+  }
+
+  /** The provider answered without producing a usable note. */
+  static generationFailed(internalDetail?: string, cause?: unknown): AppError {
+    return new AppError(ERROR_CODES.GENERATION_FAILED, { internalDetail, cause });
+  }
+
+  /** The provider's answer did not satisfy the structured-note schema. */
+  static outputValidationFailed(internalDetail?: string, cause?: unknown): AppError {
+    return new AppError(ERROR_CODES.OUTPUT_VALIDATION_FAILED, { internalDetail, cause });
+  }
+
+  /** The note exists but the user never received it. */
+  static deliveryFailed(internalDetail?: string, cause?: unknown): AppError {
+    return new AppError(ERROR_CODES.DELIVERY_FAILED, { internalDetail, cause });
   }
 
   /** The process is misconfigured. */

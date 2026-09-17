@@ -18,9 +18,11 @@ import type { LogLevel } from "../observability/levels.ts";
  * builds a user-facing string out of an exception, so an upstream message cannot
  * be reflected to a user by accident.
  *
- * Phase 0 defines the taxonomy and its safe messages but does not deliver them:
- * blueprint 16.4's fixed error reply to Telegram is Phase 1 work. See
- * docs/ADR/0002-phase-0-scope.md.
+ * Phase 0 defined the taxonomy and its safe messages but delivered none of them,
+ * because it had no outbound messaging at all. Phase 1 delivers them: blueprint
+ * 16.4's fixed error reply and blueprint 16.3's failure reply are sent by the
+ * webhook, always as `publicMessage` and never as anything derived from a thrown
+ * value. See docs/ADR/0007-phase-1-scope.md.
  */
 
 export const ERROR_CODES = {
@@ -31,6 +33,15 @@ export const ERROR_CODES = {
   UNSUPPORTED_INPUT: "unsupported_input",
   /** Input is a supported kind but exceeds a documented size or duration limit. */
   INPUT_TOO_LARGE: "input_too_large",
+  /**
+   * Text input exceeds blueprint 5.1's pasted-text limit.
+   *
+   * Distinct from INPUT_TOO_LARGE, which is about a file. The two are separated
+   * because the user's remedy differs — split the note, or send a smaller file —
+   * and because "a user pasted 80,000 characters" is a different signal to an
+   * operator than "a user uploaded a 40 MB PDF".
+   */
+  INPUT_TOO_LONG: "input_too_long",
   /** The Telegram update was addressed to something other than a private chat. */
   NON_PRIVATE_CHAT: "non_private_chat",
 
@@ -57,6 +68,23 @@ export const ERROR_CODES = {
   PROVIDER_RATE_LIMITED: "provider_rate_limited",
   /** The Telegram Bot API refused a call. */
   TELEGRAM_ERROR: "telegram_error",
+
+  // --- Generation and delivery ---------------------------------------------
+  /** The provider answered, and the answer was not a usable note. */
+  GENERATION_FAILED: "generation_failed",
+  /** The provider produced something that failed validation against the schema. */
+  OUTPUT_VALIDATION_FAILED: "output_validation_failed",
+  /**
+   * The note was generated and stored, but the user never received it.
+   *
+   * Not the same error as TELEGRAM_ERROR even though the underlying failure is
+   * usually the same Bot API call. This one means a note exists that its owner has
+   * never seen, which is a state an operator has to reconcile; TELEGRAM_ERROR means
+   * a call failed, which for a callback answer or a group refusal loses nothing.
+   * They are separated so that alerting can be about lost notes rather than about
+   * failed calls.
+   */
+  DELIVERY_FAILED: "delivery_failed",
 
   // --- Infrastructure ------------------------------------------------------
   /** Object storage refused an operation. */
@@ -112,14 +140,20 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = {
     publicMessage: "That's too large for me to process. Try a smaller file or a shorter note.",
     logLevel: "info",
   },
+  [ERROR_CODES.INPUT_TOO_LONG]: {
+    httpStatus: 413,
+    retryable: false,
+    publicMessage: "That's longer than I can take in one note. Try sending it in two parts.",
+    logLevel: "info",
+  },
   [ERROR_CODES.NON_PRIVATE_CHAT]: {
     httpStatus: 403,
     retryable: false,
-    // Phase 0 never sends this: it has no outbound messaging, so a non-private
-    // update is silently ignored. Blueprint 16.4 still stands — Phase 1 sends this
-    // once per chat, the first time a given chat is seen, not once per message.
-    // TODO(Phase 1): send this on the first ignored message of each non-private
-    // chat. See docs/ADR/0001-blueprint-deviations.md §3.
+    // Delivered once per chat, by the first message of that chat to be ignored,
+    // never once per message. The claim is taken by
+    // claim_rejected_chat_reply() before the send, so two messages arriving
+    // together produce one refusal rather than two. See
+    // docs/ADR/0001-blueprint-deviations.md §3.
     publicMessage: "I only work in private chats for now.",
     logLevel: "info",
   },
@@ -174,6 +208,30 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = {
     httpStatus: 502,
     retryable: true,
     publicMessage: "Something went wrong sending that back to you. I'll try again shortly.",
+    logLevel: "error",
+  },
+
+  [ERROR_CODES.GENERATION_FAILED]: {
+    httpStatus: 502,
+    retryable: true,
+    publicMessage: "I couldn't turn that into a note. I'll try again shortly.",
+    logLevel: "error",
+  },
+  [ERROR_CODES.OUTPUT_VALIDATION_FAILED]: {
+    httpStatus: 502,
+    retryable: true,
+    // The same sentence as GENERATION_FAILED, deliberately. To a user these are
+    // one event — no note arrived — and a second wording would imply a difference
+    // they cannot see or act on. The two codes exist for the log, where "the model
+    // returned prose" and "the model returned the wrong shape" lead to different
+    // fixes.
+    publicMessage: "I couldn't turn that into a note. I'll try again shortly.",
+    logLevel: "error",
+  },
+  [ERROR_CODES.DELIVERY_FAILED]: {
+    httpStatus: 502,
+    retryable: true,
+    publicMessage: "I finished that note but couldn't send it back. I'll try again shortly.",
     logLevel: "error",
   },
 

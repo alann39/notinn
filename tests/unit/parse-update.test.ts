@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { MAX_SOURCE_TEXT_LENGTH } from "../../supabase/functions/_shared/config/constants.ts";
+import { MAX_PASTED_TEXT_CHARS } from "../../supabase/functions/_shared/config/constants.ts";
 import { classifyUpdate } from "../../supabase/functions/_shared/telegram/parse-update.ts";
 import { TelegramUpdateSchema } from "../../supabase/functions/_shared/telegram/schema.ts";
 import {
@@ -285,18 +285,34 @@ Deno.test("whitespace-only text is ignored", () => {
   assertEquals(result.reason, "empty_message");
 });
 
-Deno.test("text at the maximum length is accepted", () => {
-  const result = classify(oversizedTextUpdate({ length: MAX_SOURCE_TEXT_LENGTH }));
+Deno.test("text at the product limit is accepted", () => {
+  // The limit here is blueprint 5.1's pasted-text limit rather than the structural
+  // bound on `source_text`, because blueprint 10.2 puts the product limit at the
+  // point of ingestion. The two are ordered, and `text-normalisation.test.ts`
+  // asserts the ordering.
+  const result = classify(oversizedTextUpdate({ length: MAX_PASTED_TEXT_CHARS }));
   assertEquals(result.kind, "accepted");
 });
 
-Deno.test("text one character over the maximum is ignored", () => {
-  const result = classify(oversizedTextUpdate({ length: MAX_SOURCE_TEXT_LENGTH + 1 }));
+Deno.test("text one character over the product limit is ignored", () => {
+  const result = classify(oversizedTextUpdate({ length: MAX_PASTED_TEXT_CHARS + 1 }));
 
   assertEquals(result.kind, "ignored");
   if (result.kind !== "ignored") return;
 
   assertEquals(result.reason, "source_text_too_long");
+});
+
+Deno.test("the text that is accepted is the normalised text, not the raw body", () => {
+  // The classifier hands on what will be stored. A caller that received the raw
+  // body here would store a value this module had already declared canonical, and
+  // the note's digest would be taken over the wrong string.
+  const result = classify(textUpdate({ text: "  First line.\r\n\r\nSecond line.  " }));
+
+  assertEquals(result.kind, "accepted");
+  if (result.kind !== "accepted") return;
+
+  assertEquals(result.message.sourceText, "First line.\n\nSecond line.");
 });
 
 // --- Schema tolerance ------------------------------------------------------

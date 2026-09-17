@@ -1,6 +1,7 @@
-import { type InputType, MAX_SOURCE_TEXT_LENGTH } from "../config/constants.ts";
+import { type InputType, MAX_PASTED_TEXT_CHARS } from "../config/constants.ts";
 import type { SystemTemplateKey } from "../config/constants.ts";
 import { documentInputType, routeInput, type RoutingReason } from "../services/input-routing.ts";
+import { normaliseSourceText } from "../services/text-normalisation.ts";
 import type { TelegramMessage, TelegramUpdate } from "./schema.ts";
 
 /**
@@ -209,14 +210,18 @@ export function classifyUpdate(update: TelegramUpdate): UpdateClassification {
 
   // --- Text ----------------------------------------------------------------
   if (kind === "text") {
-    const text = message.text ?? "";
-    if (text.trim() === "") {
+    // Blueprint 10.2's first two steps, in its order: normalise, then reject
+    // empty or oversized. The bounds are read from the normalised form rather
+    // than the raw body, so a note is measured as it will be stored.
+    const normalised = normaliseSourceText(message.text ?? "");
+
+    if (normalised.kind === "empty") {
       return ignored("empty_message", "text was empty or whitespace", updateId);
     }
-    if (text.length > MAX_SOURCE_TEXT_LENGTH) {
+    if (normalised.kind === "too_long") {
       return ignored(
         "source_text_too_long",
-        `text length ${text.length} exceeds ${MAX_SOURCE_TEXT_LENGTH}`,
+        `text length ${normalised.length} exceeds ${MAX_PASTED_TEXT_CHARS}`,
         updateId,
       );
     }
@@ -232,7 +237,7 @@ export function classifyUpdate(update: TelegramUpdate): UpdateClassification {
         templateKey: decision.templateKey,
         routingReason: decision.reason,
         forwarded,
-        sourceText: text,
+        sourceText: normalised.text,
         telegramFileId: null,
         telegramFileUniqueId: null,
         originalFilename: null,

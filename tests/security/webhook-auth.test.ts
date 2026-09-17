@@ -44,6 +44,9 @@ import {
 const SUPABASE_URL = "https://synthetic.supabase.co";
 const SERVICE_ROLE_KEY = "synthetic-service-role-key-not-a-credential";
 const WEBHOOK_SECRET = "synthetic_webhook_secret_value";
+const BOT_TOKEN = "123456789:AAFakeTokenValueThatIsLongEnoughToMatch";
+const GEMINI_API_KEY = "synthetic-gemini-api-key-value";
+const GEMINI_MODEL = "gemini-synthetic-flash";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const JOB_ID = "22222222-2222-4222-8222-222222222222";
@@ -159,6 +162,10 @@ async function deliver(
     SUPABASE_URL,
     SUPABASE_SERVICE_ROLE_KEY: SERVICE_ROLE_KEY,
     TELEGRAM_WEBHOOK_SECRET: WEBHOOK_SECRET,
+    TELEGRAM_BOT_TOKEN: BOT_TOKEN,
+    AI_PROVIDER: "gemini",
+    GEMINI_API_KEY: GEMINI_API_KEY,
+    GEMINI_MODEL: GEMINI_MODEL,
     NOTINN_ENV: "local",
   });
 
