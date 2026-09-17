@@ -7,8 +7,8 @@ Phase 2 is deployed to the development Supabase project: atomic PGMQ ingestion,
 a background/recovery worker, text generation, and ephemeral voice/audio
 processing. Runtime secrets are configured and unauthenticated smoke tests return
 the expected empty `401`. Recovery Cron runs every minute and has returned
-successful authenticated worker calls; Telegram webhook registration remains
-pending. Images and documents remain Phase 3.
+successful authenticated worker calls. The Telegram webhook and live text/voice
+round trips are verified; images and documents remain Phase 3.
 
 ## Commands
 

@@ -3,8 +3,8 @@
 Telegram-first note capture. Send Notinn a message, a voice note, a screenshot, a
 PDF or a document, and get back a structured, searchable note.
 
-**Status: Phase 2 database, Edge Functions, runtime secrets, and recovery Cron
-are active in development; only Telegram webhook registration remains.** Text and
+**Status: Phase 2 is active and verified end to end in development: Telegram
+webhook, durable queue, Gemini text/voice processing, and recovery Cron.** Text and
 voice/audio are processed by a durable PGMQ worker using one configured Gemini
 model. Raw audio is downloaded into memory, never stored, and discarded after
 the request. Images and documents remain Phase 3. See

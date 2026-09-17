@@ -1,6 +1,6 @@
 # Implementation status
 
-**Phase:** 2 — durable jobs and voice/audio (runtime and Cron active; webhook pending)
+**Phase:** 2 — durable jobs and voice/audio (deployed and live-verified)
 **Date:** 2026-09-17
 **Last verified:** the commands in [Verification](#verification) were run and their
 output is quoted verbatim below.
@@ -31,15 +31,22 @@ Implemented in the working tree and deployed to the development project
 - Seven Phase 1/2 migrations are recorded remotely, including the Phase 2 queue
   migration. Local migration filenames use the remote versions to prevent CLI
   migration-history drift.
-- `telegram-webhook` and `process-job` are active as version 9 with
+- `telegram-webhook` and `process-job` are active as version 10 with
   `verify_jwt=false`; each function enforces its own secret header.
 - All eight runtime variables are configured in Supabase. Live unauthenticated
   requests to both functions return an empty HTTP 401, proving configuration
   loads and each custom secret boundary fails closed.
 - `notinn-process-jobs-recovery` runs every minute. Its URL and worker secret are
   read from Vault at execution time; manual and scheduled calls returned HTTP
-  200 with an empty queue. Telegram webhook registration is the remaining live
-  activation step.
+  200 with an empty queue.
+- The Telegram webhook is registered for `message` and `callback_query`. Live
+  text and voice messages each completed with zero retries, Gemini token usage
+  was recorded, and PGMQ returned to zero depth. The voice test also proved the
+  Delete callback: deleting the delivered note removed it and cleared the job's
+  note reference as designed.
+- The voice test left zero Storage buckets, zero Storage objects, and zero
+  application `bytea` columns. Audio duration/size metadata was recorded, while
+  the Telegram file handle was cleared after completion.
 - Supabase's managed `issue_pg_net_access` event trigger restores `pg_net` ACLs
   after DDL, so the attempted revoke migration does not suppress the advisor's
   `extension_in_public` warning. Verification confirmed that `net` is not a Data
@@ -62,8 +69,9 @@ PGMQ queue, `processing_jobs.queue_message_id`, all 11 template schemas, and
 service-role-only execution of the worker RPCs. A transaction-scoped live test
 also created a synthetic user/update/job, verified that the queue contained the
 same opaque job UUID, and rolled the transaction back; follow-up counts were
-zero for the synthetic rows and queue message. A later live check verified the
-Cron job and worker response. No Telegram webhook, commit, or push was performed.
+zero for the synthetic rows and queue message. Later live checks verified the
+Cron worker, the registered Telegram webhook, one text round trip, one voice
+round trip, and note deletion. The implementation commit was pushed to `main`.
 
 The remainder of this file preserves the Phase 0 completion record.
 
@@ -429,21 +437,21 @@ the user approved continuing to the deployment stage.
    header. The endpoint URL and secret are read from Vault; neither is stored in
    migration SQL or source control. A manual request returned HTTP 200 and recent
    Cron runs report `succeeded`.
-7. **Pending:** `deno task webhook:set` — register both `message` and
+7. **Done:** `deno task webhook:set` — register both `message` and
    `callback_query` with the
    secret from step 5.
-   **Requires explicit approval**: this modifies a real Telegram bot.
-8. **Pending:** `deno task webhook:info` — confirm the registered URL, allowed updates, and
+8. **Done:** `deno task webhook:info` — confirm the registered URL, allowed updates, and
    secret token.
-9. **Pending:** `deno task smoke` — a real round trip.
-10. **Pending:** `NOTINN_TEST_*` set → run the integration and deployed e2e suites, including
-    one text and one synthetic audio job through PGMQ.
+9. **Done:** real text and voice-note round trips through Telegram, PGMQ, Gemini,
+   note delivery, and queue acknowledgement. The voice note was then deleted
+   through its callback to verify cleanup semantics.
+10. **Pending:** set `NOTINN_TEST_*` and run the automated integration and
+    deployed e2e suites. Live user-path verification is complete; the credentialed
+    automated suite remains a separate release gate.
 
 ---
 
 ## Recommended next step
 
-Register the Telegram webhook from a local ignored `.env`, then run one real text
-plus one voice-note round trip. The registration command now carries only the
-three Telegram variables; it does not load the Supabase service-role key. Commit
-and push remain separate repository operations.
+Begin Phase 3 image and document ingestion. Before promoting beyond development,
+configure `NOTINN_TEST_*` and run the automated integration/e2e release gate.
