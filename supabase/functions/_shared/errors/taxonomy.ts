@@ -217,7 +217,8 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = {
   [ERROR_CODES.PROVIDER_RATE_LIMITED]: {
     httpStatus: 503,
     retryable: true,
-    publicMessage: "I'm a little busy right now. I'll try again shortly.",
+    publicMessage:
+      "I'm a little busy right now. I'll retry automatically in about 5 minutes—no need to send it again.",
     logLevel: "warn",
   },
   [ERROR_CODES.TELEGRAM_ERROR]: {

@@ -1,6 +1,6 @@
 # Implementation status
 
-**Phase:** 3 — images and documents (deployed; live file matrix pending)
+**Phase:** 3 — images and documents (deployed; DOCX/TXT/Markdown live matrix pending)
 **Date:** 2026-09-18
 **Last verified:** the commands in [Verification](#verification) were run and their
 output is quoted verbatim below.
@@ -24,19 +24,26 @@ Implemented in the working tree and deployed to development:
   Gemini API key and one configured model.
 - Vision usage is recorded with `operation = vision`; PDF page counts populate
   `document_pages` when the provider can determine them.
-- `telegram-webhook` version 12 and `process-job` version 17 are active with
+- `telegram-webhook` version 12 and `process-job` version 20 are active with
   `verify_jwt=false`; each continues to enforce its custom secret header.
-- Type-check and the hermetic suite pass: **457 passed, 0 failed**. The
+- Type-check and the hermetic suite pass: **458 passed, 0 failed**. The
   credentialed integration/e2e suite remains unavailable because `.env` is not
   present in this checkout.
 - A live screenshot completed after one transient Gemini retry: the note was
   delivered, `vision` usage recorded, the Telegram file handle cleared, and
   Storage remained empty.
-- The first live 460 KiB PDF reached Gemini but received HTTP 500 on all three
-  attempts. The PDF contract was then reduced from exhaustive extraction to a
-  compact source digest capped at 12,000 characters, and safe upstream HTTP-only
-  diagnostics were added. A fresh PDF resend is required to verify version 17;
-  DOCX/TXT/Markdown also remain in the live matrix.
+- Early live PDFs reached Gemini but exhausted their retries on HTTP 500/429. The
+  PDF contract was reduced from exhaustive extraction to a compact source digest
+  capped at 12,000 characters, and safe upstream HTTP-only diagnostics were added.
+  A later 3.48 MiB PDF completed successfully after one transient 429: one note
+  and one `vision` usage event were created, the queue message and Telegram file
+  handle were cleared, and Storage remained empty. DOCX/TXT/Markdown remain in
+  the live matrix.
+- Recovery now corrects a PGMQ message that is read a few seconds before
+  `next_attempt_at`, preventing the normal five-minute processing visibility
+  timeout from adding a second unintended delay.
+- A provider-rate-limit status now tells the user that retry is automatic in
+  about five minutes and that the original upload does not need to be sent again.
 
 The data-lifecycle decision is recorded in
 [ADR 0009](ADR/0009-phase-3-ephemeral-documents.md). There is deliberately no

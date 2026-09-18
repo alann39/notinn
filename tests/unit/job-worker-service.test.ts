@@ -333,6 +333,10 @@ Deno.test("a transient provider failure remains queued for retry", async () => {
   assertEquals(test.retryable, ["GENERATING"]);
   assertEquals(test.deleted, []);
   assertEquals(test.staged, []);
+  assertEquals(test.edits, [
+    "I'm a little busy right now. I'll retry automatically in about 5 minutes—no need to send it again.",
+  ]);
+  assertEquals(test.sends, []);
 });
 
 Deno.test("a provider HTTP status is retained without its response body", async () => {
