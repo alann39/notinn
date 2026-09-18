@@ -21,12 +21,13 @@ Implemented in the working tree and deployed to development:
   zero-filled after use and never written to Postgres, PGMQ, logs, Gemini storage,
   or Supabase Storage. The project still has zero Storage objects.
 - The provider boundary now covers text, audio, image, and PDF while retaining one
-  Gemini API key and one configured model.
+  Gemini API key. `gemini-3.8-flash` is primary and `gemini-3.5-flash-lite` is a
+  whole-request fallback only for 429, timeout, and Gemini 5xx failures.
 - Vision usage is recorded with `operation = vision`; PDF page counts populate
   `document_pages` when the provider can determine them.
-- `telegram-webhook` version 12 and `process-job` version 20 are active with
+- `telegram-webhook` version 15 and `process-job` version 21 are active with
   `verify_jwt=false`; each continues to enforce its custom secret header.
-- Type-check and the hermetic suite pass: **458 passed, 0 failed**. The
+- Type-check and the hermetic suite pass: **463 passed, 0 failed**. The
   credentialed integration/e2e suite remains unavailable because `.env` is not
   present in this checkout.
 - A live screenshot completed after one transient Gemini retry: the note was
@@ -477,6 +478,8 @@ the user approved continuing to the deployment stage.
    `INTERNAL_WORKER_SECRET`, `AI_PROVIDER=gemini`, `GEMINI_API_KEY`, and
    `GEMINI_MODEL` plus the environment/log settings as Edge Function secrets;
    confirm both functions now reject unsigned calls with an empty HTTP 401.
+   `GEMINI_FALLBACK_MODEL=gemini-3.5-flash-lite` is the one pending dashboard
+   setting; until it is present, the deployed adapter safely runs primary-only.
 6. **Done:** configure a recovery Cron to POST
    `{"trigger":"recovery","batch_size":5}` every minute with the private worker
    header. The endpoint URL and secret are read from Vault; neither is stored in

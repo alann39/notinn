@@ -311,6 +311,41 @@ export class GeminiNoteProvider implements NoteAIProvider {
     parts: readonly Record<string, unknown>[],
     responseJsonSchema: unknown,
   ): Promise<GeminiCandidate> {
+    try {
+      return await this.#generateWithModel(
+        this.#config.model,
+        instruction,
+        parts,
+        responseJsonSchema,
+      );
+    } catch (thrown) {
+      const fallbackModel = this.#config.fallbackModel;
+      if (fallbackModel === null || !this.#shouldFallback(thrown)) throw thrown;
+
+      return await this.#generateWithModel(
+        fallbackModel,
+        instruction,
+        parts,
+        responseJsonSchema,
+      );
+    }
+  }
+
+  #shouldFallback(thrown: unknown): boolean {
+    if (!(thrown instanceof AppError)) return false;
+    if (thrown.code === "provider_rate_limited" || thrown.code === "provider_timeout") {
+      return true;
+    }
+    return thrown.code === "provider_error" &&
+      /gemini interaction returned 5\d\d/.test(thrown.internalDetail ?? "");
+  }
+
+  async #generateWithModel(
+    model: string,
+    instruction: string,
+    parts: readonly Record<string, unknown>[],
+    responseJsonSchema: unknown,
+  ): Promise<GeminiCandidate> {
     let response: Response;
 
     try {
@@ -321,7 +356,7 @@ export class GeminiNoteProvider implements NoteAIProvider {
           "x-goog-api-key": this.#config.apiKey.reveal(),
         },
         body: JSON.stringify({
-          model: this.#config.model,
+          model,
           system_instruction: instruction,
           input: parts,
           response_format: {
@@ -381,7 +416,7 @@ export class GeminiNoteProvider implements NoteAIProvider {
 
     return {
       value,
-      model: parsed.data.model ?? this.#config.model,
+      model: parsed.data.model ?? model,
       providerRequestId: parsed.data.id ?? null,
       inputTokens: parsed.data.usage?.total_input_tokens ?? null,
       outputTokens: parsed.data.usage?.total_output_tokens ?? null,

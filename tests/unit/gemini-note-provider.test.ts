@@ -17,6 +17,7 @@ const template: GenerationTemplate = {
 function providerWith(
   response: Response,
   inspect?: (init: RequestInit, input: RequestInfo | URL) => void,
+  fallbackModel: string | null = null,
 ) {
   const fetchImpl = ((input: RequestInfo | URL, init?: RequestInit) => {
     inspect?.(init ?? {}, input);
@@ -28,6 +29,31 @@ function providerWith(
       provider: "gemini",
       apiKey: new Secret("synthetic-api-key-never-a-credential"),
       model: "gemini-synthetic-flash",
+      fallbackModel,
+    },
+    { fetch: fetchImpl },
+  );
+}
+
+function providerWithSequence(
+  responses: readonly Response[],
+  models: string[],
+) {
+  let index = 0;
+  const fetchImpl = ((_input: RequestInfo | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    models.push(String(body["model"]));
+    const response = responses[index++];
+    if (response === undefined) throw new Error("unexpected provider request");
+    return Promise.resolve(response.clone());
+  }) as typeof fetch;
+
+  return new GeminiNoteProvider(
+    {
+      provider: "gemini",
+      apiKey: new Secret("synthetic-api-key-never-a-credential"),
+      model: "gemini-synthetic-flash",
+      fallbackModel: "gemini-synthetic-flash-lite",
     },
     { fetch: fetchImpl },
   );
@@ -45,11 +71,11 @@ function request() {
 
 function interactionResponse(
   value: unknown,
-  options: { inputTokens?: number; outputTokens?: number } = {},
+  options: { inputTokens?: number; outputTokens?: number; model?: string | null } = {},
 ): Response {
   return Response.json({
     id: "synthetic-response-id",
-    model: "gemini-synthetic-flash-001",
+    ...(options.model === null ? {} : { model: options.model ?? "gemini-synthetic-flash-001" }),
     status: "completed",
     steps: [{
       type: "model_output",
@@ -118,6 +144,64 @@ Deno.test("Gemini rate limiting maps to the retryable provider code", async () =
   const error = await assertRejects(() => provider.generateText(request()), AppError);
   assertEquals(error.code, "provider_rate_limited");
   assertEquals(error.retryable, true);
+});
+
+Deno.test("Gemini falls back once after a primary 429 and reports the actual model", async () => {
+  const models: string[] = [];
+  const note = structuredNoteFixture({ summary: "Fallback summary." });
+  const provider = providerWithSequence([
+    new Response("", { status: 429 }),
+    interactionResponse(note, { model: null }),
+  ], models);
+
+  const result = await provider.generateText(request());
+
+  assertEquals(models, ["gemini-synthetic-flash", "gemini-synthetic-flash-lite"]);
+  assertEquals(result.note.summary, "Fallback summary.");
+  assertEquals(result.model, "gemini-synthetic-flash-lite");
+});
+
+Deno.test("Gemini falls back after a primary 5xx", async () => {
+  const models: string[] = [];
+  const provider = providerWithSequence([
+    new Response("", { status: 503 }),
+    interactionResponse(structuredNoteFixture()),
+  ], models);
+
+  await provider.generateText(request());
+  assertEquals(models, ["gemini-synthetic-flash", "gemini-synthetic-flash-lite"]);
+});
+
+Deno.test("Gemini falls back after a primary timeout", async () => {
+  const models: string[] = [];
+  let attempt = 0;
+  const fetchImpl = ((_input: RequestInfo | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    models.push(String(body["model"]));
+    attempt += 1;
+    if (attempt === 1) {
+      return Promise.reject(new DOMException("synthetic timeout", "TimeoutError"));
+    }
+    return Promise.resolve(interactionResponse(structuredNoteFixture()));
+  }) as typeof fetch;
+  const provider = new GeminiNoteProvider({
+    provider: "gemini",
+    apiKey: new Secret("synthetic-api-key-never-a-credential"),
+    model: "gemini-synthetic-flash",
+    fallbackModel: "gemini-synthetic-flash-lite",
+  }, { fetch: fetchImpl });
+
+  await provider.generateText(request());
+  assertEquals(models, ["gemini-synthetic-flash", "gemini-synthetic-flash-lite"]);
+});
+
+Deno.test("Gemini does not mask a non-transient primary error with fallback", async () => {
+  const models: string[] = [];
+  const provider = providerWithSequence([new Response("", { status: 400 })], models);
+
+  const error = await assertRejects(() => provider.generateText(request()), AppError);
+  assertEquals(error.code, "provider_error");
+  assertEquals(models, ["gemini-synthetic-flash"]);
 });
 
 Deno.test("Gemini receives audio inline and returns transcript plus one validated note", async () => {

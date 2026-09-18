@@ -28,6 +28,7 @@ const WEBHOOK_SECRET = "synthetic_webhook_secret_value";
 const BOT_TOKEN = "123456789:AAFakeTokenValueThatIsLongEnoughToMatch";
 const GEMINI_API_KEY = "synthetic-gemini-api-key-value";
 const GEMINI_MODEL = "gemini-synthetic-flash";
+const GEMINI_FALLBACK_MODEL = "gemini-synthetic-flash-lite";
 const INTERNAL_WORKER_SECRET = "synthetic-internal-worker-secret-value";
 
 /** Build a JWT-shaped string with the given payload. Unsigned and unusable. */
@@ -51,6 +52,7 @@ function validSource(): Record<string, string> {
     AI_PROVIDER: "gemini",
     GEMINI_API_KEY,
     GEMINI_MODEL,
+    GEMINI_FALLBACK_MODEL,
     INTERNAL_WORKER_SECRET,
   };
 }
@@ -192,6 +194,7 @@ Deno.test("the generation provider is required, and its key is not printable", a
   const config = await loadWebhookConfig(validSource());
   assertEquals(config.ai.provider, "gemini");
   assertEquals(config.ai.model, GEMINI_MODEL);
+  assertEquals(config.ai.fallbackModel, GEMINI_FALLBACK_MODEL);
   assertEquals(config.ai.apiKey.reveal(), GEMINI_API_KEY);
 
   assert(!JSON.stringify(config).includes(GEMINI_API_KEY));
@@ -226,6 +229,20 @@ Deno.test("a model identifier that is not an identifier is refused", async () =>
   }
 });
 
+Deno.test("the Gemini fallback is optional but must be distinct and well formed", async () => {
+  const withoutFallback = validSource();
+  delete withoutFallback["GEMINI_FALLBACK_MODEL"];
+  assertEquals((await loadWebhookConfig(withoutFallback)).ai.fallbackModel, null);
+
+  for (const fallbackModel of [GEMINI_MODEL, "../other-model", "gemini flash"]) {
+    const error = await assertRejects(
+      () => loadWebhookConfig({ ...validSource(), GEMINI_FALLBACK_MODEL: fallbackModel }),
+      AppError,
+    );
+    assertEquals(error.code, ERROR_CODES.CONFIGURATION_ERROR, `${fallbackModel} was accepted`);
+  }
+});
+
 // --- loadWorkerConfig ------------------------------------------------------
 
 Deno.test("the worker has one private trigger secret and the shared Gemini config", async () => {
@@ -235,6 +252,7 @@ Deno.test("the worker has one private trigger secret and the shared Gemini confi
   assertEquals(config.botToken.reveal(), BOT_TOKEN);
   assertEquals(config.ai.provider, "gemini");
   assertEquals(config.ai.model, GEMINI_MODEL);
+  assertEquals(config.ai.fallbackModel, GEMINI_FALLBACK_MODEL);
   assert(!JSON.stringify(config).includes(INTERNAL_WORKER_SECRET));
 });
 
@@ -426,6 +444,7 @@ Deno.test("the scripts do not require the generation provider's key", async () =
   delete source["GEMINI_API_KEY"];
   delete source["AI_PROVIDER"];
   delete source["GEMINI_MODEL"];
+  delete source["GEMINI_FALLBACK_MODEL"];
   delete source["SUPABASE_URL"];
   delete source["SUPABASE_SERVICE_ROLE_KEY"];
 

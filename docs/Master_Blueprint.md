@@ -602,7 +602,7 @@ The AI model never constructs raw Telegram API payloads, SQL, storage paths, acc
 | TXT and Markdown                  | Safe deterministic extraction → Gemini text input                             |
 | Embeddings                        | Deferred; add a configurable embedding adapter in the knowledge-library phase |
 
-The MVP must not chain several AI models for one request. Deterministic extraction is allowed and is not treated as a second AI provider. One Gemini request should return both normalized source information and the selected note format when the modality supports it.
+The MVP does not split one request across specialized AI models. Deterministic extraction is allowed and is not treated as a second AI provider. One Gemini request should return both normalized source information and the selected note format when the modality supports it. For availability, one same-provider fallback model may repeat the complete request after a primary 429, timeout, or 5xx; validation failures and other client errors never trigger fallback.
 
 ### 12.3 Gemini adapter interface
 
@@ -623,6 +623,7 @@ Centralized AI configuration:
 AI_PROVIDER=gemini
 GEMINI_API_KEY=<secret>
 GEMINI_MODEL=gemini-3.8-flash
+GEMINI_FALLBACK_MODEL=gemini-3.5-flash-lite
 ```
 
 The model identifier must be read from configuration rather than repeated throughout the codebase, because model availability and identifiers can change.
@@ -1098,6 +1099,7 @@ Required non-secret AI configuration:
 
 - `AI_PROVIDER=gemini`
 - `GEMINI_MODEL=<approved Gemini Flash model ID>`
+- `GEMINI_FALLBACK_MODEL=<approved Gemini Flash-Lite model ID>`
 
 Use Supabase project secrets. Never commit secrets, place them in client code, or return them in errors.
 

@@ -129,6 +129,15 @@ async function main(): Promise<void> {
     line("model", report.geminiModel, "ok");
   }
 
+  if (report.geminiFallbackModel === null) {
+    line("fallback model", "not set — transient fallback disabled", "warn");
+    warnings.push(
+      "GEMINI_FALLBACK_MODEL is not set; 429, timeout, and Gemini 5xx failures cannot fail over.",
+    );
+  } else {
+    line("fallback model", report.geminiFallbackModel, "ok");
+  }
+
   if (report.geminiApiKeyLength === null) {
     line("provider key", "not set", "fail");
     failures.push("GEMINI_API_KEY is not set; notes cannot be generated without it.");

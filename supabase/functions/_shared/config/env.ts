@@ -37,7 +37,7 @@ export type NotinnEnvironment = (typeof NOTINN_ENVIRONMENTS)[number];
 /**
  * The environment variables the application recognises. Nothing else is read.
  *
- * `AI_PROVIDER`, `GEMINI_API_KEY` and `GEMINI_MODEL` joined this list in Phase 1,
+ * `AI_PROVIDER`, `GEMINI_API_KEY` and the Gemini model settings joined this list in Phase 1,
  * when generation arrived and the webhook stopped being a function that only
  * acknowledged and enqueued.
  */
@@ -53,6 +53,7 @@ export const RECOGNISED_ENV_KEYS = [
   "AI_PROVIDER",
   "GEMINI_API_KEY",
   "GEMINI_MODEL",
+  "GEMINI_FALLBACK_MODEL",
   "NOTINN_ENV",
   "NOTINN_LOG_LEVEL",
 ] as const;
@@ -122,6 +123,8 @@ export interface AiConfig {
   readonly provider: AiProvider;
   readonly apiKey: Secret;
   readonly model: string;
+  /** Optional same-provider fallback for transient upstream failures only. */
+  readonly fallbackModel: string | null;
 }
 
 export interface WebhookConfig extends BaseConfig {
@@ -191,6 +194,7 @@ const RawSchema = z.object({
   AI_PROVIDER: z.enum(AI_PROVIDERS).optional(),
   GEMINI_API_KEY: z.string().min(1).optional(),
   GEMINI_MODEL: z.string().min(1).optional(),
+  GEMINI_FALLBACK_MODEL: z.string().min(1).optional(),
   NOTINN_ENV: z.enum(NOTINN_ENVIRONMENTS).optional(),
   NOTINN_LOG_LEVEL: z.enum(LOG_LEVELS).optional(),
 });
@@ -360,7 +364,20 @@ function resolveAiConfig(raw: RawEnv): AiConfig {
     );
   }
 
-  return { provider, apiKey: new Secret(apiKey), model };
+  const fallbackModel = raw.GEMINI_FALLBACK_MODEL ?? null;
+  if (fallbackModel !== null && !MODEL_ID_PATTERN.test(fallbackModel)) {
+    throw AppError.configuration(
+      "GEMINI_FALLBACK_MODEL is not a plain model identifier. Use the model name only, " +
+        "such as gemini-2.5-flash-lite — no URL, path or query string.",
+    );
+  }
+  if (fallbackModel === model) {
+    throw AppError.configuration(
+      "GEMINI_FALLBACK_MODEL must differ from GEMINI_MODEL; an identical fallback cannot improve availability.",
+    );
+  }
+
+  return { provider, apiKey: new Secret(apiKey), model, fallbackModel };
 }
 
 /**
@@ -586,6 +603,7 @@ export interface EnvironmentReport {
   /** As configured, or null when unset. Both are public values, not secrets. */
   readonly aiProvider: string | null;
   readonly geminiModel: string | null;
+  readonly geminiFallbackModel: string | null;
   readonly geminiApiKeyLength: number | null;
   readonly internalWorkerSecretLength: number | null;
 }
@@ -622,6 +640,7 @@ export function describeEnvironment(
     // the blueprint. The key is reported by length only.
     aiProvider: picked["AI_PROVIDER"] ?? null,
     geminiModel: picked["GEMINI_MODEL"] ?? null,
+    geminiFallbackModel: picked["GEMINI_FALLBACK_MODEL"] ?? null,
     geminiApiKeyLength: geminiApiKey?.length ?? null,
     internalWorkerSecretLength: internalWorkerSecret?.length ?? null,
   };
