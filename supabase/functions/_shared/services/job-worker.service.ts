@@ -1,7 +1,10 @@
 import {
   type JobState,
   MAX_AUDIO_DURATION_SECONDS,
+  MAX_DOCX_BYTES,
   MAX_INLINE_AUDIO_BYTES,
+  MAX_INLINE_MEDIA_BYTES,
+  MAX_TEXT_DOCUMENT_BYTES,
   SYSTEM_TEMPLATE_KEYS,
   type SystemTemplateKey,
 } from "../config/constants.ts";
@@ -9,6 +12,7 @@ import { AppError, toAppError } from "../errors/app-error.ts";
 import type { Logger } from "../observability/logger.ts";
 import type {
   AudioGenerationResult,
+  ImageGenerationResult,
   NoteAIProvider,
   NoteGenerationResult,
 } from "../providers/note-ai.provider.ts";
@@ -24,6 +28,12 @@ import { parseStructuredNote, STRUCTURED_NOTE_VERSION } from "../schemas/structu
 import { sha256Hex } from "../security/hashing.ts";
 import type { TelegramGateway } from "../telegram/client.ts";
 import { buildNoteKeyboard, renderNoteOutput, renderTranscriptPages } from "./note-rendering.ts";
+import {
+  extractDocxText,
+  extractPlainText,
+  validatedImageMime,
+  validatePdf,
+} from "./document-extraction.ts";
 
 const AUDIO_MIME_TYPES = new Set([
   "audio/aac",
@@ -220,7 +230,12 @@ async function generateNewNote(
   },
   templateKey: SystemTemplateKey,
   state: { value: JobState },
-): Promise<{ generation: NoteGenerationResult; sourceText: string }> {
+): Promise<{
+  generation: NoteGenerationResult;
+  sourceText: string;
+  operation: "generation" | "vision";
+  documentPages: number | null;
+}> {
   const template = await deps.templates.findForGeneration(job.userId, templateKey);
 
   if (job.inputType === "text") {
@@ -236,14 +251,102 @@ async function generateNewNote(
       reason: "initial",
       outputLanguage: null,
     });
-    return { generation, sourceText: job.sourceText };
+    return { generation, sourceText: job.sourceText, operation: "generation", documentPages: null };
+  }
+
+  if (job.telegramFileId === null) {
+    throw AppError.fileUnavailable("file job had no Telegram file id");
+  }
+
+  if (job.inputType === "image") {
+    if (job.sizeBytes !== null && job.sizeBytes > MAX_INLINE_MEDIA_BYTES) {
+      throw AppError.inputTooLarge("image metadata exceeded the inline provider limit");
+    }
+    await editStatusBestEffort(deps, job, "Image received — extracting and organizing it.");
+    const image = await deps.telegram.downloadFile(job.telegramFileId, MAX_INLINE_MEDIA_BYTES);
+    try {
+      const mimeType = validatedImageMime(image);
+      await advance(deps, job, "ACQUIRING", "EXTRACTING");
+      state.value = "EXTRACTING";
+      await advance(deps, job, "EXTRACTING", "GENERATING");
+      state.value = "GENERATING";
+      const generation: ImageGenerationResult = await deps.provider.generateImage({
+        image,
+        mimeType,
+        template,
+        templateKey,
+        outputLanguage: null,
+      });
+      return {
+        generation,
+        sourceText: generation.extractedText,
+        operation: "vision",
+        documentPages: null,
+      };
+    } finally {
+      image.fill(0);
+    }
+  }
+
+  if (job.inputType === "pdf") {
+    if (job.sizeBytes !== null && job.sizeBytes > MAX_INLINE_MEDIA_BYTES) {
+      throw AppError.inputTooLarge("PDF metadata exceeded the inline provider limit");
+    }
+    await editStatusBestEffort(deps, job, "PDF received — reading and organizing it.");
+    const pdf = await deps.telegram.downloadFile(job.telegramFileId, MAX_INLINE_MEDIA_BYTES);
+    try {
+      validatePdf(pdf);
+      await advance(deps, job, "ACQUIRING", "EXTRACTING");
+      state.value = "EXTRACTING";
+      await advance(deps, job, "EXTRACTING", "GENERATING");
+      state.value = "GENERATING";
+      const generation = await deps.provider.generatePdf({
+        pdf,
+        template,
+        templateKey,
+        outputLanguage: null,
+      });
+      return {
+        generation,
+        sourceText: generation.extractedText,
+        operation: "vision",
+        documentPages: generation.documentPages,
+      };
+    } finally {
+      pdf.fill(0);
+    }
+  }
+
+  if (job.inputType === "docx" || job.inputType === "txt" || job.inputType === "md") {
+    const maxBytes = job.inputType === "docx" ? MAX_DOCX_BYTES : MAX_TEXT_DOCUMENT_BYTES;
+    if (job.sizeBytes !== null && job.sizeBytes > maxBytes) {
+      throw AppError.inputTooLarge("document metadata exceeded its extraction limit");
+    }
+    await editStatusBestEffort(deps, job, "Document received — extracting and organizing it.");
+    const document = await deps.telegram.downloadFile(job.telegramFileId, maxBytes);
+    try {
+      await advance(deps, job, "ACQUIRING", "EXTRACTING");
+      state.value = "EXTRACTING";
+      const sourceText = job.inputType === "docx"
+        ? await extractDocxText(document)
+        : extractPlainText(document);
+      await advance(deps, job, "EXTRACTING", "GENERATING");
+      state.value = "GENERATING";
+      const generation = await deps.provider.generateText({
+        sourceText,
+        template,
+        templateKey,
+        reason: "initial",
+        outputLanguage: null,
+      });
+      return { generation, sourceText, operation: "generation", documentPages: null };
+    } finally {
+      document.fill(0);
+    }
   }
 
   if (job.inputType !== "voice" && job.inputType !== "audio") {
-    throw AppError.unsupportedInput("worker modality belongs to Phase 3");
-  }
-  if (job.telegramFileId === null) {
-    throw AppError.fileUnavailable("audio job had no Telegram file id");
+    throw AppError.unsupportedInput("worker received an unknown input modality");
   }
   if (job.sizeBytes !== null && job.sizeBytes > MAX_INLINE_AUDIO_BYTES) {
     throw AppError.inputTooLarge("audio metadata exceeded the inline provider limit");
@@ -261,27 +364,29 @@ async function generateNewNote(
 
   await editStatusBestEffort(deps, job, "Audio received — transcribing and organizing it.");
   const audio = await deps.telegram.downloadFile(job.telegramFileId, MAX_INLINE_AUDIO_BYTES);
-  await advance(deps, job, "ACQUIRING", "EXTRACTING");
-  state.value = "EXTRACTING";
-  await advance(deps, job, "EXTRACTING", "GENERATING");
-  state.value = "GENERATING";
-
-  let generation: AudioGenerationResult;
   try {
-    generation = await deps.provider.generateAudio({
+    await advance(deps, job, "ACQUIRING", "EXTRACTING");
+    state.value = "EXTRACTING";
+    await advance(deps, job, "EXTRACTING", "GENERATING");
+    state.value = "GENERATING";
+    const generation: AudioGenerationResult = await deps.provider.generateAudio({
       audio,
       mimeType,
       template,
       templateKey,
       outputLanguage: null,
     });
+    return {
+      generation,
+      sourceText: generation.transcript,
+      operation: "generation",
+      documentPages: null,
+    };
   } finally {
     // Best-effort memory scrubbing. It does not replace the no-persistence rule,
     // but shortens the lifetime of raw audio inside a warm isolate.
     audio.fill(0);
   }
-
-  return { generation, sourceText: generation.transcript };
 }
 
 async function handleFailure(
@@ -389,6 +494,8 @@ export async function processQueueMessage(
         audioSeconds: job.inputType === "voice" || job.inputType === "audio"
           ? job.durationSeconds
           : null,
+        documentPages: generated.documentPages,
+        operation: generated.operation,
       });
 
       await advance(deps, job, state, "DELIVERING");

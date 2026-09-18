@@ -1,8 +1,10 @@
 # Architecture
 
-Phase 2. Telegram ingestion is separated from processing by an atomic PGMQ
-message. One Gemini adapter handles both text and audio. See
-[ADR 0008](ADR/0008-phase-2-durable-worker.md).
+Phase 3. Telegram ingestion is separated from processing by an atomic PGMQ
+message. One Gemini adapter handles text, audio, images, and PDFs; deterministic
+extractors handle DOCX/TXT/Markdown. See
+[ADR 0008](ADR/0008-phase-2-durable-worker.md) and
+[ADR 0009](ADR/0009-phase-3-ephemeral-documents.md).
 
 ## The shape
 
@@ -13,7 +15,7 @@ Telegram → telegram-webhook → atomic job + PGMQ message
                                           ▼
 recovery Cron ─────────────────────→ process-job
                                           │
-                         Telegram file → memory → Gemini
+              Telegram file → bounded memory → validate/extract → Gemini
                                           │
                          staged note → Telegram delivery
                                           │
@@ -40,7 +42,7 @@ supabase/
       providers/       NoteAIProvider · GeminiNoteProvider
       repositories/    all PostgREST and usage writes
       security/        webhook-secret.ts (constant-time) · hashing.ts
-      services/        ingestion, callbacks, rendering, and durable job worker
+      services/        ingestion, callbacks, rendering, file extraction, durable worker
       worker/          internal HTTP handler and background invoker
       telegram/        schema.ts (Zod) · parse-update.ts (classify) · handler.ts
   config.toml          local stack config; carries verify_jwt = false

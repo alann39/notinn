@@ -251,6 +251,15 @@ export const MAX_TELEGRAM_DOWNLOAD_BYTES = 20 * 1024 * 1024;
 /** Raw audio ceiling that stays below Gemini's 20 MB total request limit after base64. */
 export const MAX_INLINE_AUDIO_BYTES = 14 * 1024 * 1024;
 
+/** Raw image/PDF ceiling that remains below Gemini's 20 MB request limit after base64. */
+export const MAX_INLINE_MEDIA_BYTES = 14 * 1024 * 1024;
+
+/** Compressed DOCX ceiling. Its expanded contents are bounded separately by the extractor. */
+export const MAX_DOCX_BYTES = 10 * 1024 * 1024;
+
+/** Plain-text document ceiling before strict UTF-8 decoding. */
+export const MAX_TEXT_DOCUMENT_BYTES = 2 * 1024 * 1024;
+
 /** Alpha product limit from blueprint 6.2: 30 minutes. */
 export const MAX_AUDIO_DURATION_SECONDS = 30 * 60;
 

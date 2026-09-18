@@ -67,6 +67,12 @@ function harness() {
       generateAudio: () => {
         throw new Error("provider must not run in an empty batch");
       },
+      generateImage: () => {
+        throw new Error("provider must not run in an empty batch");
+      },
+      generatePdf: () => {
+        throw new Error("provider must not run in an empty batch");
+      },
     },
     telegram: {
       sendMessage: () => Promise.resolve({ messageId: 1 }),

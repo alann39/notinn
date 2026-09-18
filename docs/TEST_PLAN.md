@@ -2,31 +2,31 @@
 
 Five suites, layered by what they need to run. The layering is not decoration: it
 is what lets a developer without Docker (see
-[ADR 0006](ADR/0006-pinned-dependencies.md)) still prove the hermetic Phase 2
+[ADR 0006](ADR/0006-pinned-dependencies.md)) still prove the hermetic Phase 3
 surface.
 
 | Suite                       | Files | Tests | Needs               | Command                      |
 | --------------------------- | ----- | ----: | ------------------- | ---------------------------- |
-| [unit](#unit)               | 19    |   303 | nothing             | `deno task test:unit`        |
+| [unit](#unit)               | 20    |   315 | nothing             | `deno task test:unit`        |
 | [contract](#contract)       | 2     |    85 | nothing             | `deno task test:contract`    |
 | [security](#security)       | 3     |    56 | nothing             | `deno task test:security`    |
 | [integration](#integration) | 4     |    25 | a Supabase project  | `deno task test:integration` |
 | [e2e](#e2e)                 | 1     |     8 | a deployed function | `deno task test:integration` |
 
-`deno task test` runs unit + contract + security: **445 tests, no database and no
+`deno task test` runs unit + contract + security: **456 tests, no database and no
 outbound network.**
 
 The integration and e2e suites are _ignored_, not failed, when no target is
 configured, so the number of ignored tests is the count of checks that need
 infrastructure rather than checks that were skipped to make a run go green.
 
-Latest hermetic run (unit + contract + security, 2026-09-17): **445 passed, 0
+Latest hermetic run (unit + contract + security, 2026-09-18): **456 passed, 0
 failed.** Integration and e2e were not run because Docker/Podman and a deployed
 test target are unavailable.
 
 ---
 
-## Unit — 303 tests
+## Unit — 315 tests
 
 Pure functions, no I/O, no doubles where a real call is possible.
 
@@ -39,8 +39,9 @@ Pure functions, no I/O, no doubles where a real call is possible.
 | `logger.test.ts`               | The allowlist: unknown fields dropped, objects and arrays dropped, denied fields dropped even when explicitly passed, level filtering, child context                                                                             |
 | `parse-update.test.ts`         | Classification: private vs group vs channel, bots, service messages, one-content-kind rule, unsupported kinds, forwarded detection                                                                                               |
 | `callback.test.ts`             | Versioned callback payload encoding, UUID opacity, action vocabulary, and Telegram's 64-byte limit                                                                                                                               |
-| `gemini-note-provider.test.ts` | Gemini text/audio inline requests, response schemas, transcript/note validation, usage metadata, wrong-template rejection, invalid JSON, and rate-limit mapping                                                                  |
-| `job-worker-service.test.ts`   | Text/audio state paths, in-memory buffer scrubbing, note staging, delivery retry idempotency, transient retry, missing-file handling, and audio duration limit                                                                   |
+| `gemini-note-provider.test.ts` | Gemini text/audio/image/PDF inline requests, response schemas, extracted-source validation, usage metadata, wrong-template rejection, invalid JSON, and rate-limit mapping                                                       |
+| `document-extraction.test.ts`  | UTF-8 text decoding, image magic bytes, PDF encryption rejection, DOCX extraction, and macro rejection                                                                                                                           |
+| `job-worker-service.test.ts`   | Text/audio/image/PDF/document state paths, in-memory buffer scrubbing, note staging, usage metering, delivery retry idempotency, transient retry, and file limits                                                                |
 | `note-rendering.test.ts`       | Telegram-safe HTML, semantic splitting, inline keyboards, and callback round-trips                                                                                                                                               |
 | `structured-note.test.ts`      | Application-authoritative structured-note validation and non-fabrication bounds                                                                                                                                                  |
 | `text-note-service.test.ts`    | The inline job path, persistence, usage metering, delivery, and retryable provider failure                                                                                                                                       |

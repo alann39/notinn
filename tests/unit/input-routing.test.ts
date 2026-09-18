@@ -116,6 +116,9 @@ Deno.test("a routing decision carries its input type unchanged", () => {
 // --- Document resolution ---------------------------------------------------
 
 Deno.test("a document's MIME type decides its input type", () => {
+  assertEquals(documentInputType("image/jpeg", "anything"), "image");
+  assertEquals(documentInputType("image/png", "anything"), "image");
+  assertEquals(documentInputType("image/webp", "anything"), "image");
   assertEquals(documentInputType("application/pdf", "anything"), "pdf");
   assertEquals(
     documentInputType(
@@ -150,6 +153,7 @@ Deno.test("the extension is used when there is no MIME type", () => {
   assertEquals(documentInputType(null, "REPORT.PDF"), "pdf");
   assertEquals(documentInputType(undefined, "readme.markdown"), "md");
   assertEquals(documentInputType(undefined, "notes.txt"), "txt");
+  assertEquals(documentInputType(undefined, "scan.PNG"), "image");
   assertEquals(
     documentInputType(undefined, "report.docx"),
     "docx",
@@ -159,7 +163,7 @@ Deno.test("the extension is used when there is no MIME type", () => {
 Deno.test("a document of an unsupported kind resolves to nothing", () => {
   // Not an error: the caller turns this into a documented ignore.
   assertEquals(documentInputType("application/zip", "archive.zip"), null);
-  assertEquals(documentInputType("image/png", "scan.png"), null);
+  assertEquals(documentInputType("image/gif", "scan.gif"), null);
   assertEquals(documentInputType("application/msword", "legacy.doc"), null);
   assertEquals(documentInputType("video/mp4", "clip.mp4"), null);
 });

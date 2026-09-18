@@ -1,11 +1,43 @@
 # Implementation status
 
-**Phase:** 2 — durable jobs and voice/audio (deployed and live-verified)
-**Date:** 2026-09-17
+**Phase:** 3 — images and documents (deployed; live file matrix pending)
+**Date:** 2026-09-18
 **Last verified:** the commands in [Verification](#verification) were run and their
 output is quoted verbatim below.
 
-## Phase 2 current snapshot
+## Phase 3 current snapshot
+
+Implemented in the working tree and deployed to development:
+
+- Screenshots/photos and JPEG/PNG/WebP documents are content-signature checked,
+  sent inline to Gemini, and returned as extracted text plus one structured note.
+- PDFs are signature/encryption checked, sent as Gemini `document` input, and
+  return extracted text, a structured note, and an observed page count for usage
+  telemetry.
+- DOCX uses a deterministic ZIP/OOXML extractor with entry-count, expanded-size,
+  compression-ratio, unsafe-path, encryption, ZIP64, macro, XML-size, and
+  DTD/entity guards. TXT/Markdown require strict UTF-8.
+- All file downloads have metadata and streaming byte limits. Raw buffers are
+  zero-filled after use and never written to Postgres, PGMQ, logs, Gemini storage,
+  or Supabase Storage. The project still has zero Storage objects.
+- The provider boundary now covers text, audio, image, and PDF while retaining one
+  Gemini API key and one configured model.
+- Vision usage is recorded with `operation = vision`; PDF page counts populate
+  `document_pages` when the provider can determine them.
+- `telegram-webhook` version 12 and `process-job` version 14 are active with
+  `verify_jwt=false`; each continues to enforce its custom secret header.
+- Type-check and the hermetic suite pass: **456 passed, 0 failed**. The
+  credentialed integration/e2e suite remains unavailable because `.env` is not
+  present in this checkout.
+- Live screenshot/PDF/DOCX/TXT/Markdown Telegram verification is the remaining
+  Phase 3 release check.
+
+The data-lifecycle decision is recorded in
+[ADR 0009](ADR/0009-phase-3-ephemeral-documents.md). There is deliberately no
+temporary bucket or 12-hour retention window; an orphan-cleanup worker becomes
+mandatory only if a future conversion path starts creating Storage objects.
+
+## Phase 2 snapshot (completed)
 
 Implemented in the working tree and deployed to the development project
 `neqfilxouhowuyynntdh` (dashboard name: `ProjectArchii`):
@@ -31,7 +63,7 @@ Implemented in the working tree and deployed to the development project
 - Seven Phase 1/2 migrations are recorded remotely, including the Phase 2 queue
   migration. Local migration filenames use the remote versions to prevent CLI
   migration-history drift.
-- `telegram-webhook` and `process-job` are active as version 10 with
+- `telegram-webhook` and `process-job` were live-verified as version 10 with
   `verify_jwt=false`; each function enforces its own secret header.
 - All eight runtime variables are configured in Supabase. Live unauthenticated
   requests to both functions return an empty HTTP 401, proving configuration
@@ -59,7 +91,7 @@ Verification on this machine:
 deno fmt --check                 clean
 deno lint                        clean
 deno check ...                   all TypeScript files checked
-unit + contract + security       445 passed, 0 failed
+unit + contract + security       456 passed, 0 failed
 ```
 
 The integration/e2e command was invoked: its production-target guard passed and
@@ -453,5 +485,7 @@ the user approved continuing to the deployment stage.
 
 ## Recommended next step
 
-Begin Phase 3 image and document ingestion. Before promoting beyond development,
-configure `NOTINN_TEST_*` and run the automated integration/e2e release gate.
+Complete the live Phase 3 file matrix in Telegram and verify each terminal job,
+usage row, cleared Telegram file handle, and zero Storage objects. Before
+promoting beyond development, configure `NOTINN_TEST_*` and run the automated
+integration/e2e release gate.

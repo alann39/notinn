@@ -72,6 +72,9 @@ const FORWARDED_TEXT_TEMPLATE: SystemTemplateKey = "short_summary";
 
 /** MIME types Notinn accepts as documents, mapped to their input type. */
 const DOCUMENT_MIME_TO_INPUT_TYPE: Readonly<Record<string, InputType>> = {
+  "image/jpeg": "image",
+  "image/png": "image",
+  "image/webp": "image",
   "application/pdf": "pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
   "text/plain": "txt",
@@ -88,6 +91,10 @@ const DOCUMENT_MIME_TO_INPUT_TYPE: Readonly<Record<string, InputType>> = {
  * sender and cannot be trusted when a MIME type is available.
  */
 const DOCUMENT_EXTENSION_TO_INPUT_TYPE: Readonly<Record<string, InputType>> = {
+  jpg: "image",
+  jpeg: "image",
+  png: "image",
+  webp: "image",
   pdf: "pdf",
   docx: "docx",
   txt: "txt",

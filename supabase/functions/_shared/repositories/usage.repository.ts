@@ -1,4 +1,5 @@
 import type { ServiceClient } from "../db/client.ts";
+import type { UsageOperation } from "../config/constants.ts";
 import { classifyPostgresError, toDatabaseError } from "./postgres-errors.ts";
 
 export interface GenerationUsage {
@@ -9,6 +10,8 @@ export interface GenerationUsage {
   readonly inputTokens: number | null;
   readonly outputTokens: number | null;
   readonly audioSeconds?: number | null;
+  readonly documentPages?: number | null;
+  readonly operation?: Extract<UsageOperation, "generation" | "vision">;
   readonly providerRequestId: string | null;
 }
 
@@ -26,10 +29,11 @@ export class UsageRepository {
         job_id: input.jobId,
         provider: input.provider,
         model: input.model,
-        operation: "generation",
+        operation: input.operation ?? "generation",
         input_tokens: input.inputTokens,
         output_tokens: input.outputTokens,
         audio_seconds: input.audioSeconds ?? null,
+        document_pages: input.documentPages ?? null,
         provider_request_id: input.providerRequestId,
       });
       if (error !== null) throw classifyPostgresError(error);

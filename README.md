@@ -3,11 +3,11 @@
 Telegram-first note capture. Send Notinn a message, a voice note, a screenshot, a
 PDF or a document, and get back a structured, searchable note.
 
-**Status: Phase 2 is active and verified end to end in development: Telegram
-webhook, durable queue, Gemini text/voice processing, and recovery Cron.** Text and
-voice/audio are processed by a durable PGMQ worker using one configured Gemini
-model. Raw audio is downloaded into memory, never stored, and discarded after
-the request. Images and documents remain Phase 3. See
+**Status: Phase 3 is deployed in development.** Text, voice/audio, screenshots,
+PDF, DOCX, TXT, and Markdown are processed by the durable PGMQ worker using one
+configured Gemini model. Raw media is downloaded into bounded memory, never
+stored, and zero-filled after processing. DOCX/TXT/Markdown are extracted locally
+before model generation. See
 [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
 
 ---
@@ -100,7 +100,7 @@ key.
 ## Testing
 
 ```bash
-npx deno task test                  # 445 tests, no database, no network
+npx deno task test                  # 456 tests, no database, no network
 npx deno task test:unit             # pure functions
 npx deno task test:contract         # migrations vs. the TypeScript mirrors
 npx deno task test:security         # auth + log redaction

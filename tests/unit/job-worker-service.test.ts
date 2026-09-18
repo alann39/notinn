@@ -37,7 +37,12 @@ function claimed(overrides: Partial<ClaimedProcessingJob> = {}): ClaimedProcessi
 
 function harness(
   job: ClaimedProcessingJob,
-  options: { providerError?: AppError; fileError?: AppError; deliveryError?: AppError } = {},
+  options: {
+    providerError?: AppError;
+    fileError?: AppError;
+    deliveryError?: AppError;
+    fileBytes?: Uint8Array;
+  } = {},
 ) {
   const transitions: [JobState, JobState][] = [];
   const deleted: number[] = [];
@@ -47,11 +52,13 @@ function harness(
   const edits: string[] = [];
   const sends: string[] = [];
   const usage: unknown[] = [];
-  const audio = new Uint8Array([1, 2, 3, 4]);
+  const audio = options.fileBytes ?? new Uint8Array([1, 2, 3, 4]);
   let sourceType = job.inputType ?? "text";
   let sourceText = job.sourceText;
   let providerTextCalls = 0;
   let providerAudioCalls = 0;
+  let providerImageCalls = 0;
+  let providerPdfCalls = 0;
   const note = structuredNoteFixture({ template_key: "clean_note" });
   const { logger } = createCapturingLogger({ level: "debug" });
 
@@ -79,6 +86,33 @@ function harness(
         providerRequestId: "request-audio",
         inputTokens: 30,
         outputTokens: 40,
+      });
+    },
+    generateImage: () => {
+      providerImageCalls += 1;
+      if (options.providerError !== undefined) return Promise.reject(options.providerError);
+      return Promise.resolve({
+        extractedText: "Synthetic image text.",
+        note,
+        provider: "gemini",
+        model: "gemini-synthetic-flash",
+        providerRequestId: "request-image",
+        inputTokens: 50,
+        outputTokens: 20,
+      });
+    },
+    generatePdf: () => {
+      providerPdfCalls += 1;
+      if (options.providerError !== undefined) return Promise.reject(options.providerError);
+      return Promise.resolve({
+        extractedText: "Synthetic PDF text.",
+        documentPages: 2,
+        note,
+        provider: "gemini",
+        model: "gemini-synthetic-flash",
+        providerRequestId: "request-pdf",
+        inputTokens: 60,
+        outputTokens: 20,
       });
     },
   };
@@ -202,7 +236,12 @@ function harness(
     sends,
     usage,
     audio,
-    providerCalls: () => ({ text: providerTextCalls, audio: providerAudioCalls }),
+    providerCalls: () => ({
+      text: providerTextCalls,
+      audio: providerAudioCalls,
+      image: providerImageCalls,
+      pdf: providerPdfCalls,
+    }),
   };
 }
 
@@ -220,7 +259,7 @@ Deno.test("the worker completes a queued text note and acknowledges its queue me
     ["EXTRACTING", "GENERATING"],
     ["GENERATING", "DELIVERING"],
   ]);
-  assertEquals(test.providerCalls(), { text: 1, audio: 0 });
+  assertEquals(test.providerCalls(), { text: 1, audio: 0, image: 0, pdf: 0 });
   assertEquals(test.staged.length, 1);
   assertEquals(test.deleted, [7]);
   assertEquals(test.retryable, []);
@@ -242,7 +281,7 @@ Deno.test("voice audio is transcribed inline, returned for review and scrubbed f
   );
 
   assertEquals(outcome, "completed");
-  assertEquals(test.providerCalls(), { text: 0, audio: 1 });
+  assertEquals(test.providerCalls(), { text: 0, audio: 1, image: 0, pdf: 0 });
   assertEquals(test.staged[0]?.normalizedSourceText, "Synthetic transcript.");
   assertEquals(test.audio, new Uint8Array([0, 0, 0, 0]));
   assertEquals(test.edits.some((text) => text.includes("Transcript")), true);
@@ -258,7 +297,7 @@ Deno.test("a delivery retry reuses the staged note without another Gemini call",
   );
 
   assertEquals(outcome, "completed");
-  assertEquals(test.providerCalls(), { text: 0, audio: 0 });
+  assertEquals(test.providerCalls(), { text: 0, audio: 0, image: 0, pdf: 0 });
   assertEquals(test.staged, []);
   assertEquals(test.deleted, [7]);
 });
@@ -330,7 +369,105 @@ Deno.test("audio beyond the alpha duration limit is rejected before download", a
   );
 
   assertEquals(outcome, "discarded");
-  assertEquals(test.providerCalls(), { text: 0, audio: 0 });
+  assertEquals(test.providerCalls(), { text: 0, audio: 0, image: 0, pdf: 0 });
   assertEquals(test.failed, ["ACQUIRING"]);
   assertEquals(test.deleted, [7]);
+});
+
+Deno.test("an image is validated, summarized inline, and scrubbed", async () => {
+  const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
+  const test = harness(
+    claimed({
+      inputType: "image",
+      sourceText: null,
+      telegramFileId: "synthetic-image-id",
+      mimeType: "image/jpeg",
+      sizeBytes: bytes.length,
+    }),
+    { fileBytes: bytes },
+  );
+
+  const outcome = await processQueueMessage(
+    { queueMessageId: 7, readCount: 1, jobId: JOB_ID },
+    test.deps,
+  );
+
+  assertEquals(outcome, "completed");
+  assertEquals(test.providerCalls(), { text: 0, audio: 0, image: 1, pdf: 0 });
+  assertEquals(test.staged[0]?.normalizedSourceText, "Synthetic image text.");
+  assertEquals(bytes.every((value) => value === 0), true);
+  assertEquals((test.usage[0] as { operation: string }).operation, "vision");
+});
+
+Deno.test("an invalid image is rejected and still scrubbed", async () => {
+  const bytes = new Uint8Array([1, 2, 3, 4]);
+  const test = harness(
+    claimed({
+      inputType: "image",
+      sourceText: null,
+      telegramFileId: "synthetic-image-id",
+      mimeType: "image/jpeg",
+      sizeBytes: bytes.length,
+    }),
+    { fileBytes: bytes },
+  );
+
+  const outcome = await processQueueMessage(
+    { queueMessageId: 7, readCount: 1, jobId: JOB_ID },
+    test.deps,
+  );
+
+  assertEquals(outcome, "discarded");
+  assertEquals(test.providerCalls(), { text: 0, audio: 0, image: 0, pdf: 0 });
+  assertEquals(test.failed, ["ACQUIRING"]);
+  assertEquals(bytes.every((value) => value === 0), true);
+});
+
+Deno.test("a PDF is processed as a document and records observed pages", async () => {
+  const bytes = new TextEncoder().encode("%PDF-1.7\nsynthetic\n%%EOF");
+  const test = harness(
+    claimed({
+      inputType: "pdf",
+      sourceText: null,
+      telegramFileId: "synthetic-pdf-id",
+      mimeType: "application/pdf",
+      sizeBytes: bytes.length,
+    }),
+    { fileBytes: bytes },
+  );
+
+  const outcome = await processQueueMessage(
+    { queueMessageId: 7, readCount: 1, jobId: JOB_ID },
+    test.deps,
+  );
+
+  assertEquals(outcome, "completed");
+  assertEquals(test.providerCalls(), { text: 0, audio: 0, image: 0, pdf: 1 });
+  assertEquals(test.staged[0]?.normalizedSourceText, "Synthetic PDF text.");
+  assertEquals((test.usage[0] as { documentPages: number }).documentPages, 2);
+  assertEquals(bytes.every((value) => value === 0), true);
+});
+
+Deno.test("a UTF-8 text document is extracted locally before generation", async () => {
+  const bytes = new TextEncoder().encode("  First line\r\nSecond line  ");
+  const test = harness(
+    claimed({
+      inputType: "txt",
+      sourceText: null,
+      telegramFileId: "synthetic-text-id",
+      mimeType: "text/plain",
+      sizeBytes: bytes.length,
+    }),
+    { fileBytes: bytes },
+  );
+
+  const outcome = await processQueueMessage(
+    { queueMessageId: 7, readCount: 1, jobId: JOB_ID },
+    test.deps,
+  );
+
+  assertEquals(outcome, "completed");
+  assertEquals(test.providerCalls(), { text: 1, audio: 0, image: 0, pdf: 0 });
+  assertEquals(test.staged[0]?.normalizedSourceText, "First line\nSecond line");
+  assertEquals(bytes.every((value) => value === 0), true);
 });

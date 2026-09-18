@@ -170,3 +170,57 @@ Deno.test("Gemini audio output without a transcript is rejected", async () => {
     }), AppError);
   assertEquals(error.code, "output_validation_failed");
 });
+
+Deno.test("Gemini receives an image inline and returns extracted source text", async () => {
+  let requestBody: Record<string, unknown> | null = null;
+  const note = structuredNoteFixture({ summary: "Image summary." });
+  const provider = providerWith(
+    interactionResponse({ extracted_text: "Visible text", note }),
+    (init) => requestBody = JSON.parse(String(init.body)) as Record<string, unknown>,
+  );
+
+  const result = await provider.generateImage({
+    image: new Uint8Array([1, 2, 3, 4]),
+    mimeType: "image/png",
+    template,
+    templateKey: "clean_note",
+    outputLanguage: null,
+  });
+
+  assertEquals(result.extractedText, "Visible text");
+  assert(requestBody !== null);
+  const input = requestBody["input"] as Record<string, unknown>[];
+  assertEquals(input[1], {
+    type: "image",
+    mime_type: "image/png",
+    data: "AQIDBA==",
+  });
+  assertEquals(requestBody["store"], false);
+});
+
+Deno.test("Gemini receives a PDF as a document and reports its page count", async () => {
+  let requestBody: Record<string, unknown> | null = null;
+  const note = structuredNoteFixture({ summary: "PDF summary." });
+  const provider = providerWith(
+    interactionResponse({ extracted_text: "Document text", page_count: 3, note }),
+    (init) => requestBody = JSON.parse(String(init.body)) as Record<string, unknown>,
+  );
+
+  const result = await provider.generatePdf({
+    pdf: new Uint8Array([1, 2, 3, 4]),
+    template,
+    templateKey: "clean_note",
+    outputLanguage: null,
+  });
+
+  assertEquals(result.extractedText, "Document text");
+  assertEquals(result.documentPages, 3);
+  assert(requestBody !== null);
+  const input = requestBody["input"] as Record<string, unknown>[];
+  assertEquals(input[0], {
+    type: "document",
+    mime_type: "application/pdf",
+    data: "AQIDBA==",
+  });
+  assertEquals(requestBody["store"], false);
+});
