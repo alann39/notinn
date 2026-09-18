@@ -1,10 +1,11 @@
 # Architecture
 
-Phase 3. Telegram ingestion is separated from processing by an atomic PGMQ
+Phase 4. Telegram ingestion is separated from processing by an atomic PGMQ
 message. One Gemini adapter handles text, audio, images, and PDFs; deterministic
 extractors handle DOCX/TXT/Markdown. See
 [ADR 0008](ADR/0008-phase-2-durable-worker.md) and
-[ADR 0009](ADR/0009-phase-3-ephemeral-documents.md).
+[ADR 0009](ADR/0009-phase-3-ephemeral-documents.md), and
+[ADR 0011](ADR/0011-phase-4-search-first.md).
 
 ## The shape
 

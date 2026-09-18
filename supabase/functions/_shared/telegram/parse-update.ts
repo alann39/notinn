@@ -44,6 +44,8 @@ export interface CommandMessage extends TelegramIdentity {
   readonly updateId: number;
   readonly messageId: number;
   readonly command: string;
+  /** Normalized text after the command, never written to logs. */
+  readonly argumentsText: string | null;
 }
 
 /** An inline-button action sent in a private chat. */
@@ -156,10 +158,13 @@ function identityOf(from: TelegramUser, chatId: number): TelegramIdentity {
   };
 }
 
-/** A Telegram command without arguments, normalised to lower case. */
-function commandOf(text: string): string | null {
-  const match = /^\/([a-z0-9_]+)(?:@[a-z0-9_]+)?(?:\s|$)/i.exec(text);
-  return match?.[1]?.toLowerCase() ?? null;
+/** A Telegram command and its optional arguments, normalised once at ingestion. */
+function commandOf(text: string): { name: string; argumentsText: string | null } | null {
+  const match = /^\/([a-z0-9_]+)(?:@[a-z0-9_]+)?(?:\s+([\s\S]*))?$/i.exec(text);
+  const name = match?.[1]?.toLowerCase();
+  if (name === undefined) return null;
+  const argumentsText = match?.[2]?.trim() ?? "";
+  return { name, argumentsText: argumentsText === "" ? null : argumentsText };
 }
 
 /**
@@ -299,7 +304,8 @@ export function classifyUpdate(update: TelegramUpdate): UpdateClassification {
           message: {
             updateId,
             ...sender,
-            command,
+            command: command.name,
+            argumentsText: command.argumentsText,
           },
         };
       }

@@ -2,31 +2,31 @@
 
 Five suites, layered by what they need to run. The layering is not decoration: it
 is what lets a developer without Docker (see
-[ADR 0006](ADR/0006-pinned-dependencies.md)) still prove the hermetic Phase 3
+[ADR 0006](ADR/0006-pinned-dependencies.md)) still prove the hermetic Phase 4
 surface.
 
 | Suite                       | Files | Tests | Needs               | Command                      |
 | --------------------------- | ----- | ----: | ------------------- | ---------------------------- |
-| [unit](#unit)               | 20    |   316 | nothing             | `deno task test:unit`        |
-| [contract](#contract)       | 2     |    85 | nothing             | `deno task test:contract`    |
+| [unit](#unit)               | 21    |   326 | nothing             | `deno task test:unit`        |
+| [contract](#contract)       | 2     |    88 | nothing             | `deno task test:contract`    |
 | [security](#security)       | 3     |    56 | nothing             | `deno task test:security`    |
 | [integration](#integration) | 4     |    25 | a Supabase project  | `deno task test:integration` |
 | [e2e](#e2e)                 | 1     |     8 | a deployed function | `deno task test:integration` |
 
-`deno task test` runs unit + contract + security: **457 tests, no database and no
+`deno task test` runs unit + contract + security: **470 tests, no database and no
 outbound network.**
 
 The integration and e2e suites are _ignored_, not failed, when no target is
 configured, so the number of ignored tests is the count of checks that need
 infrastructure rather than checks that were skipped to make a run go green.
 
-Latest hermetic run (unit + contract + security, 2026-09-18): **457 passed, 0
+Latest hermetic run (unit + contract + security, 2026-09-18): **470 passed, 0
 failed.** Integration and e2e were not run because Docker/Podman and a deployed
 test target are unavailable.
 
 ---
 
-## Unit — 316 tests
+## Unit — 326 tests
 
 Pure functions, no I/O, no doubles where a real call is possible.
 
@@ -38,6 +38,7 @@ Pure functions, no I/O, no doubles where a real call is possible.
 | `job-state.test.ts`            | The transition table's shape: every terminal state has no outgoing edges, every non-terminal state can reach a terminal one, `CANCELLED` is reachable from every non-terminal state, creation states are `RECEIVED` and `QUEUED` |
 | `logger.test.ts`               | The allowlist: unknown fields dropped, objects and arrays dropped, denied fields dropped even when explicitly passed, level filtering, child context                                                                             |
 | `parse-update.test.ts`         | Classification: private vs group vs channel, bots, service messages, one-content-kind rule, unsupported kinds, forwarded detection                                                                                               |
+| `command-service.test.ts`      | `/search` query validation, ranked result rendering, empty results, and opaque Open callbacks                                                                                                                                    |
 | `callback.test.ts`             | Versioned callback payload encoding, UUID opacity, action vocabulary, and Telegram's 64-byte limit                                                                                                                               |
 | `gemini-note-provider.test.ts` | Gemini text/audio/image/PDF inline requests, response schemas, extracted-source validation, usage metadata, wrong-template rejection, invalid JSON, and rate-limit mapping                                                       |
 | `document-extraction.test.ts`  | UTF-8 text decoding, image magic bytes, PDF encryption rejection, DOCX extraction, and macro rejection                                                                                                                           |
@@ -52,7 +53,7 @@ Pure functions, no I/O, no doubles where a real call is possible.
 
 ---
 
-## Contract — 85 tests
+## Contract — 88 tests
 
 `contract/migration-constants.test.ts` is the drift guard. It reads the migration
 SQL from disk and asserts the TypeScript mirrors in `config/constants.ts` agree

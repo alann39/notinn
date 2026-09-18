@@ -177,6 +177,44 @@ Deno.test("no recent notes stays empty when PostgREST spells it null", async () 
   assertEquals(await new NotesRepository(client).listRecentSavedNotes(USER_ID, 10), []);
 });
 
+Deno.test("saved-note search sends its owner and maps ranked tags", async () => {
+  const { client, stub } = stubClient([{
+    note_id: NOTE_ID,
+    title: "Quarterly risk review",
+    language: "en",
+    source_type: "docx",
+    template_key: "meeting_notes",
+    tags: ["risk", "quarterly"],
+    created_at: "2026-09-18T08:00:00Z",
+    updated_at: "2026-09-18T09:00:00Z",
+    rank: 1.25,
+  }]);
+
+  const results = await new NotesRepository(client).searchSavedNotes(
+    USER_ID,
+    "quarterly risk",
+    10,
+  );
+
+  assertEquals(stub.calls, ["/rest/v1/rpc/search_saved_notes"]);
+  assertEquals(stub.lastBody(), {
+    p_user_id: USER_ID,
+    p_query: "quarterly risk",
+    p_limit: 10,
+  });
+  assertEquals(results[0], {
+    noteId: NOTE_ID,
+    title: "Quarterly risk review",
+    language: "en",
+    sourceType: "docx",
+    templateKey: "meeting_notes",
+    tags: ["risk", "quarterly"],
+    rank: 1.25,
+    createdAt: "2026-09-18T08:00:00Z",
+    updatedAt: "2026-09-18T09:00:00Z",
+  });
+});
+
 Deno.test("a note that is not regenerable reads as absent", async () => {
   // Covers "no such note", "somebody else's note" and "already deleted" at once,
   // which is the point: the three must be indistinguishable to the caller.

@@ -1,11 +1,37 @@
 # Implementation status
 
-**Phase:** 3 — images and documents (completed and deployed)
+**Phase:** 4 — Knowledge Library (full-text search deployed; semantic retrieval pending)
 **Date:** 2026-09-18
 **Last verified:** the commands in [Verification](#verification) were run and their
 output is quoted verbatim below.
 
-## Phase 3 current snapshot
+## Phase 4 current snapshot
+
+Library Search is implemented and deployed to development:
+
+- `/search <keywords>` searches explicitly saved notes by title, validated tags,
+  retained normalized source, and current rendered output. Historical outputs do
+  not create duplicate results.
+- Search uses weighted stored `tsvector` columns, two GIN indexes, a partial
+  owner/update index for saved notes, `websearch_to_tsquery`, ranked results, and
+  deterministic tie-breaking. Queries are capped at 200 characters and results
+  at ten.
+- `search_saved_notes` contains the `user_id`, `is_saved`, and undeleted predicates
+  in one `SECURITY DEFINER` statement. `anon` and `authenticated` have no execute
+  privilege; `service_role` does.
+- The development database has indexed all six existing notes and outputs. A
+  controlled query matched one owned saved note and zero rows for a foreign UUID.
+- The Telegram result contains opaque Open callbacks, never note IDs or query text
+  in callback payloads or logs.
+- `telegram-webhook` version 17 is active with `verify_jwt=false` and custom secret
+  authentication. Type-check and the hermetic suite pass: **470 passed, 0 failed**.
+- The next Phase 4 slice is Semantic Library: note chunks, configurable embeddings,
+  hybrid retrieval, and `/ask` answers grounded in cited note titles and dates.
+
+The two-slice decision and security boundary are recorded in
+[ADR 0011](ADR/0011-phase-4-search-first.md).
+
+## Phase 3 snapshot (completed)
 
 Implemented in the working tree and deployed to development:
 
@@ -25,9 +51,9 @@ Implemented in the working tree and deployed to development:
   whole-request fallback only for 429, timeout, and Gemini 5xx failures.
 - Vision usage is recorded with `operation = vision`; PDF page counts populate
   `document_pages` when the provider can determine them.
-- `telegram-webhook` version 15 and `process-job` version 21 are active with
+- `telegram-webhook` version 17 and `process-job` version 21 are active with
   `verify_jwt=false`; each continues to enforce its custom secret header.
-- Type-check and the hermetic suite pass: **463 passed, 0 failed**. The
+- Type-check and the hermetic suite pass: **470 passed, 0 failed**. The
   credentialed integration/e2e suite remains unavailable because `.env` is not
   present in this checkout.
 - A live screenshot completed after one transient Gemini retry: the note was
@@ -517,8 +543,8 @@ the user approved continuing to the deployment stage.
 
 ## Recommended next step
 
-Phase 3's live matrix is complete. Before promoting beyond development, configure
-`NOTINN_TEST_*` and run the automated integration/e2e release gate. The next
-product phase is Phase 4 — Knowledge Library: full-text search, tags, recent and
-filtered notes, semantic chunks/embeddings, and grounded questions across saved
-notes.
+Run a live `/search risk` from Telegram, open its returned note, and verify that
+an unsaved note stays absent. Once that deterministic baseline passes, implement
+Semantic Library: chunks, embeddings, hybrid retrieval, and grounded `/ask`
+answers. Before promoting beyond development, configure `NOTINN_TEST_*` and run
+the automated integration/e2e release gate.

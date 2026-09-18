@@ -78,6 +78,7 @@ const FILE_SUFFIXES = [
   "phase2_recovery_extensions.sql",
   "phase2_pg_net_least_privilege.sql",
   "fix_retry_wait_visibility.sql",
+  "phase4_full_text_library.sql",
 ] as const;
 
 /** Read the one migration whose filename ends with `suffix`. */
@@ -99,6 +100,7 @@ const REJECTED_CHATS_SQL = await loadMigration("phase1_rejected_chats.sql");
 const NOTE_FUNCTIONS_SQL = await loadMigration("phase1_note_functions.sql");
 const PIPELINE_FUNCTIONS_SQL = await loadMigration("phase1_pipeline_functions.sql");
 const PHASE2_WORKER_SQL = await loadMigration("phase2_durable_queue_worker.sql");
+const PHASE4_LIBRARY_SQL = await loadMigration("phase4_full_text_library.sql");
 const ALL_MIGRATIONS = await loadMigrations();
 const ALL_SQL = ALL_MIGRATIONS.map((migration) => migration.sql).join("\n");
 
@@ -626,6 +628,7 @@ const RPC_CONTRACTS = [
   [NOTES_REPOSITORY, "set_note_saved", NOTE_FUNCTIONS_SQL],
   [NOTES_REPOSITORY, "delete_note", NOTE_FUNCTIONS_SQL],
   [NOTES_REPOSITORY, "list_recent_saved_notes", NOTE_FUNCTIONS_SQL],
+  [NOTES_REPOSITORY, "search_saved_notes", PHASE4_LIBRARY_SQL],
   [NOTES_REPOSITORY, "find_note_for_regeneration", NOTE_FUNCTIONS_SQL],
   [NOTES_REPOSITORY, "find_note_for_display", PIPELINE_FUNCTIONS_SQL],
   [REJECTED_CHATS_REPOSITORY, "claim_rejected_chat_reply", REJECTED_CHATS_SQL],

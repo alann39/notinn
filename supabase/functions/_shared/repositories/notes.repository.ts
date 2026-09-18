@@ -90,6 +90,12 @@ const RecentNoteRowSchema = z.object({
   updated_at: TimestampSchema,
 });
 
+/** One ranked row of `search_saved_notes`. */
+const SearchNoteRowSchema = RecentNoteRowSchema.extend({
+  tags: z.array(z.string()),
+  rank: z.number().nonnegative(),
+});
+
 /** One row of `find_note_for_regeneration`'s result set. */
 const RegenerationSourceRowSchema = z.object({
   note_id: UuidSchema,
@@ -184,6 +190,11 @@ export interface RecentNote {
   readonly templateKey: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
+}
+
+export interface SearchNote extends RecentNote {
+  readonly tags: readonly string[];
+  readonly rank: number;
 }
 
 /** What regeneration needs, read before the provider is called. */
@@ -432,6 +443,32 @@ export class NotesRepository {
         language: row.language,
         sourceType: row.source_type as InputType,
         templateKey: row.template_key,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+    } catch (thrown) {
+      throw toDatabaseError(thrown);
+    }
+  }
+
+  /** Ranked full-text search across one user's explicitly saved notes. */
+  async searchSavedNotes(userId: string, query: string, limit: number): Promise<SearchNote[]> {
+    try {
+      const { data, error } = await this.#client.rpc("search_saved_notes", {
+        p_user_id: userId,
+        p_query: query,
+        p_limit: limit,
+      });
+
+      const rows = parseMany(data, error, SearchNoteRowSchema, "search_saved_notes");
+      return rows.map((row) => ({
+        noteId: row.note_id,
+        title: row.title,
+        language: row.language,
+        sourceType: row.source_type as InputType,
+        templateKey: row.template_key,
+        tags: row.tags,
+        rank: row.rank,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       }));

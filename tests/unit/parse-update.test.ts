@@ -264,6 +264,17 @@ Deno.test("a slash command is not ingested as note text", () => {
   if (result.kind !== "command") return;
 
   assertEquals(result.message.command, "recent");
+  assertEquals(result.message.argumentsText, null);
+});
+
+Deno.test("a search command preserves normalized arguments without ingesting them", () => {
+  const result = classify(textUpdate({ text: "/search@NotinnBot   quarterly risk   " }));
+
+  assertEquals(result.kind, "command");
+  if (result.kind !== "command") return;
+
+  assertEquals(result.message.command, "search");
+  assertEquals(result.message.argumentsText, "quarterly risk");
 });
 
 Deno.test("a channel post is ignored by name", () => {

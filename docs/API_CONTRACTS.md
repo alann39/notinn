@@ -65,8 +65,9 @@ Private chats only. Exactly one content kind per message:
 A message carrying more than one of these is ambiguous and ignored. Bots, service
 messages, `channel_post`, edits and reactions are ignored. Private-chat
 `callback_query` updates with a bot message and callback data are handled as note
-actions. `/recent` is handled as a command; other slash commands receive the
-current one-sentence help response and are not stored as notes.
+actions. `/recent` lists saved notes and `/search <keywords>` performs owner-scoped
+full-text search; other slash commands receive the current one-sentence help
+response and are not stored as notes.
 
 Non-private `message` and actionable `callback_query` updates are rejected. The
 first one per chat atomically claims the fixed reply; later updates are silent.
@@ -222,6 +223,7 @@ from `PUBLIC`, `anon`, and `authenticated`, and are granted only to
 | `set_note_saved`                | Idempotently applies Save or Unsave to an owned note                                         |
 | `delete_note`                   | Hard-deletes one owned note and cascades its outputs                                         |
 | `list_recent_saved_notes`       | Returns saved notes, newest update first                                                     |
+| `search_saved_notes`            | Returns up to ten ranked matches from one user's saved current notes                         |
 | `find_note_for_regeneration`    | Reads owned source text before a provider call can be made                                   |
 | `find_note_for_display`         | Reads the owned current output and saved state for rendering                                 |
 | `find_template_for_generation`  | Returns one active system or owned template and its JSON Schema                              |
