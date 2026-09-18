@@ -1,6 +1,6 @@
 # Implementation status
 
-**Phase:** 4 — Knowledge Library (semantic retrieval deployed; live `/ask` pending configuration)
+**Phase:** 4 — Knowledge Library (semantic retrieval deployed; live `/ask` pending verification)
 **Date:** 2026-09-18
 **Last verified:** the commands in [Verification](#verification) were run and their
 output is quoted verbatim below.
@@ -36,10 +36,11 @@ Library Search and the Semantic Library foundation are implemented and deployed 
 - pgvector 0.8.2, four embedding-table indexes, client-role denials, service-role
   grants, and a zero-row foreign-owner probe are verified in development. Four
   existing saved notes are ready for first-use indexing.
-- `telegram-webhook` version 18 is active with `verify_jwt=false` and custom secret
+- `telegram-webhook` version 20 is active with `verify_jwt=false` and custom secret
   authentication. Type-check and the hermetic suite pass: **484 passed, 0 failed**.
-- Remaining release gate: set `GEMINI_EMBEDDING_MODEL=gemini-embedding-001` in
-  Edge Function secrets and run one live `/ask` round trip.
+- `GEMINI_EMBEDDING_MODEL=gemini-embedding-001` is configured. A fresh deployment
+  booted successfully and still rejects an unsigned POST with an empty HTTP 401.
+- Remaining release gate: run one live `/ask` round trip.
 
 The two-slice decision and semantic security boundary are recorded in
 [ADR 0011](ADR/0011-phase-4-search-first.md) and
@@ -536,7 +537,7 @@ the user approved continuing to the deployment stage.
    confirm both functions now reject unsigned calls with an empty HTTP 401.
    `GEMINI_FALLBACK_MODEL=gemini-3.5-flash-lite` is configured and has completed
    live Markdown/TXT/DOCX paths. `GEMINI_EMBEDDING_MODEL=gemini-embedding-001`
-   remains the one pending dashboard setting.
+   is also configured for Semantic Library.
 6. **Done:** configure a recovery Cron to POST
    `{"trigger":"recovery","batch_size":5}` every minute with the private worker
    header. The endpoint URL and secret are read from Vault; neither is stored in
@@ -558,8 +559,8 @@ the user approved continuing to the deployment stage.
 
 ## Recommended next step
 
-Set `GEMINI_EMBEDDING_MODEL=gemini-embedding-001`, then run a live
-`/ask <question answerable by a saved note>`. Verify that the first request creates
+Run a live `/ask <question answerable by a saved note>`. Verify that the first request creates
 embedding usage events, returns cited titles, and opens only owned notes. Before
 promoting beyond development, configure `NOTINN_TEST_*` and run the automated
 integration/e2e release gate.
+191666d7eabac7948c21d3c2d4566b69e43719a1
