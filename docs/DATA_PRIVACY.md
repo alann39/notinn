@@ -130,7 +130,9 @@ reported MIME type.
 - JPEG, PNG, and WebP magic bytes select the actual image MIME. The image is sent
   inline to Gemini and zero-filled in `finally`.
 - PDFs require the `%PDF-` signature and encrypted files are rejected. The PDF is
-  sent inline with `store: false` and zero-filled in `finally`.
+  sent inline with `store: false` and zero-filled in `finally`. Persisted
+  `normalized_source_text` is a compact derived digest capped at 12,000
+  characters, not an exhaustive copy of the PDF.
 - DOCX is treated as an untrusted ZIP container. Multi-disk/ZIP64/encrypted
   archives, macros, unsafe paths, excessive entry counts, excessive expanded
   size, and suspicious compression ratios are rejected. Only the main Word XML

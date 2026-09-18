@@ -31,6 +31,9 @@ MVP path. Telegram already remains the resend source when a retry is needed.
 - Extracted text is retained as `notes.normalized_source_text` for regeneration.
   The existing privacy preference remains the future control point for a minimal
   derived-data mode.
+- PDF source text is a faithful digest capped at 12,000 characters rather than a
+  full transcription. This bounds output cost and avoids asking one multimodal
+  request to reproduce an entire long document before summarizing it.
 
 ## Consequences
 

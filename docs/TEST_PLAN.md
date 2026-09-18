@@ -7,26 +7,26 @@ surface.
 
 | Suite                       | Files | Tests | Needs               | Command                      |
 | --------------------------- | ----- | ----: | ------------------- | ---------------------------- |
-| [unit](#unit)               | 20    |   315 | nothing             | `deno task test:unit`        |
+| [unit](#unit)               | 20    |   316 | nothing             | `deno task test:unit`        |
 | [contract](#contract)       | 2     |    85 | nothing             | `deno task test:contract`    |
 | [security](#security)       | 3     |    56 | nothing             | `deno task test:security`    |
 | [integration](#integration) | 4     |    25 | a Supabase project  | `deno task test:integration` |
 | [e2e](#e2e)                 | 1     |     8 | a deployed function | `deno task test:integration` |
 
-`deno task test` runs unit + contract + security: **456 tests, no database and no
+`deno task test` runs unit + contract + security: **457 tests, no database and no
 outbound network.**
 
 The integration and e2e suites are _ignored_, not failed, when no target is
 configured, so the number of ignored tests is the count of checks that need
 infrastructure rather than checks that were skipped to make a run go green.
 
-Latest hermetic run (unit + contract + security, 2026-09-18): **456 passed, 0
+Latest hermetic run (unit + contract + security, 2026-09-18): **457 passed, 0
 failed.** Integration and e2e were not run because Docker/Podman and a deployed
 test target are unavailable.
 
 ---
 
-## Unit — 315 tests
+## Unit — 316 tests
 
 Pure functions, no I/O, no doubles where a real call is possible.
 

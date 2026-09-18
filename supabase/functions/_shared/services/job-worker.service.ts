@@ -92,6 +92,19 @@ export interface QueueBatchResult {
 
 type ProcessOutcome = "completed" | "retrying" | "discarded";
 
+/**
+ * Preserve only a controlled upstream status for operator diagnosis. Provider
+ * response bodies can contain user content and must never reach PostgreSQL.
+ */
+function safeFailureDetail(error: AppError, state: JobState): string {
+  const providerStatus = error.internalDetail?.match(
+    /^gemini interaction returned ([1-5][0-9]{2})$/,
+  )?.[1];
+  return providerStatus === undefined
+    ? `Worker ${state.toLowerCase()} failure`
+    : `Worker ${state.toLowerCase()} failure; Gemini HTTP ${providerStatus}`;
+}
+
 function templateKeyOf(value: string | null): SystemTemplateKey {
   if (value !== null && (SYSTEM_TEMPLATE_KEYS as readonly string[]).includes(value)) {
     return value as SystemTemplateKey;
@@ -412,7 +425,7 @@ async function handleFailure(
       job.jobId,
       state,
       error.code.toUpperCase(),
-      `Phase 2 worker ${state.toLowerCase()} failure`,
+      safeFailureDetail(error, state),
     );
     await editStatusBestEffort(deps, job, error.publicMessage);
     return "retrying";
@@ -423,7 +436,7 @@ async function handleFailure(
     job.jobId,
     state,
     error.code.toUpperCase(),
-    `Phase 2 permanent ${state.toLowerCase()} failure`,
+    safeFailureDetail(error, state),
   );
   await deps.jobs.deleteQueueMessage(message.queueMessageId);
   if (job.statusMessageId === null) {

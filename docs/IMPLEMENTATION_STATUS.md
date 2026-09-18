@@ -24,13 +24,19 @@ Implemented in the working tree and deployed to development:
   Gemini API key and one configured model.
 - Vision usage is recorded with `operation = vision`; PDF page counts populate
   `document_pages` when the provider can determine them.
-- `telegram-webhook` version 12 and `process-job` version 14 are active with
+- `telegram-webhook` version 12 and `process-job` version 17 are active with
   `verify_jwt=false`; each continues to enforce its custom secret header.
-- Type-check and the hermetic suite pass: **456 passed, 0 failed**. The
+- Type-check and the hermetic suite pass: **457 passed, 0 failed**. The
   credentialed integration/e2e suite remains unavailable because `.env` is not
   present in this checkout.
-- Live screenshot/PDF/DOCX/TXT/Markdown Telegram verification is the remaining
-  Phase 3 release check.
+- A live screenshot completed after one transient Gemini retry: the note was
+  delivered, `vision` usage recorded, the Telegram file handle cleared, and
+  Storage remained empty.
+- The first live 460 KiB PDF reached Gemini but received HTTP 500 on all three
+  attempts. The PDF contract was then reduced from exhaustive extraction to a
+  compact source digest capped at 12,000 characters, and safe upstream HTTP-only
+  diagnostics were added. A fresh PDF resend is required to verify version 17;
+  DOCX/TXT/Markdown also remain in the live matrix.
 
 The data-lifecycle decision is recorded in
 [ADR 0009](ADR/0009-phase-3-ephemeral-documents.md). There is deliberately no
@@ -91,7 +97,7 @@ Verification on this machine:
 deno fmt --check                 clean
 deno lint                        clean
 deno check ...                   all TypeScript files checked
-unit + contract + security       456 passed, 0 failed
+unit + contract + security       457 passed, 0 failed
 ```
 
 The integration/e2e command was invoked: its production-target guard passed and

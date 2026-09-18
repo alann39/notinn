@@ -52,15 +52,15 @@ The full decision order, and the reasoning, is [ADR 0003](ADR/0003-ingestion-con
 
 Private chats only. Exactly one content kind per message:
 
-| Kind                              | Routed to                                   | Current handling                              |
-| --------------------------------- | ------------------------------------------- | --------------------------------------------- |
-| `text`                            | `clean_note` (`short_summary` if forwarded) | Generated, validated, stored, delivered       |
-| `voice` / `audio`                 | `clean_note`                                | Worker transcribes + generates one note       |
-| `photo` or JPEG/PNG/WebP document | `extract_and_summarize`                     | Inline Gemini image extraction + note         |
-| PDF document                      | `detailed_summary`                          | Inline Gemini document extraction + note      |
-| DOCX document                     | `detailed_summary`                          | Safe local extraction, then text generation   |
-| TXT/Markdown document             | `clean_note`                                | Strict UTF-8 extraction, then text generation |
-| anything else                     | —                                           | Ignored                                       |
+| Kind                              | Routed to                                   | Current handling                               |
+| --------------------------------- | ------------------------------------------- | ---------------------------------------------- |
+| `text`                            | `clean_note` (`short_summary` if forwarded) | Generated, validated, stored, delivered        |
+| `voice` / `audio`                 | `clean_note`                                | Worker transcribes + generates one note        |
+| `photo` or JPEG/PNG/WebP document | `extract_and_summarize`                     | Inline Gemini image extraction + note          |
+| PDF document                      | `detailed_summary`                          | Inline Gemini analysis + compact digest + note |
+| DOCX document                     | `detailed_summary`                          | Safe local extraction, then text generation    |
+| TXT/Markdown document             | `clean_note`                                | Strict UTF-8 extraction, then text generation  |
+| anything else                     | —                                           | Ignored                                        |
 
 A message carrying more than one of these is ambiguous and ignored. Bots, service
 messages, `channel_post`, edits and reactions are ignored. Private-chat

@@ -17,6 +17,7 @@ import type {
 const GEMINI_INTERACTIONS_ENDPOINT =
   "https://generativelanguage.googleapis.com/v1beta/interactions";
 const DEFAULT_TIMEOUT_MS = 45_000;
+const MAX_PDF_SOURCE_DIGEST_CHARS = 12_000;
 
 const GeminiInteractionSchema = z.object({
   id: z.string().optional(),
@@ -46,7 +47,7 @@ const ImageEnvelopeSchema = z.object({
 });
 
 const PdfEnvelopeSchema = z.object({
-  extracted_text: z.string().trim().min(1).max(500_000),
+  extracted_text: z.string().trim().min(1).max(MAX_PDF_SOURCE_DIGEST_CHARS),
   page_count: z.number().int().min(1).max(1_000).nullable(),
   note: z.unknown(),
 });
@@ -261,7 +262,7 @@ export class GeminiNoteProvider implements NoteAIProvider {
     const responseJsonSchema = {
       type: "object",
       properties: {
-        extracted_text: { type: "string" },
+        extracted_text: { type: "string", maxLength: MAX_PDF_SOURCE_DIGEST_CHARS },
         page_count: { type: ["integer", "null"], minimum: 1, maximum: 1_000 },
         note: request.template.responseJsonSchema,
       },
@@ -274,8 +275,13 @@ export class GeminiNoteProvider implements NoteAIProvider {
         { type: "document", mime_type: "application/pdf", data: bytesToBase64(request.pdf) },
         {
           type: "text",
-          text:
-            "Extract this PDF, count its pages, and create the requested structured note with page references only when certain.",
+          text: [
+            "Analyze this PDF and create the requested structured note with page references only when certain.",
+            `Set extracted_text to a compact, faithful source digest of at most ${MAX_PDF_SOURCE_DIGEST_CHARS} characters.`,
+            "Preserve headings, key facts, decisions, definitions, and page markers needed for later regeneration.",
+            "Do not transcribe or OCR the entire document, and do not repeat content merely to fill the limit.",
+            "Count the PDF pages when you can determine the count reliably; otherwise use null.",
+          ].join("\n"),
         },
       ],
       responseJsonSchema,

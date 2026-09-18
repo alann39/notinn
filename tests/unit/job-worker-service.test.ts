@@ -47,6 +47,7 @@ function harness(
   const transitions: [JobState, JobState][] = [];
   const deleted: number[] = [];
   const retryable: JobState[] = [];
+  const retryDetails: string[] = [];
   const failed: JobState[] = [];
   const staged: PersistNoteInput[] = [];
   const edits: string[] = [];
@@ -139,6 +140,7 @@ function harness(
         _detail: string,
       ) => {
         retryable.push(expected);
+        retryDetails.push(_detail);
         return Promise.resolve({ outcome: "updated" as const, state: "RETRYABLE_FAILED" as const });
       },
       fail: (
@@ -230,6 +232,7 @@ function harness(
     transitions,
     deleted,
     retryable,
+    retryDetails,
     failed,
     staged,
     edits,
@@ -330,6 +333,19 @@ Deno.test("a transient provider failure remains queued for retry", async () => {
   assertEquals(test.retryable, ["GENERATING"]);
   assertEquals(test.deleted, []);
   assertEquals(test.staged, []);
+});
+
+Deno.test("a provider HTTP status is retained without its response body", async () => {
+  const test = harness(claimed(), {
+    providerError: AppError.providerError("gemini interaction returned 400"),
+  });
+
+  await processQueueMessage(
+    { queueMessageId: 7, readCount: 1, jobId: JOB_ID },
+    test.deps,
+  );
+
+  assertEquals(test.retryDetails, ["Worker generating failure; Gemini HTTP 400"]);
 });
 
 Deno.test("a missing Telegram audio file fails permanently and requests a resend", async () => {

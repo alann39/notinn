@@ -223,4 +223,9 @@ Deno.test("Gemini receives a PDF as a document and reports its page count", asyn
     data: "AQIDBA==",
   });
   assertEquals(requestBody["store"], false);
+  const format = requestBody["response_format"] as Record<string, unknown>;
+  const schema = format["schema"] as Record<string, unknown>;
+  const properties = schema["properties"] as Record<string, Record<string, unknown>>;
+  assertEquals(properties["extracted_text"]?.["maxLength"], 12_000);
+  assertEquals(String(input[1]?.["text"]).includes("Do not transcribe"), true);
 });

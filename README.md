@@ -100,7 +100,7 @@ key.
 ## Testing
 
 ```bash
-npx deno task test                  # 456 tests, no database, no network
+npx deno task test                  # 457 tests, no database, no network
 npx deno task test:unit             # pure functions
 npx deno task test:contract         # migrations vs. the TypeScript mirrors
 npx deno task test:security         # auth + log redaction
