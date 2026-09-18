@@ -10,6 +10,7 @@ import { RejectedChatsRepository } from "../_shared/repositories/rejected-chats.
 import { TemplatesRepository } from "../_shared/repositories/templates.repository.ts";
 import { UsageRepository } from "../_shared/repositories/usage.repository.ts";
 import { GeminiNoteProvider } from "../_shared/providers/gemini-note.provider.ts";
+import { GeminiEmbeddingProvider } from "../_shared/providers/gemini-embedding.provider.ts";
 import { createTelegramGateway } from "../_shared/telegram/client.ts";
 import { handleWebhookRequest } from "../_shared/telegram/handler.ts";
 import { scheduleWorkerInvocation } from "../_shared/worker/invoker.ts";
@@ -85,13 +86,18 @@ Deno.serve(async (request: Request): Promise<Response> => {
     const client = createServiceClient(config.supabaseUrl, config.serviceRoleKey);
     const repository = new IngestionRepository(client);
 
+    const noteProvider = new GeminiNoteProvider(config.ai);
     const phase1 = {
       notes: new NotesRepository(client),
       jobs: new ProcessingJobsRepository(client),
       rejectedChats: new RejectedChatsRepository(client),
       templates: new TemplatesRepository(client),
       usage: new UsageRepository(client),
-      provider: new GeminiNoteProvider(config.ai),
+      provider: noteProvider,
+      embeddings: config.ai.embeddingModel === null
+        ? undefined
+        : new GeminiEmbeddingProvider(config.ai),
+      answers: noteProvider,
       telegram: createTelegramGateway(config.botToken),
       triggerWorker: (jobId: string) =>
         scheduleWorkerInvocation(

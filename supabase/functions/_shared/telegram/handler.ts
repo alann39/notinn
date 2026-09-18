@@ -14,6 +14,7 @@ import type { RejectedChatsRepository } from "../repositories/rejected-chats.rep
 import type { TemplatesRepository } from "../repositories/templates.repository.ts";
 import type { UsageRepository } from "../repositories/usage.repository.ts";
 import type { NoteAIProvider } from "../providers/note-ai.provider.ts";
+import type { EmbeddingProvider, LibraryAnswerProvider } from "../providers/library-ai.provider.ts";
 import { handleCallback } from "../services/callback.service.ts";
 import { handleCommand } from "../services/command.service.ts";
 import { ingestMessage } from "../services/ingestion.service.ts";
@@ -58,6 +59,8 @@ export interface WebhookDependencies {
     readonly templates: TemplatesRepository;
     readonly usage: UsageRepository;
     readonly provider: Pick<NoteAIProvider, "generateText">;
+    readonly embeddings?: EmbeddingProvider;
+    readonly answers?: LibraryAnswerProvider;
     readonly telegram: Pick<
       TelegramGateway,
       "sendMessage" | "answerCallbackQuery" | "editMessageReplyMarkup" | "editMessageText"
@@ -183,6 +186,9 @@ export async function handleWebhookRequest(
           users: repository,
           notes: deps.phase1.notes,
           telegram: deps.phase1.telegram,
+          embeddings: deps.phase1.embeddings,
+          answers: deps.phase1.answers,
+          usage: deps.phase1.usage,
         });
       }
       log.info("webhook.command", {

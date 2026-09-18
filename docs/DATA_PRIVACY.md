@@ -93,14 +93,15 @@ fields are **present**, so a logger that wrote nothing cannot pass.
 
 ## What is stored
 
-| Table              | Content                                                                                | Notes                                                                                |
-| ------------------ | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `users`            | Telegram user id, chat id, username, display name, status, plan                        | Identity, not content                                                                |
-| `telegram_updates` | `update_id`, type, routing metadata, a SHA-256 of the raw body                         | The digest is a tripwire, not a key — see [ADR 0003](ADR/0003-ingestion-contract.md) |
-| `processing_jobs`  | Input type, template, state, file metadata (`file_id`, filename, MIME, size, duration) | `file_id` is cleared when the job becomes terminal                                   |
-| `notes`            | Title, language, normalized text or audio transcript, source SHA-256                   | Derived text only; never raw binary                                                  |
-| `note_outputs`     | Validated structured content and its rendered text                                     | Provider output only after application validation                                    |
-| `usage_events`     | Counters and an internal cost estimate                                                 | **No user content.** Counts, provider identifiers only                               |
+| Table              | Content                                                                                | Notes                                                                                  |
+| ------------------ | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `users`            | Telegram user id, chat id, username, display name, status, plan                        | Identity, not content                                                                  |
+| `telegram_updates` | `update_id`, type, routing metadata, a SHA-256 of the raw body                         | The digest is a tripwire, not a key — see [ADR 0003](ADR/0003-ingestion-contract.md)   |
+| `processing_jobs`  | Input type, template, state, file metadata (`file_id`, filename, MIME, size, duration) | `file_id` is cleared when the job becomes terminal                                     |
+| `notes`            | Title, language, normalized text or audio transcript, source SHA-256                   | Derived text only; never raw binary                                                    |
+| `note_outputs`     | Validated structured content and its rendered text                                     | Provider output only after application validation                                      |
+| `note_embeddings`  | Vector, model, content hash, and owned note/output references                          | **No duplicate note text and no raw media.** Deleted or invalidated with library state |
+| `usage_events`     | Counters and an internal cost estimate                                                 | **No user content.** Counts, provider identifiers only                                 |
 
 `processing_jobs.telegram_file_id` is marked **secret-adjacent** in the schema
 comment: the Telegram download URL derived from it embeds the bot token. It is
@@ -144,6 +145,16 @@ counters are persisted. Notinn does not create a Supabase Storage bucket for
 these paths, so there is no temporary object and no 12-hour deletion window. A
 future conversion that genuinely needs Storage must add a private bucket, delete
 through the Storage API in `finally`, and add orphan cleanup before it ships.
+
+## Semantic index lifecycle
+
+Only explicitly saved notes are eligible for semantic indexing. `/ask` sends the
+current validated structured output—not a raw upload—to the embedding endpoint.
+Postgres stores the resulting vector with its model, SHA-256 content hash, and
+references; it does not copy the note body into `note_embeddings`. Unsave and
+current-output changes delete the vector immediately, and deleting a note removes
+it by cascade. Retrieval joins evidence back through the owned, saved current
+output before any text reaches the answer model.
 
 ## Secrets
 

@@ -20,6 +20,7 @@ function harness() {
       apiKey: new Secret("synthetic-gemini-key"),
       model: "gemini-synthetic-flash",
       fallbackModel: null,
+      embeddingModel: null,
     },
     logLevel: "debug",
     fingerprints: { serviceRoleKey: "synthetic" },

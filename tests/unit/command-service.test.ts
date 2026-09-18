@@ -29,6 +29,9 @@ function harness(searchResults: Awaited<ReturnType<StubNotes["searchSavedNotes"]
       searchCalls.push({ userId, query, limit });
       return Promise.resolve(searchResults);
     },
+    listSavedNotesForEmbedding: () => Promise.resolve([]),
+    upsertNoteEmbedding: () => Promise.resolve(true),
+    matchSavedNoteEmbeddings: () => Promise.resolve([]),
   };
 
   return {
@@ -55,6 +58,9 @@ function harness(searchResults: Awaited<ReturnType<StubNotes["searchSavedNotes"]
 
 interface StubNotes {
   listRecentSavedNotes: () => Promise<[]>;
+  listSavedNotesForEmbedding: () => Promise<[]>;
+  upsertNoteEmbedding: () => Promise<boolean>;
+  matchSavedNoteEmbeddings: () => Promise<[]>;
   searchSavedNotes: (
     userId: string,
     query: string,
@@ -128,4 +134,106 @@ Deno.test("search reports an empty result without creating buttons", async () =>
     "I could not find that in your saved notes. Try fewer or different keywords.",
   );
   assertEquals(test.sent[0]?.options, undefined);
+});
+
+Deno.test("ask lazily indexes saved notes, answers from matches, and cites an openable source", async () => {
+  const sent: { text: string; options: unknown }[] = [];
+  const calls: string[] = [];
+  const embedding = Array.from({ length: 768 }, () => 0.01);
+
+  await handleCommand(command("ask", "When is the launch?"), {
+    users: { ensureUser: () => Promise.resolve(USER_ID) },
+    notes: {
+      listRecentSavedNotes: () => Promise.resolve([]),
+      searchSavedNotes: () => Promise.resolve([]),
+      listSavedNotesForEmbedding: () =>
+        Promise.resolve([{
+          noteId: NOTE_ID,
+          outputId: "33333333-3333-4333-8333-333333333333",
+          title: "Launch plan",
+          contentJson: { summary: "Launch is Friday." },
+          contentSha256: "a".repeat(64),
+        }]),
+      upsertNoteEmbedding: () => {
+        calls.push("upsert");
+        return Promise.resolve(true);
+      },
+      matchSavedNoteEmbeddings: () =>
+        Promise.resolve([{
+          noteId: NOTE_ID,
+          title: "Launch plan",
+          contentJson: { summary: "Launch is Friday." },
+          updatedAt: "2026-09-18T10:00:00Z",
+          similarity: 0.91,
+        }]),
+    },
+    embeddings: {
+      model: "gemini-embedding-001",
+      embedDocuments: () => {
+        calls.push("embed_documents");
+        return Promise.resolve({
+          vectors: [embedding],
+          provider: "gemini",
+          model: "gemini-embedding-001",
+        });
+      },
+      embedQuestion: () => {
+        calls.push("embed_question");
+        return Promise.resolve({
+          vectors: [embedding],
+          provider: "gemini",
+          model: "gemini-embedding-001",
+        });
+      },
+    },
+    answers: {
+      answerFromEvidence: () =>
+        Promise.resolve({
+          answer: "The launch is Friday [1].",
+          citationIndexes: [1],
+          sufficient: true,
+          provider: "gemini",
+          model: "gemini-synthetic-flash",
+          providerRequestId: "request-answer",
+          inputTokens: 20,
+          outputTokens: 10,
+        }),
+    },
+    usage: {
+      recordEmbedding: () => Promise.resolve(),
+      recordGeneration: () => Promise.resolve(),
+    },
+    telegram: {
+      sendMessage: (_chatId, text, options) => {
+        sent.push({ text, options });
+        return Promise.resolve({ messageId: 1 });
+      },
+    },
+  });
+
+  assertEquals(calls, ["embed_documents", "upsert", "embed_question"]);
+  assertEquals(sent[0]?.text.includes("The launch is Friday"), true);
+  assertEquals(sent[0]?.text.includes("[1] Launch plan"), true);
+  const options = sent[0]?.options as {
+    inlineKeyboard: { inline_keyboard: { callback_data: string }[][] };
+  };
+  assertEquals(
+    options.inlineKeyboard.inline_keyboard[0]?.[0]?.callback_data.includes(NOTE_ID),
+    false,
+  );
+});
+
+Deno.test("ask remains safely unavailable until the embedding model is configured", async () => {
+  const sent: string[] = [];
+  const test = harness();
+  await handleCommand(command("ask", "What changed?"), {
+    ...test.deps,
+    telegram: {
+      sendMessage: (_chatId, text) => {
+        sent.push(text);
+        return Promise.resolve({ messageId: 1 });
+      },
+    },
+  });
+  assertEquals(sent[0]?.includes("not enabled"), true);
 });

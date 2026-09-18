@@ -1,13 +1,13 @@
 # Implementation status
 
-**Phase:** 4 — Knowledge Library (full-text search deployed; semantic retrieval pending)
+**Phase:** 4 — Knowledge Library (semantic retrieval deployed; live `/ask` pending configuration)
 **Date:** 2026-09-18
 **Last verified:** the commands in [Verification](#verification) were run and their
 output is quoted verbatim below.
 
 ## Phase 4 current snapshot
 
-Library Search is implemented and deployed to development:
+Library Search and the Semantic Library foundation are implemented and deployed to development:
 
 - `/search <keywords>` searches explicitly saved notes by title, validated tags,
   retained normalized source, and current rendered output. Historical outputs do
@@ -23,13 +23,27 @@ Library Search is implemented and deployed to development:
   controlled query matched one owned saved note and zero rows for a foreign UUID.
 - The Telegram result contains opaque Open callbacks, never note IDs or query text
   in callback payloads or logs.
-- `telegram-webhook` version 17 is active with `verify_jwt=false` and custom secret
-  authentication. Type-check and the hermetic suite pass: **470 passed, 0 failed**.
-- The next Phase 4 slice is Semantic Library: note chunks, configurable embeddings,
-  hybrid retrieval, and `/ask` answers grounded in cited note titles and dates.
+- `/ask <question>` lazily indexes saved current outputs in batches of at most
+  twenty, retrieves up to five owner-scoped semantic matches, and generates an
+  evidence-only answer with cited note titles and opaque Open buttons.
+- `note_embeddings` stores 768-dimensional vectors, model/hash metadata, and
+  references only—no duplicate note text and no raw files. Unsave, regeneration,
+  and deletion invalidate vectors automatically.
+- The embedding adapter uses `gemini-embedding-001` with retrieval-specific task
+  types and manual normalization. It shares `GEMINI_API_KEY`; the non-secret
+  `GEMINI_EMBEDDING_MODEL` switch is optional so every existing path stays healthy
+  until semantic search is enabled.
+- pgvector 0.8.2, four embedding-table indexes, client-role denials, service-role
+  grants, and a zero-row foreign-owner probe are verified in development. Four
+  existing saved notes are ready for first-use indexing.
+- `telegram-webhook` version 18 is active with `verify_jwt=false` and custom secret
+  authentication. Type-check and the hermetic suite pass: **484 passed, 0 failed**.
+- Remaining release gate: set `GEMINI_EMBEDDING_MODEL=gemini-embedding-001` in
+  Edge Function secrets and run one live `/ask` round trip.
 
-The two-slice decision and security boundary are recorded in
-[ADR 0011](ADR/0011-phase-4-search-first.md).
+The two-slice decision and semantic security boundary are recorded in
+[ADR 0011](ADR/0011-phase-4-search-first.md) and
+[ADR 0012](ADR/0012-semantic-library.md).
 
 ## Phase 3 snapshot (completed)
 
@@ -520,8 +534,9 @@ the user approved continuing to the deployment stage.
    `INTERNAL_WORKER_SECRET`, `AI_PROVIDER=gemini`, `GEMINI_API_KEY`, and
    `GEMINI_MODEL` plus the environment/log settings as Edge Function secrets;
    confirm both functions now reject unsigned calls with an empty HTTP 401.
-   `GEMINI_FALLBACK_MODEL=gemini-3.5-flash-lite` is the one pending dashboard
-   setting; until it is present, the deployed adapter safely runs primary-only.
+   `GEMINI_FALLBACK_MODEL=gemini-3.5-flash-lite` is configured and has completed
+   live Markdown/TXT/DOCX paths. `GEMINI_EMBEDDING_MODEL=gemini-embedding-001`
+   remains the one pending dashboard setting.
 6. **Done:** configure a recovery Cron to POST
    `{"trigger":"recovery","batch_size":5}` every minute with the private worker
    header. The endpoint URL and secret are read from Vault; neither is stored in
@@ -543,8 +558,8 @@ the user approved continuing to the deployment stage.
 
 ## Recommended next step
 
-Run a live `/search risk` from Telegram, open its returned note, and verify that
-an unsaved note stays absent. Once that deterministic baseline passes, implement
-Semantic Library: chunks, embeddings, hybrid retrieval, and grounded `/ask`
-answers. Before promoting beyond development, configure `NOTINN_TEST_*` and run
-the automated integration/e2e release gate.
+Set `GEMINI_EMBEDDING_MODEL=gemini-embedding-001`, then run a live
+`/ask <question answerable by a saved note>`. Verify that the first request creates
+embedding usage events, returns cited titles, and opens only owned notes. Before
+promoting beyond development, configure `NOTINN_TEST_*` and run the automated
+integration/e2e release gate.

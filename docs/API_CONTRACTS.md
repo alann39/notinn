@@ -65,9 +65,10 @@ Private chats only. Exactly one content kind per message:
 A message carrying more than one of these is ambiguous and ignored. Bots, service
 messages, `channel_post`, edits and reactions are ignored. Private-chat
 `callback_query` updates with a bot message and callback data are handled as note
-actions. `/recent` lists saved notes and `/search <keywords>` performs owner-scoped
-full-text search; other slash commands receive the current one-sentence help
-response and are not stored as notes.
+actions. `/recent` lists saved notes, `/search <keywords>` performs owner-scoped
+full-text search, and `/ask <question>` answers only from owner-scoped saved-note
+evidence; other slash commands receive the current one-sentence help response and
+are not stored as notes.
 
 Non-private `message` and actionable `callback_query` updates are rejected. The
 first one per chat atomically claims the fixed reply; later updates are silent.
@@ -214,21 +215,24 @@ All functions below are `SECURITY DEFINER`, pin `search_path = ''`, are revoked
 from `PUBLIC`, `anon`, and `authenticated`, and are granted only to
 `service_role`:
 
-| Function                        | Contract                                                                                     |
-| ------------------------------- | -------------------------------------------------------------------------------------------- |
-| `claim_rejected_chat_reply`     | Atomically returns `true` to at most one caller per non-private chat                         |
-| `persist_note`                  | Creates the note and first output, points to it, and completes a `DELIVERING` job atomically |
-| `regenerate_note_output`        | Appends an owned note output without changing the current pointer                            |
-| `set_current_output`            | Moves an owned note's pointer after successful delivery                                      |
-| `set_note_saved`                | Idempotently applies Save or Unsave to an owned note                                         |
-| `delete_note`                   | Hard-deletes one owned note and cascades its outputs                                         |
-| `list_recent_saved_notes`       | Returns saved notes, newest update first                                                     |
-| `search_saved_notes`            | Returns up to ten ranked matches from one user's saved current notes                         |
-| `find_note_for_regeneration`    | Reads owned source text before a provider call can be made                                   |
-| `find_note_for_display`         | Reads the owned current output and saved state for rendering                                 |
-| `find_template_for_generation`  | Returns one active system or owned template and its JSON Schema                              |
-| `advance_processing_job`        | Compare-and-set transition for one owned job                                                 |
-| `mark_processing_job_retryable` | Moves one owned active job to `RETRYABLE_FAILED` with fixed safe detail                      |
+| Function                         | Contract                                                                                     |
+| -------------------------------- | -------------------------------------------------------------------------------------------- |
+| `claim_rejected_chat_reply`      | Atomically returns `true` to at most one caller per non-private chat                         |
+| `persist_note`                   | Creates the note and first output, points to it, and completes a `DELIVERING` job atomically |
+| `regenerate_note_output`         | Appends an owned note output without changing the current pointer                            |
+| `set_current_output`             | Moves an owned note's pointer after successful delivery                                      |
+| `set_note_saved`                 | Idempotently applies Save or Unsave to an owned note                                         |
+| `delete_note`                    | Hard-deletes one owned note and cascades its outputs                                         |
+| `list_recent_saved_notes`        | Returns saved notes, newest update first                                                     |
+| `search_saved_notes`             | Returns up to ten ranked matches from one user's saved current notes                         |
+| `list_saved_notes_for_embedding` | Returns a bounded batch of owned saved current outputs whose vector is missing or stale      |
+| `upsert_note_embedding`          | Writes a vector only while owner, Save state, current output, and content hash still agree   |
+| `match_saved_note_embeddings`    | Returns up to ten semantic matches from one user's saved current outputs                     |
+| `find_note_for_regeneration`     | Reads owned source text before a provider call can be made                                   |
+| `find_note_for_display`          | Reads the owned current output and saved state for rendering                                 |
+| `find_template_for_generation`   | Returns one active system or owned template and its JSON Schema                              |
+| `advance_processing_job`         | Compare-and-set transition for one owned job                                                 |
+| `mark_processing_job_retryable`  | Moves one owned active job to `RETRYABLE_FAILED` with fixed safe detail                      |
 
 `usage_events` is the deliberate exception: it is one immutable server-written
 row with no multi-statement invariant, so `UsageRepository` inserts it directly.
@@ -249,6 +253,12 @@ and the same template contract. The Gemini adapter sends audio through
 The token-bearing Telegram URL, Telegram identifiers, and filename never reach
 the provider. The buffer is zero-filled after the call whether it succeeds or
 throws.
+
+`EmbeddingProvider` batches saved structured outputs with
+`RETRIEVAL_DOCUMENT`, embeds `/ask` questions with `QUESTION_ANSWERING`, and
+returns normalized 768-dimensional vectors. `LibraryAnswerProvider` receives only
+the bounded owner-scoped matches and must return an answer, a sufficiency verdict,
+and valid evidence indexes. Note ids never enter the model prompt.
 
 ---
 

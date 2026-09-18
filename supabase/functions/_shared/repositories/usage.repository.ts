@@ -41,4 +41,26 @@ export class UsageRepository {
       throw toDatabaseError(thrown);
     }
   }
+
+  async recordEmbedding(input: {
+    readonly userId: string;
+    readonly provider: string;
+    readonly model: string;
+  }): Promise<void> {
+    try {
+      const { error } = await this.#client.from("usage_events").insert({
+        user_id: input.userId,
+        job_id: null,
+        provider: input.provider,
+        model: input.model,
+        operation: "embedding",
+        input_tokens: null,
+        output_tokens: null,
+        provider_request_id: null,
+      });
+      if (error !== null) throw classifyPostgresError(error);
+    } catch (thrown) {
+      throw toDatabaseError(thrown);
+    }
+  }
 }

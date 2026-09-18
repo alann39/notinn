@@ -96,6 +96,22 @@ const SearchNoteRowSchema = RecentNoteRowSchema.extend({
   rank: z.number().nonnegative(),
 });
 
+const PendingEmbeddingRowSchema = z.object({
+  note_id: UuidSchema,
+  output_id: UuidSchema,
+  title: z.string(),
+  content_json: z.unknown(),
+  content_sha256: z.string().regex(/^[0-9a-f]{64}$/),
+});
+
+const SemanticMatchRowSchema = z.object({
+  note_id: UuidSchema,
+  title: z.string(),
+  content_json: z.unknown(),
+  updated_at: TimestampSchema,
+  similarity: z.number().min(-1).max(1),
+});
+
 /** One row of `find_note_for_regeneration`'s result set. */
 const RegenerationSourceRowSchema = z.object({
   note_id: UuidSchema,
@@ -195,6 +211,22 @@ export interface RecentNote {
 export interface SearchNote extends RecentNote {
   readonly tags: readonly string[];
   readonly rank: number;
+}
+
+export interface PendingNoteEmbedding {
+  readonly noteId: string;
+  readonly outputId: string;
+  readonly title: string;
+  readonly contentJson: unknown;
+  readonly contentSha256: string;
+}
+
+export interface SemanticNoteMatch {
+  readonly noteId: string;
+  readonly title: string;
+  readonly contentJson: unknown;
+  readonly updatedAt: string;
+  readonly similarity: number;
 }
 
 /** What regeneration needs, read before the provider is called. */
@@ -471,6 +503,98 @@ export class NotesRepository {
         rank: row.rank,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
+      }));
+    } catch (thrown) {
+      throw toDatabaseError(thrown);
+    }
+  }
+
+  /** Saved current outputs that need a vector for the configured embedding model. */
+  async listSavedNotesForEmbedding(
+    userId: string,
+    embeddingModel: string,
+    limit: number,
+  ): Promise<PendingNoteEmbedding[]> {
+    try {
+      const { data, error } = await this.#client.rpc("list_saved_notes_for_embedding", {
+        p_user_id: userId,
+        p_embedding_model: embeddingModel,
+        p_limit: limit,
+      });
+      const rows = parseMany(
+        data,
+        error,
+        PendingEmbeddingRowSchema,
+        "list_saved_notes_for_embedding",
+      );
+      return rows.map((row) => ({
+        noteId: row.note_id,
+        outputId: row.output_id,
+        title: row.title,
+        contentJson: row.content_json,
+        contentSha256: row.content_sha256,
+      }));
+    } catch (thrown) {
+      throw toDatabaseError(thrown);
+    }
+  }
+
+  /** Store a vector only if the note is still owned, saved, current and hash-consistent. */
+  async upsertNoteEmbedding(input: {
+    readonly userId: string;
+    readonly noteId: string;
+    readonly outputId: string;
+    readonly embeddingModel: string;
+    readonly contentSha256: string;
+    readonly embedding: readonly number[];
+  }): Promise<boolean> {
+    try {
+      const { data, error } = await this.#client.rpc("upsert_note_embedding", {
+        p_user_id: input.userId,
+        p_note_id: input.noteId,
+        p_output_id: input.outputId,
+        p_embedding_model: input.embeddingModel,
+        p_content_sha256: input.contentSha256,
+        p_embedding: `[${input.embedding.join(",")}]`,
+      });
+      if (error !== null) throw classifyPostgresError(error);
+      if (typeof data !== "boolean") {
+        throw AppError.internal("upsert_note_embedding returned a non-boolean result");
+      }
+      return data;
+    } catch (thrown) {
+      throw toDatabaseError(thrown);
+    }
+  }
+
+  /** Nearest saved current notes for one owner and one embedding model. */
+  async matchSavedNoteEmbeddings(
+    userId: string,
+    embeddingModel: string,
+    queryEmbedding: readonly number[],
+    limit: number,
+    minSimilarity: number,
+  ): Promise<SemanticNoteMatch[]> {
+    try {
+      const { data, error } = await this.#client.rpc("match_saved_note_embeddings", {
+        p_user_id: userId,
+        p_embedding_model: embeddingModel,
+        p_query_embedding: `[${queryEmbedding.join(",")}]`,
+        p_limit: limit,
+        p_min_similarity: minSimilarity,
+      });
+      const rows = parseMany(
+        data,
+        error,
+        SemanticMatchRowSchema,
+        "match_saved_note_embeddings",
+      );
+      return rows.map((row) => ({
+        noteId: row.note_id,
+        title: row.title,
+        contentJson: row.content_json,
+        updatedAt: row.updated_at,
+        similarity: row.similarity,
       }));
     } catch (thrown) {
       throw toDatabaseError(thrown);

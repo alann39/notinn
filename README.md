@@ -3,15 +3,16 @@
 Telegram-first note capture. Send Notinn a message, a voice note, a screenshot, a
 PDF or a document, and get back a structured, searchable note.
 
-**Status: Phase 4 Library Search is deployed in development.** Text, voice/audio, screenshots,
+**Status: Phase 4 Semantic Library is deployed in development.** Text, voice/audio, screenshots,
 PDF, DOCX, TXT, and Markdown are processed by the durable PGMQ worker using one
 Gemini API key with a configured primary and transient-error fallback model. Raw
 media is downloaded into bounded memory, never stored, and zero-filled after
 processing. DOCX/TXT/Markdown are extracted locally before model generation. See
 [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
 
-Saved notes can be listed with `/recent` and searched by title, tags, retained
-source, or current note content with `/search <keywords>`.
+Saved notes can be listed with `/recent`, searched by title, tags, retained source,
+or current note content with `/search <keywords>`, and queried with evidence-only
+answers through `/ask <question>` after the embedding model is enabled.
 
 ---
 
@@ -54,7 +55,7 @@ npx supabase link --project-ref <ref>   # confirm the target first
 npx supabase db push                    # apply migrations
 ```
 
-Sixteen migrations in `supabase/migrations/`. They are the schema's source of truth;
+Twenty migrations in `supabase/migrations/`. They are the schema's source of truth;
 migrations are never edited after being applied to a shared project (one
 pre-release exception is recorded in
 [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md)).
@@ -103,7 +104,7 @@ key.
 ## Testing
 
 ```bash
-npx deno task test                  # 457 tests, no database, no network
+npx deno task test                  # hermetic tests, no database, no network
 npx deno task test:unit             # pure functions
 npx deno task test:contract         # migrations vs. the TypeScript mirrors
 npx deno task test:security         # auth + log redaction
@@ -134,7 +135,7 @@ prompt, and it will not touch a row below the reserved floor.
 ## Layout
 
 ```
-supabase/migrations/         16 migrations — the schema's source of truth
+supabase/migrations/         20 migrations — the schema's source of truth
 supabase/functions/
   telegram-webhook/          authenticated ingestion + background worker trigger
   process-job/               authenticated PGMQ consumer

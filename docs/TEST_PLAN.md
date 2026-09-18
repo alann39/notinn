@@ -7,53 +7,54 @@ surface.
 
 | Suite                       | Files | Tests | Needs               | Command                      |
 | --------------------------- | ----- | ----: | ------------------- | ---------------------------- |
-| [unit](#unit)               | 21    |   326 | nothing             | `deno task test:unit`        |
-| [contract](#contract)       | 2     |    88 | nothing             | `deno task test:contract`    |
+| [unit](#unit)               | 22    |   334 | nothing             | `deno task test:unit`        |
+| [contract](#contract)       | 2     |    94 | nothing             | `deno task test:contract`    |
 | [security](#security)       | 3     |    56 | nothing             | `deno task test:security`    |
 | [integration](#integration) | 4     |    25 | a Supabase project  | `deno task test:integration` |
 | [e2e](#e2e)                 | 1     |     8 | a deployed function | `deno task test:integration` |
 
-`deno task test` runs unit + contract + security: **470 tests, no database and no
+`deno task test` runs unit + contract + security: **484 tests, no database and no
 outbound network.**
 
 The integration and e2e suites are _ignored_, not failed, when no target is
 configured, so the number of ignored tests is the count of checks that need
 infrastructure rather than checks that were skipped to make a run go green.
 
-Latest hermetic run (unit + contract + security, 2026-09-18): **470 passed, 0
+Latest hermetic run (unit + contract + security, 2026-09-18): **484 passed, 0
 failed.** Integration and e2e were not run because Docker/Podman and a deployed
 test target are unavailable.
 
 ---
 
-## Unit — 326 tests
+## Unit — 334 tests
 
 Pure functions, no I/O, no doubles where a real call is possible.
 
-| File                           | Covers                                                                                                                                                                                                                           |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `env.test.ts`                  | Webhook/worker config validation, secret strength, provider/model requirements, JWT role decoding, and safe environment reporting                                                                                                |
-| `errors.test.ts`               | The taxonomy: every code has a retryable flag and a log level; `AppError` keeps the public message and the internal detail apart; `httpStatusForError` maps `401`/`500`/`200`                                                    |
-| `input-routing.test.ts`        | Default template per input type, forwarded-text override, MIME and extension resolution, and that every template the router can produce exists in the catalogue                                                                  |
-| `job-state.test.ts`            | The transition table's shape: every terminal state has no outgoing edges, every non-terminal state can reach a terminal one, `CANCELLED` is reachable from every non-terminal state, creation states are `RECEIVED` and `QUEUED` |
-| `logger.test.ts`               | The allowlist: unknown fields dropped, objects and arrays dropped, denied fields dropped even when explicitly passed, level filtering, child context                                                                             |
-| `parse-update.test.ts`         | Classification: private vs group vs channel, bots, service messages, one-content-kind rule, unsupported kinds, forwarded detection                                                                                               |
-| `command-service.test.ts`      | `/search` query validation, ranked result rendering, empty results, and opaque Open callbacks                                                                                                                                    |
-| `callback.test.ts`             | Versioned callback payload encoding, UUID opacity, action vocabulary, and Telegram's 64-byte limit                                                                                                                               |
-| `gemini-note-provider.test.ts` | Gemini text/audio/image/PDF inline requests, response schemas, extracted-source validation, usage metadata, wrong-template rejection, invalid JSON, and rate-limit mapping                                                       |
-| `document-extraction.test.ts`  | UTF-8 text decoding, image magic bytes, PDF encryption rejection, DOCX extraction, and macro rejection                                                                                                                           |
-| `job-worker-service.test.ts`   | Text/audio/image/PDF/document state paths, in-memory buffer scrubbing, note staging, usage metering, delivery retry idempotency, transient retry, and file limits                                                                |
-| `note-rendering.test.ts`       | Telegram-safe HTML, semantic splitting, inline keyboards, and callback round-trips                                                                                                                                               |
-| `structured-note.test.ts`      | Application-authoritative structured-note validation and non-fabrication bounds                                                                                                                                                  |
-| `text-note-service.test.ts`    | The inline job path, persistence, usage metering, delivery, and retryable provider failure                                                                                                                                       |
-| `telegram-download.test.ts`    | Private `getFile` flow, metadata/content-length/stream byte limits, expired file mapping, and token-bearing URL containment                                                                                                      |
-| `worker-invoker.test.ts`       | Background worker URL/header/body contract and non-2xx handling; only opaque `job_id` crosses the boundary                                                                                                                       |
-| `redaction.test.ts`            | Redaction of values that reach a log line: bearer tokens, bot-token URLs, signed URLs, private key blocks, newline collapsing (so a value cannot forge a line), truncation                                                       |
-| `webhook-secret.test.ts`       | Constant-time comparison: prefix, suffix, length and case differences all refused; the mismatched value never appears in the thrown error                                                                                        |
+| File                                | Covers                                                                                                                                                                                                                           |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `env.test.ts`                       | Webhook/worker config validation, secret strength, provider/model requirements, JWT role decoding, and safe environment reporting                                                                                                |
+| `errors.test.ts`                    | The taxonomy: every code has a retryable flag and a log level; `AppError` keeps the public message and the internal detail apart; `httpStatusForError` maps `401`/`500`/`200`                                                    |
+| `input-routing.test.ts`             | Default template per input type, forwarded-text override, MIME and extension resolution, and that every template the router can produce exists in the catalogue                                                                  |
+| `job-state.test.ts`                 | The transition table's shape: every terminal state has no outgoing edges, every non-terminal state can reach a terminal one, `CANCELLED` is reachable from every non-terminal state, creation states are `RECEIVED` and `QUEUED` |
+| `logger.test.ts`                    | The allowlist: unknown fields dropped, objects and arrays dropped, denied fields dropped even when explicitly passed, level filtering, child context                                                                             |
+| `parse-update.test.ts`              | Classification: private vs group vs channel, bots, service messages, one-content-kind rule, unsupported kinds, forwarded detection                                                                                               |
+| `command-service.test.ts`           | `/search` plus `/ask` validation, lazy indexing, grounded answers, empty results, and opaque Open callbacks                                                                                                                      |
+| `callback.test.ts`                  | Versioned callback payload encoding, UUID opacity, action vocabulary, and Telegram's 64-byte limit                                                                                                                               |
+| `gemini-note-provider.test.ts`      | Gemini text/audio/image/PDF inline requests, response schemas, extracted-source validation, usage metadata, wrong-template rejection, invalid JSON, and rate-limit mapping                                                       |
+| `gemini-embedding-provider.test.ts` | Batched document and question embeddings, 768-dimensional normalization, model guard, and rate-limit mapping                                                                                                                     |
+| `document-extraction.test.ts`       | UTF-8 text decoding, image magic bytes, PDF encryption rejection, DOCX extraction, and macro rejection                                                                                                                           |
+| `job-worker-service.test.ts`        | Text/audio/image/PDF/document state paths, in-memory buffer scrubbing, note staging, usage metering, delivery retry idempotency, transient retry, and file limits                                                                |
+| `note-rendering.test.ts`            | Telegram-safe HTML, semantic splitting, inline keyboards, and callback round-trips                                                                                                                                               |
+| `structured-note.test.ts`           | Application-authoritative structured-note validation and non-fabrication bounds                                                                                                                                                  |
+| `text-note-service.test.ts`         | The inline job path, persistence, usage metering, delivery, and retryable provider failure                                                                                                                                       |
+| `telegram-download.test.ts`         | Private `getFile` flow, metadata/content-length/stream byte limits, expired file mapping, and token-bearing URL containment                                                                                                      |
+| `worker-invoker.test.ts`            | Background worker URL/header/body contract and non-2xx handling; only opaque `job_id` crosses the boundary                                                                                                                       |
+| `redaction.test.ts`                 | Redaction of values that reach a log line: bearer tokens, bot-token URLs, signed URLs, private key blocks, newline collapsing (so a value cannot forge a line), truncation                                                       |
+| `webhook-secret.test.ts`            | Constant-time comparison: prefix, suffix, length and case differences all refused; the mismatched value never appears in the thrown error                                                                                        |
 
 ---
 
-## Contract — 88 tests
+## Contract — 94 tests
 
 `contract/migration-constants.test.ts` is the drift guard. It reads the migration
 SQL from disk and asserts the TypeScript mirrors in `config/constants.ts` agree

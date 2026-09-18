@@ -30,6 +30,7 @@ function providerWith(
       apiKey: new Secret("synthetic-api-key-never-a-credential"),
       model: "gemini-synthetic-flash",
       fallbackModel,
+      embeddingModel: null,
     },
     { fetch: fetchImpl },
   );
@@ -54,6 +55,7 @@ function providerWithSequence(
       apiKey: new Secret("synthetic-api-key-never-a-credential"),
       model: "gemini-synthetic-flash",
       fallbackModel: "gemini-synthetic-flash-lite",
+      embeddingModel: null,
     },
     { fetch: fetchImpl },
   );
@@ -131,6 +133,44 @@ Deno.test("Gemini output with the wrong template key is rejected", async () => {
   assertEquals(error.code, "output_validation_failed");
 });
 
+Deno.test("Gemini grounds library answers and keeps only valid citation indexes", async () => {
+  const provider = providerWith(interactionResponse({
+    answer: "The launch moved to Friday.",
+    citation_indexes: [1, 1, 9],
+    sufficient: true,
+  }));
+
+  const result = await provider.answerFromEvidence("When is launch?", [{
+    index: 1,
+    title: "Launch plan",
+    updatedAt: "2026-09-18T10:00:00Z",
+    content: "Launch is Friday.",
+  }]);
+
+  assertEquals(result.answer, "The launch moved to Friday.");
+  assertEquals(result.citationIndexes, [1]);
+  assertEquals(result.sufficient, true);
+});
+
+Deno.test("a sufficient library answer without a valid citation is rejected", async () => {
+  const provider = providerWith(interactionResponse({
+    answer: "Friday.",
+    citation_indexes: [],
+    sufficient: true,
+  }));
+  const error = await assertRejects(
+    () =>
+      provider.answerFromEvidence("When?", [{
+        index: 1,
+        title: "Plan",
+        updatedAt: "2026-09-18T10:00:00Z",
+        content: "Friday.",
+      }]),
+    AppError,
+  );
+  assertEquals(error.code, "output_validation_failed");
+});
+
 Deno.test("Gemini prose instead of JSON is rejected before persistence", async () => {
   const provider = providerWith(interactionResponse("Here is your note"));
 
@@ -189,6 +229,7 @@ Deno.test("Gemini falls back after a primary timeout", async () => {
     apiKey: new Secret("synthetic-api-key-never-a-credential"),
     model: "gemini-synthetic-flash",
     fallbackModel: "gemini-synthetic-flash-lite",
+    embeddingModel: null,
   }, { fetch: fetchImpl });
 
   await provider.generateText(request());

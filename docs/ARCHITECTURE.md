@@ -138,7 +138,7 @@ than assert that a function was called.
 
 ## The database
 
-Sixteen migrations are the current source of truth. The first nine were replayed
+Twenty migrations are the current source of truth. The first nine were replayed
 against a disposable project and all Phase 1/2 migrations are applied to the
 development project. The design decisions that shape them:
 

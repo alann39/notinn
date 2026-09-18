@@ -54,6 +54,7 @@ export const RECOGNISED_ENV_KEYS = [
   "GEMINI_API_KEY",
   "GEMINI_MODEL",
   "GEMINI_FALLBACK_MODEL",
+  "GEMINI_EMBEDDING_MODEL",
   "NOTINN_ENV",
   "NOTINN_LOG_LEVEL",
 ] as const;
@@ -125,6 +126,8 @@ export interface AiConfig {
   readonly model: string;
   /** Optional same-provider fallback for transient upstream failures only. */
   readonly fallbackModel: string | null;
+  /** Optional because ordinary note generation must remain healthy before semantic search is enabled. */
+  readonly embeddingModel: string | null;
 }
 
 export interface WebhookConfig extends BaseConfig {
@@ -195,6 +198,7 @@ const RawSchema = z.object({
   GEMINI_API_KEY: z.string().min(1).optional(),
   GEMINI_MODEL: z.string().min(1).optional(),
   GEMINI_FALLBACK_MODEL: z.string().min(1).optional(),
+  GEMINI_EMBEDDING_MODEL: z.string().min(1).optional(),
   NOTINN_ENV: z.enum(NOTINN_ENVIRONMENTS).optional(),
   NOTINN_LOG_LEVEL: z.enum(LOG_LEVELS).optional(),
 });
@@ -377,7 +381,15 @@ function resolveAiConfig(raw: RawEnv): AiConfig {
     );
   }
 
-  return { provider, apiKey: new Secret(apiKey), model, fallbackModel };
+  const embeddingModel = raw.GEMINI_EMBEDDING_MODEL ?? null;
+  if (embeddingModel !== null && !MODEL_ID_PATTERN.test(embeddingModel)) {
+    throw AppError.configuration(
+      "GEMINI_EMBEDDING_MODEL is not a plain model identifier. Use the model name only, " +
+        "such as gemini-embedding-001 — no URL, path or query string.",
+    );
+  }
+
+  return { provider, apiKey: new Secret(apiKey), model, fallbackModel, embeddingModel };
 }
 
 /**
