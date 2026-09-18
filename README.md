@@ -3,7 +3,7 @@
 Telegram-first note capture. Send Notinn a message, a voice note, a screenshot, a
 PDF or a document, and get back a structured, searchable note.
 
-**Status: Phase 3 is deployed in development.** Text, voice/audio, screenshots,
+**Status: Phase 3 is complete and deployed in development.** Text, voice/audio, screenshots,
 PDF, DOCX, TXT, and Markdown are processed by the durable PGMQ worker using one
 Gemini API key with a configured primary and transient-error fallback model. Raw
 media is downloaded into bounded memory, never stored, and zero-filled after
