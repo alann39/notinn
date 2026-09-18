@@ -1,6 +1,6 @@
 # Implementation status
 
-**Phase:** 4 — Knowledge Library (semantic retrieval deployed; live `/ask` pending verification)
+**Phase:** 4 — Knowledge Library (completed)
 **Date:** 2026-09-18
 **Last verified:** the commands in [Verification](#verification) were run and their
 output is quoted verbatim below.
@@ -34,13 +34,16 @@ Library Search and the Semantic Library foundation are implemented and deployed 
   `GEMINI_EMBEDDING_MODEL` switch is optional so every existing path stays healthy
   until semantic search is enabled.
 - pgvector 0.8.2, four embedding-table indexes, client-role denials, service-role
-  grants, and a zero-row foreign-owner probe are verified in development. Four
-  existing saved notes are ready for first-use indexing.
+  grants, and a zero-row foreign-owner probe are verified in development.
 - `telegram-webhook` version 20 is active with `verify_jwt=false` and custom secret
   authentication. Type-check and the hermetic suite pass: **484 passed, 0 failed**.
 - `GEMINI_EMBEDDING_MODEL=gemini-embedding-001` is configured. A fresh deployment
   booted successfully and still rejects an unsigned POST with an empty HTTP 401.
-- Remaining release gate: run one live `/ask` round trip.
+- A live `/ask` indexed all four saved notes with `gemini-embedding-001`, returned
+  a grounded answer with sources, and left zero stale vectors. Production
+  verification found four embedding rows for one owner, three embedding usage
+  events, and two recent grounded-generation events; the generation fallback to
+  `gemini-3.5-flash-lite` also completed successfully.
 
 The two-slice decision and semantic security boundary are recorded in
 [ADR 0011](ADR/0011-phase-4-search-first.md) and
@@ -559,8 +562,9 @@ the user approved continuing to the deployment stage.
 
 ## Recommended next step
 
-Run a live `/ask <question answerable by a saved note>`. Verify that the first request creates
-embedding usage events, returns cited titles, and opens only owned notes. Before
+Begin Phase 5 with the user-preference contract: default template by input type,
+output language, and balanced/minimal privacy mode. Keep those settings scoped to
+future jobs before adding custom templates and Markdown/text export. Before
 promoting beyond development, configure `NOTINN_TEST_*` and run the automated
 integration/e2e release gate.
 191666d7eabac7948c21d3c2d4566b69e43719a1
