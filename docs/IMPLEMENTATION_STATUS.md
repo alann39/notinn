@@ -1,6 +1,6 @@
 # Implementation status
 
-**Phase:** 3 — images and documents (deployed; DOCX/TXT/Markdown live matrix pending)
+**Phase:** 3 — images and documents (deployed; DOCX/TXT live matrix pending)
 **Date:** 2026-09-18
 **Last verified:** the commands in [Verification](#verification) were run and their
 output is quoted verbatim below.
@@ -38,8 +38,14 @@ Implemented in the working tree and deployed to development:
   capped at 12,000 characters, and safe upstream HTTP-only diagnostics were added.
   A later 3.48 MiB PDF completed successfully after one transient 429: one note
   and one `vision` usage event were created, the queue message and Telegram file
-  handle were cleared, and Storage remained empty. DOCX/TXT/Markdown remain in
-  the live matrix.
+  handle were cleared, and Storage remained empty. DOCX/TXT remain in the live
+  matrix.
+- A live 39 KiB Markdown product specification completed on
+  `gemini-3.5-flash-lite` after the primary model hit its limit. The fallback ran
+  inside the same worker attempt (`attempt_count = 0`), created one note and one
+  generation usage event, cleared the Telegram file handle and queue message,
+  and left Storage empty. This verifies both deterministic Markdown extraction
+  and the controlled same-provider fallback path.
 - Recovery now corrects a PGMQ message that is read a few seconds before
   `next_attempt_at`, preventing the normal five-minute processing visibility
   timeout from adding a second unintended delay.
@@ -501,7 +507,8 @@ the user approved continuing to the deployment stage.
 
 ## Recommended next step
 
-Complete the live Phase 3 file matrix in Telegram and verify each terminal job,
-usage row, cleared Telegram file handle, and zero Storage objects. Before
+Complete the remaining DOCX and TXT rows of the live Phase 3 file matrix in
+Telegram and verify each terminal job, usage row, cleared Telegram file handle,
+and zero Storage objects. Before
 promoting beyond development, configure `NOTINN_TEST_*` and run the automated
 integration/e2e release gate.

@@ -5,9 +5,9 @@ PDF or a document, and get back a structured, searchable note.
 
 **Status: Phase 3 is deployed in development.** Text, voice/audio, screenshots,
 PDF, DOCX, TXT, and Markdown are processed by the durable PGMQ worker using one
-configured Gemini model. Raw media is downloaded into bounded memory, never
-stored, and zero-filled after processing. DOCX/TXT/Markdown are extracted locally
-before model generation. See
+Gemini API key with a configured primary and transient-error fallback model. Raw
+media is downloaded into bounded memory, never stored, and zero-filled after
+processing. DOCX/TXT/Markdown are extracted locally before model generation. See
 [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
 
 ---
