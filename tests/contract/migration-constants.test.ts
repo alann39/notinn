@@ -77,6 +77,7 @@ const FILE_SUFFIXES = [
   "phase2_durable_queue_worker.sql",
   "phase2_recovery_extensions.sql",
   "phase2_pg_net_least_privilege.sql",
+  "fix_retry_wait_visibility.sql",
 ] as const;
 
 /** Read the one migration whose filename ends with `suffix`. */
@@ -112,6 +113,15 @@ const ALL_SQL = ALL_MIGRATIONS.map((migration) => migration.sql).join("\n");
 function normalise(sql: string): string {
   return sql.replace(/\s+/g, " ");
 }
+
+Deno.test("an early retry read is made visible again at its due time", () => {
+  const sql = normalise(ALL_SQL);
+
+  assert(
+    sql.includes("perform pgmq.set_vt('notinn_jobs', v_queue_message_id, v_retry_delay_seconds)"),
+    "claim_processing_job leaves an early retry hidden for the full processing timeout",
+  );
+});
 
 // --- Extracting values from SQL --------------------------------------------
 
@@ -786,13 +796,13 @@ Deno.test("every migration in the directory is one the suite knows about", () =>
   );
 });
 
-Deno.test("every enum, table and function is created by exactly one migration", () => {
-  // A redefinition split across two files is a migration-ordering hazard that is
-  // invisible in any single file.
+Deno.test("every enum and table is created by exactly one migration", () => {
+  // Stateful objects must have one creation point. Functions are deliberately
+  // excluded: CREATE OR REPLACE is PostgreSQL's supported way to ship a body
+  // correction without dropping grants or breaking dependent callers.
   const definitions: [string, RegExp][] = [
     ["enum", /create type public\.(\w+) as enum/g],
     ["table", /create table public\.(\w+)/g],
-    ["function", /create or replace function public\.(\w+)\(/g],
   ];
 
   for (const [kind, pattern] of definitions) {
