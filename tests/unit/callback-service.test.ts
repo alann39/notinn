@@ -22,12 +22,13 @@ function callback(data: string): CallbackActionRequest {
   };
 }
 
-function payload(kind: "save" | "shorter"): string {
+function payload(kind: "save" | "shorter" | "export_md" | "export_txt"): string {
   return encodeCallbackPayload({ action: { kind }, resourceId: NOTE_ID, revision: 0 });
 }
 
-function harness(options: { sourceExists?: boolean } = {}) {
+function harness(options: { sourceExists?: boolean; displayExists?: boolean } = {}) {
   const events: string[] = [];
+  const documents: { filename: string; mimeType: string; content: string }[] = [];
   let providerCalls = 0;
   const { logger } = createCapturingLogger({ level: "debug" });
   const note = structuredNoteFixture();
@@ -45,14 +46,16 @@ function harness(options: { sourceExists?: boolean } = {}) {
         return Promise.resolve({ outcome: "updated" as const, noteId: NOTE_ID, isSaved: true });
       },
       findNoteForDisplay: () =>
-        Promise.resolve({
-          noteId: NOTE_ID,
-          renderedText: "<b>Synthetic weekly sync</b>",
-          contentJson: note,
-          templateKey: "clean_note",
-          isSaved: true,
-          sourceType: "text" as const,
-        }),
+        Promise.resolve(
+          options.displayExists === false ? null : {
+            noteId: NOTE_ID,
+            renderedText: "<b>Synthetic weekly sync</b>",
+            contentJson: note,
+            templateKey: "clean_note",
+            isSaved: true,
+            sourceType: "text" as const,
+          },
+        ),
       findNoteForRegeneration: () =>
         Promise.resolve(
           options.sourceExists === false ? null : {
@@ -116,6 +119,20 @@ function harness(options: { sourceExists?: boolean } = {}) {
         events.push("send");
         return Promise.resolve({ messageId: 18 });
       },
+      sendDocument: (
+        _chatId: number,
+        bytes: Uint8Array,
+        filename: string,
+        mimeType: string,
+      ) => {
+        events.push("send_document");
+        documents.push({
+          filename,
+          mimeType,
+          content: new TextDecoder().decode(bytes.slice()),
+        });
+        return Promise.resolve({ messageId: 19 });
+      },
       editMessageReplyMarkup: () => {
         events.push("edit_keyboard");
         return Promise.resolve(true);
@@ -125,7 +142,7 @@ function harness(options: { sourceExists?: boolean } = {}) {
     logger,
   };
 
-  return { deps, events, providerCalls: () => providerCalls };
+  return { deps, events, documents, providerCalls: () => providerCalls };
 }
 
 Deno.test("a save callback is answered before the owner-scoped write", async () => {
@@ -163,4 +180,29 @@ Deno.test("malformed callback data is acknowledged without resolving a user", as
   await handleCallback(callback("not-a-callback"), test.deps);
 
   assertEquals(test.events, ["answer"]);
+});
+
+Deno.test("export callbacks send the owned current note without another model call", async () => {
+  const markdown = harness();
+  await handleCallback(callback(payload("export_md")), markdown.deps);
+
+  assertEquals(markdown.providerCalls(), 0);
+  assertEquals(markdown.documents[0]?.filename, "synthetic-weekly-sync.md");
+  assertEquals(markdown.documents[0]?.mimeType, "text/markdown;charset=utf-8");
+  assertEquals(markdown.documents[0]?.content.includes("# Synthetic weekly sync"), true);
+
+  const text = harness();
+  await handleCallback(callback(payload("export_txt")), text.deps);
+  assertEquals(text.documents[0]?.filename, "synthetic-weekly-sync.txt");
+  assertEquals(text.documents[0]?.content.includes("ACTION ITEMS"), true);
+});
+
+Deno.test("an export callback cannot read or send another user's note", async () => {
+  const test = harness({ displayExists: false });
+
+  await handleCallback(callback(payload("export_md")), test.deps);
+
+  assertEquals(test.documents.length, 0);
+  assertEquals(test.providerCalls(), 0);
+  assertEquals(test.events.includes("send"), true);
 });

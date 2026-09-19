@@ -79,7 +79,7 @@ export interface JobWorkerDependencies {
   readonly templates: Pick<TemplatesRepository, "findForGeneration" | "listLabels">;
   readonly usage: Pick<UsageRepository, "recordGeneration">;
   readonly provider: NoteAIProvider;
-  readonly telegram: TelegramGateway;
+  readonly telegram: Pick<TelegramGateway, "downloadFile" | "editMessageText" | "sendMessage">;
   readonly logger: Logger;
 }
 

@@ -444,8 +444,8 @@ function button(
  *
  * Blueprint 6.3 requires that "the result always includes alternative-format
  * inline buttons so the user can change the output without re-uploading", and
- * blueprint 7.5 lists the actions that must exist. Phase 1 delivers five of the
- * nine and `_shared/schemas/callback.ts` records where the other four go.
+ * blueprint 7.5 lists the actions that must exist. The current surface also adds
+ * the two Phase 5 export actions recorded in `_shared/schemas/callback.ts`.
  *
  * Every remaining format is offered rather than a curated shortlist. Blueprint 3's
  * twelfth product principle prefers inline actions to "long command menus and
@@ -483,6 +483,10 @@ export function buildNoteKeyboard(options: NoteKeyboardOptions): InlineKeyboard 
     );
   }
 
+  rows.push([
+    button("Export .md", { kind: "export_md" }, noteId),
+    button("Export .txt", { kind: "export_txt" }, noteId),
+  ]);
   rows.push([button("Delete", { kind: "delete" }, noteId)]);
 
   return rows;

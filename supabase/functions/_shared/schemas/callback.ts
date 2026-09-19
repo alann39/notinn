@@ -95,6 +95,8 @@ export const CALLBACK_ACTIONS = [
   "delete_confirm",
   "cancel_delete",
   "show",
+  "export_md",
+  "export_txt",
 ] as const;
 
 export type SimpleCallbackAction = (typeof CALLBACK_ACTIONS)[number];

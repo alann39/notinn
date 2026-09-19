@@ -385,6 +385,62 @@ export async function sendMessage(
   return { messageId: parsed.data.message_id };
 }
 
+/** Upload one bounded in-memory document without persisting it outside Telegram. */
+export async function sendDocument(
+  botToken: Secret,
+  chatId: number,
+  bytes: Uint8Array,
+  filename: string,
+  mimeType: string,
+  options: { caption?: string; timeoutMs?: number; fetch?: typeof fetch } = {},
+): Promise<TelegramSentMessage> {
+  if (!/^[a-z0-9][a-z0-9._-]{0,99}$/.test(filename)) {
+    throw AppError.validation("outbound document filename is invalid");
+  }
+
+  const endpoint = `${TELEGRAM_API_BASE}/bot${botToken.reveal()}/sendDocument`;
+  const body = new FormData();
+  body.append("chat_id", String(chatId));
+  if (options.caption !== undefined) body.append("caption", options.caption);
+  const uploadBytes = new Uint8Array(bytes.byteLength);
+  uploadBytes.set(bytes);
+  body.append("document", new Blob([uploadBytes.buffer], { type: mimeType }), filename);
+
+  let envelope: TelegramEnvelope<unknown>;
+  try {
+    const response = await (options.fetch ?? fetch)(endpoint, {
+      method: "POST",
+      body,
+      signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+    });
+    envelope = (await response.json()) as TelegramEnvelope<unknown>;
+  } catch (thrown) {
+    const reason = thrown instanceof Error ? thrown.name : "unknown error";
+    throw new AppError(ERROR_CODES.TELEGRAM_ERROR, {
+      internalDetail: `telegram sendDocument could not be reached: ${reason}`,
+      cause: thrown,
+    });
+  } finally {
+    uploadBytes.fill(0);
+  }
+
+  if (!envelope.ok) {
+    throw new AppError(ERROR_CODES.TELEGRAM_ERROR, {
+      internalDetail: `telegram sendDocument refused: ${
+        redactText(envelope.description ?? "(no description)")
+      } (code ${envelope.error_code ?? "unknown"})`,
+    });
+  }
+
+  const parsed = SentMessageSchema.safeParse(envelope.result);
+  if (!parsed.success) {
+    throw new AppError(ERROR_CODES.TELEGRAM_ERROR, {
+      internalDetail: "telegram sendDocument returned no message id",
+    });
+  }
+  return { messageId: parsed.data.message_id };
+}
+
 /**
  * Answer a callback query, which is what stops the button's progress indicator.
  *
@@ -447,6 +503,13 @@ export interface TelegramGateway {
     text: string,
     options?: SendMessageOptions,
   ): Promise<TelegramSentMessage>;
+  sendDocument(
+    chatId: number,
+    bytes: Uint8Array,
+    filename: string,
+    mimeType: string,
+    options?: { caption?: string },
+  ): Promise<TelegramSentMessage>;
   answerCallbackQuery(
     callbackQueryId: string,
     options?: { text?: string; showAlert?: boolean },
@@ -468,6 +531,8 @@ export interface TelegramGateway {
 export function createTelegramGateway(botToken: Secret): TelegramGateway {
   return {
     sendMessage: (chatId, text, options) => sendMessage(botToken, chatId, text, options),
+    sendDocument: (chatId, bytes, filename, mimeType, options) =>
+      sendDocument(botToken, chatId, bytes, filename, mimeType, options),
     answerCallbackQuery: (callbackQueryId, options) =>
       answerCallbackQuery(botToken, callbackQueryId, options),
     editMessageReplyMarkup: (chatId, messageId, keyboard) =>

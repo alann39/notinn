@@ -78,8 +78,6 @@ function harness() {
     },
     telegram: {
       sendMessage: () => Promise.resolve({ messageId: 1 }),
-      answerCallbackQuery: () => Promise.resolve(true),
-      editMessageReplyMarkup: () => Promise.resolve(true),
       editMessageText: () => Promise.resolve(true),
       downloadFile: () => Promise.resolve(new Uint8Array()),
     },

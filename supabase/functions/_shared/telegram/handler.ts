@@ -65,7 +65,11 @@ export interface WebhookDependencies {
     readonly answers?: LibraryAnswerProvider;
     readonly telegram: Pick<
       TelegramGateway,
-      "sendMessage" | "answerCallbackQuery" | "editMessageReplyMarkup" | "editMessageText"
+      | "sendMessage"
+      | "sendDocument"
+      | "answerCallbackQuery"
+      | "editMessageReplyMarkup"
+      | "editMessageText"
     >;
     /** Schedules a non-blocking worker call. The durable queue remains authoritative. */
     readonly triggerWorker?: (jobId: string) => void;

@@ -7,26 +7,26 @@ surface.
 
 | Suite                       | Files | Tests | Needs               | Command                      |
 | --------------------------- | ----- | ----: | ------------------- | ---------------------------- |
-| [unit](#unit)               | 22    |   340 | nothing             | `deno task test:unit`        |
+| [unit](#unit)               | 23    |   348 | nothing             | `deno task test:unit`        |
 | [contract](#contract)       | 2     |   104 | nothing             | `deno task test:contract`    |
 | [security](#security)       | 3     |    56 | nothing             | `deno task test:security`    |
 | [integration](#integration) | 4     |    25 | a Supabase project  | `deno task test:integration` |
 | [e2e](#e2e)                 | 1     |     8 | a deployed function | `deno task test:integration` |
 
-`deno task test` runs unit + contract + security: **500 tests, no database and no
+`deno task test` runs unit + contract + security: **508 tests, no database and no
 outbound network.**
 
 The integration and e2e suites are _ignored_, not failed, when no target is
 configured, so the number of ignored tests is the count of checks that need
 infrastructure rather than checks that were skipped to make a run go green.
 
-Latest hermetic run (unit + contract + security, 2026-09-19): **500 passed, 0
+Latest hermetic run (unit + contract + security, 2026-09-19): **508 passed, 0
 failed.** Integration and e2e were not run because Docker/Podman and a deployed
 test target are unavailable.
 
 ---
 
-## Unit — 340 tests
+## Unit — 348 tests
 
 Pure functions, no I/O, no doubles where a real call is possible.
 
@@ -45,16 +45,17 @@ Pure functions, no I/O, no doubles where a real call is possible.
 | `document-extraction.test.ts`       | UTF-8 text decoding, image magic bytes, PDF encryption rejection, DOCX extraction, and macro rejection                                                                                                                           |
 | `job-worker-service.test.ts`        | Text/audio/image/PDF/document state paths, in-memory buffer scrubbing, note staging, usage metering, delivery retry idempotency, transient retry, and file limits                                                                |
 | `note-rendering.test.ts`            | Telegram-safe HTML, semantic splitting, inline keyboards, and callback round-trips                                                                                                                                               |
+| `note-export.test.ts`               | Complete deterministic Markdown/text rendering, markup escaping, safe filename fallback, and omission of empty groups                                                                                                            |
 | `structured-note.test.ts`           | Application-authoritative structured-note validation and non-fabrication bounds                                                                                                                                                  |
 | `text-note-service.test.ts`         | The inline job path, persistence, usage metering, delivery, and retryable provider failure                                                                                                                                       |
-| `telegram-download.test.ts`         | Private `getFile` flow, metadata/content-length/stream byte limits, expired file mapping, and token-bearing URL containment                                                                                                      |
+| `telegram-download.test.ts`         | Private `getFile` flow, byte limits, expired file mapping, token-bearing URL containment, safe multipart document upload, and filename rejection                                                                                 |
 | `worker-invoker.test.ts`            | Background worker URL/header/body contract and non-2xx handling; only opaque `job_id` crosses the boundary                                                                                                                       |
 | `redaction.test.ts`                 | Redaction of values that reach a log line: bearer tokens, bot-token URLs, signed URLs, private key blocks, newline collapsing (so a value cannot forge a line), truncation                                                       |
 | `webhook-secret.test.ts`            | Constant-time comparison: prefix, suffix, length and case differences all refused; the mismatched value never appears in the thrown error                                                                                        |
 
 ---
 
-## Contract — 94 tests
+## Contract — 104 tests
 
 `contract/migration-constants.test.ts` is the drift guard. It reads the migration
 SQL from disk and asserts the TypeScript mirrors in `config/constants.ts` agree

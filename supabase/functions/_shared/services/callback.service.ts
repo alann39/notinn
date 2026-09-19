@@ -19,6 +19,7 @@ import {
   buildNoteKeyboard,
   renderNoteOutput,
 } from "./note-rendering.ts";
+import { type NoteExportFormat, renderNoteExport } from "./note-export.ts";
 
 const NOTE_GONE = "That note is no longer available.";
 
@@ -38,9 +39,43 @@ export interface CallbackDependencies {
   readonly provider: Pick<NoteAIProvider, "generateText">;
   readonly telegram: Pick<
     TelegramGateway,
-    "sendMessage" | "answerCallbackQuery" | "editMessageReplyMarkup" | "editMessageText"
+    | "sendMessage"
+    | "sendDocument"
+    | "answerCallbackQuery"
+    | "editMessageReplyMarkup"
+    | "editMessageText"
   >;
   readonly logger: Logger;
+}
+
+async function exportCurrentNote(
+  callback: CallbackActionRequest,
+  userId: string,
+  noteId: string,
+  format: NoteExportFormat,
+  deps: CallbackDependencies,
+): Promise<boolean> {
+  const display = await deps.notes.findNoteForDisplay(userId, noteId);
+  if (display === null) return false;
+
+  const note = parseStructuredNote(display.contentJson, AppError.outputValidationFailed);
+  const exported = renderNoteExport(note, format);
+  try {
+    await deps.telegram.sendDocument(
+      callback.telegramChatId,
+      exported.bytes,
+      exported.filename,
+      exported.mimeType,
+      {
+        caption: format === "markdown"
+          ? "Markdown export from Notinn."
+          : "Text export from Notinn.",
+      },
+    );
+  } finally {
+    exported.bytes.fill(0);
+  }
+  return true;
 }
 
 function templateKey(value: string): TemplateKey {
@@ -276,6 +311,12 @@ export async function handleCallback(
       }
       case "show":
         found = await sendCurrentNote(callback, userId, noteId, deps);
+        break;
+      case "export_md":
+        found = await exportCurrentNote(callback, userId, noteId, "markdown", deps);
+        break;
+      case "export_txt":
+        found = await exportCurrentNote(callback, userId, noteId, "text", deps);
         break;
       case "shorter":
         found = await regenerate(callback, userId, noteId, null, "shorter", deps);
