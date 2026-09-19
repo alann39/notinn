@@ -59,7 +59,7 @@ async function exportCurrentNote(
   if (display === null) return false;
 
   const note = parseStructuredNote(display.contentJson, AppError.outputValidationFailed);
-  const exported = renderNoteExport(note, format);
+  const exported = await renderNoteExport(note, format);
   try {
     await deps.telegram.sendDocument(
       callback.telegramChatId,
@@ -69,7 +69,9 @@ async function exportCurrentNote(
       {
         caption: format === "markdown"
           ? "Markdown export from Notinn."
-          : "Text export from Notinn.",
+          : format === "text"
+          ? "Text export from Notinn."
+          : "PDF export from Notinn.",
       },
     );
   } finally {
@@ -317,6 +319,9 @@ export async function handleCallback(
         break;
       case "export_txt":
         found = await exportCurrentNote(callback, userId, noteId, "text", deps);
+        break;
+      case "export_pdf":
+        found = await exportCurrentNote(callback, userId, noteId, "pdf", deps);
         break;
       case "shorter":
         found = await regenerate(callback, userId, noteId, null, "shorter", deps);

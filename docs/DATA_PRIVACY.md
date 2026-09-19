@@ -163,12 +163,13 @@ these paths, so there is no temporary object and no 12-hour deletion window. A
 future conversion that genuinely needs Storage must add a private bucket, delete
 through the Storage API in `finally`, and add orphan cleanup before it ships.
 
-Markdown and text exports follow the same no-object rule. They are rendered from
+Markdown, text, and PDF exports follow the same no-object rule. They are rendered from
 the owner-scoped, validated current `content_json` into a buffer capped at 2 MiB,
 uploaded directly to Telegram, and zero-filled after the send attempt. Exporting
 does not resend content to Gemini and creates no temporary database or Storage
-record. Telegram retains the resulting document according to Telegram's own
-platform policy.
+record. The PDF embeds an exact UTF-8 text copy inside the same in-memory document
+so unsupported display glyphs do not destroy the source text. Telegram retains
+the resulting document according to Telegram's own platform policy.
 
 ## Semantic index lifecycle
 

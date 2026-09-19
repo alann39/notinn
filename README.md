@@ -21,9 +21,11 @@ existing notes. `/templates` lists the available formats; custom formats are
 created with `/template create Name | text,voice,document | Instructions` and
 archived with `/template archive <template_key>`.
 
-Every delivered or reopened note includes `Export .md` and `Export .txt`. The
-validated current note is rendered in memory without another Gemini request,
-sent directly to Telegram, and never written to Supabase Storage.
+Every delivered or reopened note includes `Export .md`, `Export .txt`, and
+`Export .pdf`. The validated current note is rendered in memory without another
+Gemini request, sent directly to Telegram, and never written to Supabase Storage.
+PDFs use an A4 multipage layout with page numbers and carry an exact UTF-8 text
+attachment for characters outside the built-in display font.
 
 ---
 

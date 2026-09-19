@@ -1,10 +1,11 @@
 import { assert, assertEquals } from "@std/assert";
+import { PDFDocument } from "pdf-lib";
 import { AppError } from "../../supabase/functions/_shared/errors/app-error.ts";
 import { renderNoteExport } from "../../supabase/functions/_shared/services/note-export.ts";
 import { parseStructuredNote } from "../../supabase/functions/_shared/schemas/structured-note.ts";
 import { type StructuredNoteFixture, structuredNoteFixture } from "../fixtures/notes/builders.ts";
 
-function decoded(
+async function decoded(
   format: "markdown" | "text",
   overrides: Partial<StructuredNoteFixture> = {},
 ) {
@@ -12,12 +13,12 @@ function decoded(
     structuredNoteFixture(overrides),
     AppError.outputValidationFailed,
   );
-  const exported = renderNoteExport(note, format);
+  const exported = await renderNoteExport(note, format);
   return { exported, content: new TextDecoder().decode(exported.bytes) };
 }
 
-Deno.test("Markdown export includes every structured-note group", () => {
-  const { exported, content } = decoded("markdown", {
+Deno.test("Markdown export includes every structured-note group", async () => {
+  const { exported, content } = await decoded("markdown", {
     source_references: [{ type: "page", value: "4" }],
   });
 
@@ -39,8 +40,8 @@ Deno.test("Markdown export includes every structured-note group", () => {
   assert(content.endsWith("Template: clean\\_note\n"));
 });
 
-Deno.test("Markdown export escapes model text instead of creating active markup", () => {
-  const { content } = decoded("markdown", {
+Deno.test("Markdown export escapes model text instead of creating active markup", async () => {
+  const { content } = await decoded("markdown", {
     title: "<script> [link](bad)",
     summary: "**bold** and <img>",
   });
@@ -50,8 +51,8 @@ Deno.test("Markdown export escapes model text instead of creating active markup"
   assertEquals(content.includes("<script>"), false);
 });
 
-Deno.test("plain-text export remains readable and uses a safe fallback filename", () => {
-  const { exported, content } = decoded("text", { title: "會議記錄" });
+Deno.test("plain-text export remains readable and uses a safe fallback filename", async () => {
+  const { exported, content } = await decoded("text", { title: "會議記錄" });
 
   assertEquals(exported.filename, "notinn-note.txt");
   assertEquals(exported.mimeType, "text/plain;charset=utf-8");
@@ -60,7 +61,7 @@ Deno.test("plain-text export remains readable and uses a safe fallback filename"
   assert(content.includes("Confidence: 80%"));
 });
 
-Deno.test("empty optional groups are omitted from both export formats", () => {
+Deno.test("empty optional groups are omitted from both text export formats", async () => {
   const overrides = {
     summary: "",
     sections: [],
@@ -71,11 +72,41 @@ Deno.test("empty optional groups are omitted from both export formats", () => {
     uncertainties: [],
     source_references: [],
   };
-  const markdown = decoded("markdown", overrides).content;
-  const text = decoded("text", overrides).content;
+  const markdown = (await decoded("markdown", overrides)).content;
+  const text = (await decoded("text", overrides)).content;
 
   assertEquals(markdown.includes("## Summary"), false);
   assertEquals(markdown.includes("## Tags"), false);
   assertEquals(text.includes("SUMMARY"), false);
   assertEquals(text.includes("TAGS"), false);
+});
+
+Deno.test("PDF export is valid, owner-readable metadata survives, and filename stays safe", async () => {
+  const note = parseStructuredNote(
+    structuredNoteFixture({ title: "會議記錄" }),
+    AppError.outputValidationFailed,
+  );
+  const exported = await renderNoteExport(note, "pdf");
+  const document = await PDFDocument.load(exported.bytes);
+
+  assertEquals(exported.filename, "notinn-note.pdf");
+  assertEquals(exported.mimeType, "application/pdf");
+  assertEquals(new TextDecoder().decode(exported.bytes.slice(0, 5)), "%PDF-");
+  assertEquals(document.getTitle(), "會議記錄");
+  assertEquals(document.getAuthor(), "Notinn");
+  assert(document.getPageCount() >= 1);
+});
+
+Deno.test("PDF export paginates long validated notes", async () => {
+  const note = parseStructuredNote(
+    structuredNoteFixture({
+      sections: [{ heading: "Long context", content: "Synthetic sentence. ".repeat(700) }],
+    }),
+    AppError.outputValidationFailed,
+  );
+  const exported = await renderNoteExport(note, "pdf");
+  const document = await PDFDocument.load(exported.bytes);
+
+  assert(document.getPageCount() > 1);
+  assert(exported.bytes.byteLength < 2 * 1024 * 1024);
 });

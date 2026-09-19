@@ -22,7 +22,9 @@ function callback(data: string): CallbackActionRequest {
   };
 }
 
-function payload(kind: "save" | "shorter" | "export_md" | "export_txt"): string {
+function payload(
+  kind: "save" | "shorter" | "export_md" | "export_txt" | "export_pdf",
+): string {
   return encodeCallbackPayload({ action: { kind }, resourceId: NOTE_ID, revision: 0 });
 }
 
@@ -195,6 +197,12 @@ Deno.test("export callbacks send the owned current note without another model ca
   await handleCallback(callback(payload("export_txt")), text.deps);
   assertEquals(text.documents[0]?.filename, "synthetic-weekly-sync.txt");
   assertEquals(text.documents[0]?.content.includes("ACTION ITEMS"), true);
+
+  const pdf = harness();
+  await handleCallback(callback(payload("export_pdf")), pdf.deps);
+  assertEquals(pdf.documents[0]?.filename, "synthetic-weekly-sync.pdf");
+  assertEquals(pdf.documents[0]?.mimeType, "application/pdf");
+  assertEquals(pdf.documents[0]?.content.startsWith("%PDF-"), true);
 });
 
 Deno.test("an export callback cannot read or send another user's note", async () => {

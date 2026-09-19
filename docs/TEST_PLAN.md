@@ -7,26 +7,26 @@ surface.
 
 | Suite                       | Files | Tests | Needs               | Command                      |
 | --------------------------- | ----- | ----: | ------------------- | ---------------------------- |
-| [unit](#unit)               | 23    |   348 | nothing             | `deno task test:unit`        |
+| [unit](#unit)               | 23    |   350 | nothing             | `deno task test:unit`        |
 | [contract](#contract)       | 2     |   104 | nothing             | `deno task test:contract`    |
 | [security](#security)       | 3     |    56 | nothing             | `deno task test:security`    |
 | [integration](#integration) | 4     |    25 | a Supabase project  | `deno task test:integration` |
 | [e2e](#e2e)                 | 1     |     8 | a deployed function | `deno task test:integration` |
 
-`deno task test` runs unit + contract + security: **508 tests, no database and no
+`deno task test` runs unit + contract + security: **510 tests, no database and no
 outbound network.**
 
 The integration and e2e suites are _ignored_, not failed, when no target is
 configured, so the number of ignored tests is the count of checks that need
 infrastructure rather than checks that were skipped to make a run go green.
 
-Latest hermetic run (unit + contract + security, 2026-09-19): **508 passed, 0
+Latest hermetic run (unit + contract + security, 2026-09-19): **510 passed, 0
 failed.** Integration and e2e were not run because Docker/Podman and a deployed
 test target are unavailable.
 
 ---
 
-## Unit — 348 tests
+## Unit — 350 tests
 
 Pure functions, no I/O, no doubles where a real call is possible.
 
@@ -45,7 +45,7 @@ Pure functions, no I/O, no doubles where a real call is possible.
 | `document-extraction.test.ts`       | UTF-8 text decoding, image magic bytes, PDF encryption rejection, DOCX extraction, and macro rejection                                                                                                                           |
 | `job-worker-service.test.ts`        | Text/audio/image/PDF/document state paths, in-memory buffer scrubbing, note staging, usage metering, delivery retry idempotency, transient retry, and file limits                                                                |
 | `note-rendering.test.ts`            | Telegram-safe HTML, semantic splitting, inline keyboards, and callback round-trips                                                                                                                                               |
-| `note-export.test.ts`               | Complete deterministic Markdown/text rendering, markup escaping, safe filename fallback, and omission of empty groups                                                                                                            |
+| `note-export.test.ts`               | Deterministic Markdown/text rendering plus valid multipage PDF generation, metadata, safe filename fallback, markup escaping, and omission of empty groups                                                                       |
 | `structured-note.test.ts`           | Application-authoritative structured-note validation and non-fabrication bounds                                                                                                                                                  |
 | `text-note-service.test.ts`         | The inline job path, persistence, usage metering, delivery, and retryable provider failure                                                                                                                                       |
 | `telegram-download.test.ts`         | Private `getFile` flow, byte limits, expired file mapping, token-bearing URL containment, safe multipart document upload, and filename rejection                                                                                 |

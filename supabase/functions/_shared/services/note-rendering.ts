@@ -486,6 +486,7 @@ export function buildNoteKeyboard(options: NoteKeyboardOptions): InlineKeyboard 
   rows.push([
     button("Export .md", { kind: "export_md" }, noteId),
     button("Export .txt", { kind: "export_txt" }, noteId),
+    button("Export .pdf", { kind: "export_pdf" }, noteId),
   ]);
   rows.push([button("Delete", { kind: "delete" }, noteId)]);
 

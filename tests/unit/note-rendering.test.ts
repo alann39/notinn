@@ -411,7 +411,7 @@ Deno.test("a limit too small to hold a bullet is refused, not looped over", () =
 
 // --- The inline keyboard ----------------------------------------------------
 
-Deno.test("the keyboard offers note actions, both exports, and delete", () => {
+Deno.test("the keyboard offers note actions, all exports, and delete", () => {
   const keyboard = buildNoteKeyboard({
     noteId: NOTE_ID,
     templateKey: "clean_note",
@@ -420,10 +420,14 @@ Deno.test("the keyboard offers note actions, both exports, and delete", () => {
   });
 
   assertEquals(keyboard[0]?.map((button) => button.text), ["Save", "Shorter", "More detailed"]);
-  assertEquals(keyboard.at(-2)?.map((button) => button.text), ["Export .md", "Export .txt"]);
+  assertEquals(keyboard.at(-2)?.map((button) => button.text), [
+    "Export .md",
+    "Export .txt",
+    "Export .pdf",
+  ]);
   assertEquals(
     keyboard.at(-2)?.map((button) => decodeCallbackPayload(button.callback_data).action),
-    [{ kind: "export_md" }, { kind: "export_txt" }],
+    [{ kind: "export_md" }, { kind: "export_txt" }, { kind: "export_pdf" }],
   );
   assertEquals(keyboard.at(-1)?.map((button) => button.text), ["Delete"]);
   assert(keyboard.length > 2, "the format buttons are missing");

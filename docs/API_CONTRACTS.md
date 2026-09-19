@@ -65,9 +65,9 @@ Private chats only. Exactly one content kind per message:
 A message carrying more than one of these is ambiguous and ignored. Bots, service
 messages, `channel_post`, edits and reactions are ignored. Private-chat
 `callback_query` updates with a bot message and callback data are handled as note
-actions. `export_md` and `export_txt` owner-read the current validated output and
-send a bounded in-memory document; they do not call Gemini or create a Storage
-object. `/recent` lists saved notes, `/search <keywords>` performs owner-scoped
+actions. `export_md`, `export_txt`, and `export_pdf` owner-read the current
+validated output and send a bounded in-memory document; they do not call Gemini
+or create a Storage object. `/recent` lists saved notes, `/search <keywords>` performs owner-scoped
 full-text search, and `/ask <question>` answers only from owner-scoped saved-note
 evidence; other slash commands receive the current one-sentence help response and
 are not stored as notes.
@@ -325,10 +325,11 @@ accepted after the preference write. All preference RPCs are denied to
 
 ## 10. Note export callback
 
-`export_md` and `export_txt` carry the same opaque note UUID envelope as the other
+`export_md`, `export_txt`, and `export_pdf` carry the same opaque note UUID envelope as the other
 versioned callbacks. The service resolves the Telegram user, reads the note
 through `find_note_for_display`, validates the current `content_json`, and renders
-Markdown or plain text deterministically. A missing or foreign note produces no
-document. Successful output is capped at 2 MiB and uploaded to Telegram with
+Markdown, plain text, or an A4 multipage PDF deterministically. The PDF includes
+page numbers, metadata, and an attached exact UTF-8 text representation. A missing
+or foreign note produces no document. Successful output is capped at 2 MiB and uploaded to Telegram with
 `sendDocument`; its byte buffer is zero-filled in `finally`. The callback does not
 perform model generation, mutate the note, or persist a temporary file.

@@ -97,6 +97,7 @@ export const CALLBACK_ACTIONS = [
   "show",
   "export_md",
   "export_txt",
+  "export_pdf",
 ] as const;
 
 export type SimpleCallbackAction = (typeof CALLBACK_ACTIONS)[number];
