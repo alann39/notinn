@@ -59,6 +59,17 @@ Deno.test("every template action round-trips", () => {
   }
 });
 
+Deno.test("a generated custom template key round-trips", () => {
+  const templateKey = "ct_0123456789ab";
+  const encoded = encodeCallbackPayload({
+    action: { kind: "format", templateKey },
+    resourceId: NOTE_ID,
+    revision: 0,
+  });
+
+  assertEquals(decodeCallbackPayload(encoded).action, { kind: "format", templateKey });
+});
+
 Deno.test("the payload has blueprint 17.4's shape", () => {
   const encoded = encodeCallbackPayload({
     action: { kind: "save" },
@@ -155,7 +166,7 @@ Deno.test("an unsupported version is refused rather than reinterpreted", () => {
 Deno.test("an action outside the vocabulary is refused", () => {
   // Including the Phase 1 deferred actions: decode must refuse what it cannot
   // serve rather than accept a click and do nothing.
-  const notPhaseOne = ["retry", "report", "transcript", "format", "format.custom_key", "Save", ""];
+  const notPhaseOne = ["retry", "report", "transcript", "format", "Save", ""];
 
   for (const action of notPhaseOne) {
     const error = assertThrows(

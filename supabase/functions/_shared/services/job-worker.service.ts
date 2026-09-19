@@ -5,8 +5,8 @@ import {
   MAX_INLINE_AUDIO_BYTES,
   MAX_INLINE_MEDIA_BYTES,
   MAX_TEXT_DOCUMENT_BYTES,
-  SYSTEM_TEMPLATE_KEYS,
-  type SystemTemplateKey,
+  TEMPLATE_KEY_PATTERN,
+  type TemplateKey,
 } from "../config/constants.ts";
 import { AppError, toAppError } from "../errors/app-error.ts";
 import type { Logger } from "../observability/logger.ts";
@@ -76,7 +76,7 @@ export interface JobWorkerDependencies {
     NotesRepository,
     "stageNoteForDelivery" | "findNoteForDisplay" | "findNoteForRegeneration"
   >;
-  readonly templates: Pick<TemplatesRepository, "findForGeneration" | "listSystemLabels">;
+  readonly templates: Pick<TemplatesRepository, "findForGeneration" | "listLabels">;
   readonly usage: Pick<UsageRepository, "recordGeneration">;
   readonly provider: NoteAIProvider;
   readonly telegram: TelegramGateway;
@@ -105,9 +105,9 @@ function safeFailureDetail(error: AppError, state: JobState): string {
     : `Worker ${state.toLowerCase()} failure; Gemini HTTP ${providerStatus}`;
 }
 
-function templateKeyOf(value: string | null): SystemTemplateKey {
-  if (value !== null && (SYSTEM_TEMPLATE_KEYS as readonly string[]).includes(value)) {
-    return value as SystemTemplateKey;
+function templateKeyOf(value: string | null): TemplateKey {
+  if (value !== null && TEMPLATE_KEY_PATTERN.test(value)) {
+    return value;
   }
   throw AppError.internal("worker job referenced an unknown template key");
 }
@@ -202,13 +202,17 @@ async function deliverPages(
 
 async function deliverPersistedNote(
   deps: JobWorkerDependencies,
-  job: ClaimedProcessingJob & { readonly userId: string; readonly chatId: number },
+  job: ClaimedProcessingJob & {
+    readonly userId: string;
+    readonly chatId: number;
+    readonly inputType: NonNullable<ClaimedProcessingJob["inputType"]>;
+  },
   noteId: string,
 ): Promise<void> {
   const [display, source, labels] = await Promise.all([
     deps.notes.findNoteForDisplay(job.userId, noteId),
     deps.notes.findNoteForRegeneration(job.userId, noteId),
-    deps.templates.listSystemLabels(),
+    deps.templates.listLabels(job.userId, job.inputType),
   ]);
   if (display === null) throw AppError.internal("staged note was not readable for delivery");
 
@@ -244,7 +248,7 @@ async function generateNewNote(
     readonly inputType: NonNullable<ClaimedProcessingJob["inputType"]>;
     readonly outputLanguage: NonNullable<ClaimedProcessingJob["outputLanguage"]>;
   },
-  templateKey: SystemTemplateKey,
+  templateKey: TemplateKey,
   state: { value: JobState },
 ): Promise<{
   generation: NoteGenerationResult;
@@ -252,7 +256,7 @@ async function generateNewNote(
   operation: "generation" | "vision";
   documentPages: number | null;
 }> {
-  const template = await deps.templates.findForGeneration(job.userId, templateKey);
+  const template = await deps.templates.findForGeneration(job.userId, templateKey, job.inputType);
 
   if (job.inputType === "text") {
     if (job.sourceText === null) throw AppError.internal("text job had no source text");

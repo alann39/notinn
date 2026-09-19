@@ -1,11 +1,11 @@
-import type { SystemTemplateKey } from "../config/constants.ts";
+import type { TemplateKey } from "../config/constants.ts";
 import type { GenerationTemplate } from "../repositories/templates.repository.ts";
 import type { StructuredNote } from "../schemas/structured-note.ts";
 
 export interface TextGenerationRequest {
   readonly sourceText: string;
   readonly template: GenerationTemplate;
-  readonly templateKey: SystemTemplateKey;
+  readonly templateKey: TemplateKey;
   readonly reason: "initial" | "regenerate" | "shorter" | "detailed" | "custom";
   readonly outputLanguage: string | null;
 }
@@ -15,7 +15,7 @@ export interface AudioGenerationRequest {
   readonly audio: Uint8Array;
   readonly mimeType: string;
   readonly template: GenerationTemplate;
-  readonly templateKey: SystemTemplateKey;
+  readonly templateKey: TemplateKey;
   readonly outputLanguage: string | null;
 }
 
@@ -24,7 +24,7 @@ export interface ImageGenerationRequest {
   readonly image: Uint8Array;
   readonly mimeType: "image/jpeg" | "image/png" | "image/webp";
   readonly template: GenerationTemplate;
-  readonly templateKey: SystemTemplateKey;
+  readonly templateKey: TemplateKey;
   readonly outputLanguage: string | null;
 }
 
@@ -32,7 +32,7 @@ export interface PdfGenerationRequest {
   /** Raw PDF held only for the lifetime of this call. Never persisted. */
   readonly pdf: Uint8Array;
   readonly template: GenerationTemplate;
-  readonly templateKey: SystemTemplateKey;
+  readonly templateKey: TemplateKey;
   readonly outputLanguage: string | null;
 }
 

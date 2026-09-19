@@ -177,6 +177,7 @@ function harness(
           contentJson: note,
           templateKey: "clean_note",
           isSaved: false,
+          sourceType,
         }),
       findNoteForRegeneration: () =>
         Promise.resolve({
@@ -197,7 +198,7 @@ function harness(
           schemaVersion: 1,
           responseJsonSchema: {},
         }),
-      listSystemLabels: () => Promise.resolve(new Map([["clean_note", "Clean Note"]])),
+      listLabels: () => Promise.resolve(new Map([["clean_note", "Clean Note"]])),
     },
     usage: {
       recordGeneration: (input: unknown) => {

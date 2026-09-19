@@ -51,6 +51,7 @@ function harness(options: { sourceExists?: boolean } = {}) {
           contentJson: note,
           templateKey: "clean_note",
           isSaved: true,
+          sourceType: "text" as const,
         }),
       findNoteForRegeneration: () =>
         Promise.resolve(
@@ -90,7 +91,7 @@ function harness(options: { sourceExists?: boolean } = {}) {
           schemaVersion: 1,
           responseJsonSchema: {},
         }),
-      listSystemLabels: () => Promise.resolve(new Map([["clean_note", "Clean Note"]])),
+      listLabels: () => Promise.resolve(new Map([["clean_note", "Clean Note"]])),
     },
     usage: { recordGeneration: () => Promise.resolve() },
     provider: {

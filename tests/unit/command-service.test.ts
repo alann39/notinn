@@ -256,7 +256,7 @@ Deno.test("settings displays the current preference snapshot", async () => {
       update: () => Promise.reject(new Error("update must not run")),
     },
     templates: {
-      listSystemLabels: () =>
+      listLabels: () =>
         Promise.resolve(
           new Map([
             ["clean_note", "Clean Note"],
@@ -297,7 +297,7 @@ Deno.test("settings validates and saves a future-job privacy preference", async 
         });
       },
     },
-    templates: { listSystemLabels: () => Promise.resolve(new Map()) },
+    templates: { listLabels: () => Promise.resolve(new Map()) },
     telegram: {
       sendMessage: (_chatId, text) => {
         sent.push(text);
@@ -309,4 +309,107 @@ Deno.test("settings validates and saves a future-job privacy preference", async 
   assertEquals(updates, [{ userId: USER_ID, setting: "privacy", value: "minimal" }]);
   assertEquals(sent[0]?.includes("Setting saved."), true);
   assertEquals(sent[0]?.includes("Privacy: minimal"), true);
+});
+
+Deno.test("settings accepts an applicable owned custom template", async () => {
+  const test = harness();
+  const updates: unknown[] = [];
+
+  await handleCommand(command("settings", "text ct_0123456789ab"), {
+    ...test.deps,
+    preferences: {
+      get: () => Promise.reject(new Error("get must not run")),
+      update: (userId, setting, value) => {
+        updates.push({ userId, setting, value });
+        return Promise.resolve({
+          outputLanguage: "mirror" as const,
+          defaultTextTemplate: "ct_0123456789ab",
+          defaultVoiceTemplate: null,
+          defaultDocumentTemplate: null,
+          privacyMode: "balanced" as const,
+        });
+      },
+    },
+    templates: {
+      listLabels: (_userId, inputType) =>
+        Promise.resolve(
+          inputType === "text" || inputType === null
+            ? new Map([["ct_0123456789ab", "Client Brief"]])
+            : new Map(),
+        ),
+    },
+  });
+
+  assertEquals(updates, [{
+    userId: USER_ID,
+    setting: "text_template",
+    value: "ct_0123456789ab",
+  }]);
+});
+
+Deno.test("template create expands input groups and reports the generated key", async () => {
+  const test = harness();
+  const creates: unknown[] = [];
+  const sent: string[] = [];
+
+  await handleCommand(
+    command(
+      "template",
+      "create Client Brief | text,document | Emphasize decisions and next actions.",
+    ),
+    {
+      ...test.deps,
+      templates: {
+        listLabels: () => Promise.resolve(new Map()),
+        listAvailable: () => Promise.resolve([]),
+        archiveCustom: () => Promise.resolve("not_found" as const),
+        createCustom: (userId, name, instruction, inputTypes) => {
+          creates.push({ userId, name, instruction, inputTypes });
+          return Promise.resolve({
+            key: "ct_0123456789ab",
+            name,
+            isCustom: true,
+            applicableInputTypes: inputTypes,
+          });
+        },
+      },
+      telegram: {
+        sendMessage: (_chatId, text) => {
+          sent.push(text);
+          return Promise.resolve({ messageId: 1 });
+        },
+      },
+    },
+  );
+
+  assertEquals(creates, [{
+    userId: USER_ID,
+    name: "Client Brief",
+    instruction: "Emphasize decisions and next actions.",
+    inputTypes: ["text", "image", "pdf", "docx", "txt", "md"],
+  }]);
+  assertEquals(sent[0]?.includes("ct_0123456789ab"), true);
+});
+
+Deno.test("template archive explains a pending-job refusal", async () => {
+  const test = harness();
+  const sent: string[] = [];
+
+  await handleCommand(command("template", "archive ct_0123456789ab"), {
+    ...test.deps,
+    templates: {
+      listLabels: () => Promise.resolve(new Map()),
+      listAvailable: () => Promise.resolve([]),
+      createCustom: () => Promise.reject(new Error("create must not run")),
+      archiveCustom: () => Promise.resolve("in_use" as const),
+    },
+    telegram: {
+      sendMessage: (_chatId, text) => {
+        sent.push(text);
+        return Promise.resolve({ messageId: 1 });
+      },
+    },
+  });
+
+  assertEquals(sent[0]?.includes("pending note"), true);
 });

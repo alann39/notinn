@@ -128,6 +128,7 @@ const DisplayNoteRowSchema = z.object({
   content_json: z.unknown(),
   template_key: z.string(),
   is_saved: z.boolean(),
+  source_type: z.string(),
 });
 
 /** The note-creation arguments, grouped so that a call site reads as one thing. */
@@ -254,6 +255,7 @@ export interface DisplayNote {
   readonly contentJson: unknown;
   readonly templateKey: string;
   readonly isSaved: boolean;
+  readonly sourceType: InputType;
 }
 
 export class NotesRepository {
@@ -659,6 +661,7 @@ export class NotesRepository {
         contentJson: row.content_json,
         templateKey: row.template_key,
         isSaved: row.is_saved,
+        sourceType: row.source_type as InputType,
       };
     } catch (thrown) {
       throw toDatabaseError(thrown);

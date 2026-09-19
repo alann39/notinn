@@ -84,6 +84,7 @@ const FILE_SUFFIXES = [
   "phase4_embedding_fk_index.sql",
   "phase5_user_preference_contract.sql",
   "phase5_scrub_staged_job_payload.sql",
+  "phase5_custom_templates.sql",
 ] as const;
 
 /** Read the one migration whose filename ends with `suffix`. */
@@ -108,6 +109,7 @@ const PHASE2_WORKER_SQL = await loadMigration("phase2_durable_queue_worker.sql")
 const PHASE4_LIBRARY_SQL = await loadMigration("phase4_full_text_library.sql");
 const PHASE4_SEMANTIC_SQL = await loadMigration("phase4_semantic_library.sql");
 const PHASE5_PREFERENCES_SQL = await loadMigration("phase5_user_preference_contract.sql");
+const PHASE5_CUSTOM_TEMPLATES_SQL = await loadMigration("phase5_custom_templates.sql");
 const ALL_MIGRATIONS = await loadMigrations();
 const ALL_SQL = ALL_MIGRATIONS.map((migration) => migration.sql).join("\n");
 
@@ -640,14 +642,17 @@ const RPC_CONTRACTS = [
   [NOTES_REPOSITORY, "upsert_note_embedding", PHASE4_SEMANTIC_SQL],
   [NOTES_REPOSITORY, "match_saved_note_embeddings", PHASE4_SEMANTIC_SQL],
   [NOTES_REPOSITORY, "find_note_for_regeneration", NOTE_FUNCTIONS_SQL],
-  [NOTES_REPOSITORY, "find_note_for_display", PIPELINE_FUNCTIONS_SQL],
+  [NOTES_REPOSITORY, "find_note_for_display", PHASE5_CUSTOM_TEMPLATES_SQL],
   [REJECTED_CHATS_REPOSITORY, "claim_rejected_chat_reply", REJECTED_CHATS_SQL],
-  [TEMPLATES_REPOSITORY, "find_template_for_generation", PIPELINE_FUNCTIONS_SQL],
+  [TEMPLATES_REPOSITORY, "find_template_for_generation", PHASE5_CUSTOM_TEMPLATES_SQL],
+  [TEMPLATES_REPOSITORY, "list_available_templates", PHASE5_CUSTOM_TEMPLATES_SQL],
+  [TEMPLATES_REPOSITORY, "create_custom_template", PHASE5_CUSTOM_TEMPLATES_SQL],
+  [TEMPLATES_REPOSITORY, "archive_custom_template", PHASE5_CUSTOM_TEMPLATES_SQL],
   [PROCESSING_JOBS_REPOSITORY, "read_processing_queue", PHASE2_WORKER_SQL],
   [PROCESSING_JOBS_REPOSITORY, "find_processing_queue_message_id", PHASE2_WORKER_SQL],
   [PROCESSING_JOBS_REPOSITORY, "claim_processing_job", PHASE5_PREFERENCES_SQL],
   [USER_PREFERENCES_REPOSITORY, "get_user_preferences", PHASE5_PREFERENCES_SQL],
-  [USER_PREFERENCES_REPOSITORY, "update_user_preference", PHASE5_PREFERENCES_SQL],
+  [USER_PREFERENCES_REPOSITORY, "update_user_preference", PHASE5_CUSTOM_TEMPLATES_SQL],
 ] as const;
 
 for (const [repository, name, sql] of RPC_CONTRACTS) {

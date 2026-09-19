@@ -1,8 +1,4 @@
-import {
-  SYSTEM_TEMPLATE_KEYS,
-  type SystemTemplateKey,
-  TELEGRAM_MAX_MESSAGE_LENGTH,
-} from "../config/constants.ts";
+import { TELEGRAM_MAX_MESSAGE_LENGTH, type TemplateKey } from "../config/constants.ts";
 import { AppError } from "../errors/app-error.ts";
 import { encodeCallbackPayload } from "../schemas/callback.ts";
 import type { StructuredNote } from "../schemas/structured-note.ts";
@@ -413,7 +409,7 @@ export interface NoteKeyboardOptions {
   /** The note the buttons act on. Encoded, never sent raw. */
   readonly noteId: string;
   /** The format the note is currently in, so it is not offered as an alternative. */
-  readonly templateKey: SystemTemplateKey;
+  readonly templateKey: TemplateKey;
   /** Selects between the Save and Unsave labels. */
   readonly isSaved: boolean;
   /** Template display names, keyed by template key. See `labelFor`. */
@@ -455,10 +451,9 @@ function button(
  * twelfth product principle prefers inline actions to "long command menus and
  * multi-step wizards", and a picker would be exactly that: a button that replaces
  * the keyboard with a second keyboard. The cost is a taller keyboard, and the
- * reason it is acceptable in Phase 1 is that the system catalogue is bounded at
- * eleven. Phase 5 adds custom templates, at which point the list stops being
- * bounded and a picker becomes necessary rather than nicer — `callback.ts`'s
- * `format.` prefix is what that change will hang on.
+ * reason it is acceptable is that the catalogue is bounded at eleven system
+ * templates plus at most five active custom templates per user. The repository
+ * supplies only formats owned by that user and applicable to the note source.
  *
  * Save and Unsave are one button whose label and payload always agree. The payload
  * is chosen from the state at render time, so a stale button on an old message
@@ -478,7 +473,7 @@ export function buildNoteKeyboard(options: NoteKeyboardOptions): InlineKeyboard 
     button("More detailed", { kind: "detailed" }, noteId),
   ]];
 
-  const alternatives = SYSTEM_TEMPLATE_KEYS.filter((key) => key !== templateKey);
+  const alternatives = [...templateLabels.keys()].filter((key) => key !== templateKey);
 
   for (let index = 0; index < alternatives.length; index += BUTTONS_PER_ROW) {
     rows.push(

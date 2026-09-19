@@ -485,10 +485,7 @@ Deno.test("every button decodes back to the note it was built for", () => {
   }
 });
 
-Deno.test("a missing template label falls back to the key rather than dropping the button", () => {
-  // Dropping the button would mean a database read returning fewer rows than
-  // expected silently removed a format from the user's screen. An ugly label is the
-  // easier failure to notice.
+Deno.test("an empty available-template list produces no format buttons", () => {
   const keyboard = buildNoteKeyboard({
     noteId: NOTE_ID,
     templateKey: "clean_note",
@@ -498,8 +495,7 @@ Deno.test("a missing template label falls back to the key rather than dropping t
 
   const formats = keyboard.flat().filter((button) => button.callback_data.includes("format."));
 
-  assertEquals(formats.length, SYSTEM_TEMPLATE_KEYS.length - 1);
-  assert(formats.some((button) => button.text === "short_summary"));
+  assertEquals(formats.length, 0);
 });
 
 Deno.test("every button payload fits Telegram's byte limit", () => {

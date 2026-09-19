@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { PRIVACY_MODES, SYSTEM_TEMPLATE_KEYS } from "../config/constants.ts";
-import type { PrivacyMode, SystemTemplateKey } from "../config/constants.ts";
+import { PRIVACY_MODES, TEMPLATE_KEY_PATTERN } from "../config/constants.ts";
+import type { PrivacyMode, TemplateKey } from "../config/constants.ts";
 import type { ServiceClient } from "../db/client.ts";
 import { AppError } from "../errors/app-error.ts";
 import { classifyPostgresError, toDatabaseError } from "./postgres-errors.ts";
@@ -19,17 +19,17 @@ export type PreferenceSetting = (typeof PREFERENCE_SETTINGS)[number];
 
 const PreferencesRowSchema = z.object({
   output_language: z.enum(OUTPUT_LANGUAGES),
-  default_text_template: z.enum(SYSTEM_TEMPLATE_KEYS).nullable(),
-  default_voice_template: z.enum(SYSTEM_TEMPLATE_KEYS).nullable(),
-  default_document_template: z.enum(SYSTEM_TEMPLATE_KEYS).nullable(),
+  default_text_template: z.string().regex(TEMPLATE_KEY_PATTERN).nullable(),
+  default_voice_template: z.string().regex(TEMPLATE_KEY_PATTERN).nullable(),
+  default_document_template: z.string().regex(TEMPLATE_KEY_PATTERN).nullable(),
   privacy_mode: z.enum(PRIVACY_MODES),
 });
 
 export interface UserPreferences {
   readonly outputLanguage: OutputLanguage;
-  readonly defaultTextTemplate: SystemTemplateKey | null;
-  readonly defaultVoiceTemplate: SystemTemplateKey | null;
-  readonly defaultDocumentTemplate: SystemTemplateKey | null;
+  readonly defaultTextTemplate: TemplateKey | null;
+  readonly defaultVoiceTemplate: TemplateKey | null;
+  readonly defaultDocumentTemplate: TemplateKey | null;
   readonly privacyMode: PrivacyMode;
 }
 

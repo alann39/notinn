@@ -150,6 +150,20 @@ export const SYSTEM_TEMPLATE_KEYS = [
 
 export type SystemTemplateKey = (typeof SYSTEM_TEMPLATE_KEYS)[number];
 
+/** Database-valid template keys, including owner-scoped custom templates. */
+export const TEMPLATE_KEY_PATTERN = /^[a-z][a-z0-9_]{1,63}$/;
+
+/**
+ * A template key resolved through the owner-scoped template repository.
+ * System routing remains the narrower `SystemTemplateKey`; generation accepts
+ * this wider type only after the database has verified ownership and status.
+ */
+export type TemplateKey = string;
+
+export const MAX_CUSTOM_TEMPLATES = 5;
+export const MAX_CUSTOM_TEMPLATE_NAME_CHARS = 80;
+export const MAX_CUSTOM_TEMPLATE_INSTRUCTION_CHARS = 2_000;
+
 /**
  * Where in a source a claim came from (blueprint 12.4, `source_references`).
  *

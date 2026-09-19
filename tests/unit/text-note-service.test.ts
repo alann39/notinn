@@ -92,7 +92,7 @@ function harness(providerResult: NoteGenerationResult | AppError = generation) {
           schemaVersion: 1,
           responseJsonSchema: {},
         }),
-      listSystemLabels: () => Promise.resolve(new Map([["clean_note", "Clean Note"]])),
+      listLabels: () => Promise.resolve(new Map([["clean_note", "Clean Note"]])),
     },
     usage: {
       recordGeneration: (input: unknown) => {

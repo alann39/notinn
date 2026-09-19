@@ -17,7 +17,9 @@ answers through `/ask <question>` after the embedding model is enabled.
 `/settings` now controls output language (`mirror`, Indonesian, or English),
 balanced/minimal privacy, and default templates for text, voice, and document
 inputs. Changes are snapshotted onto future jobs and never rewrite queued or
-existing notes.
+existing notes. `/templates` lists the available formats; custom formats are
+created with `/template create Name | text,voice,document | Instructions` and
+archived with `/template archive <template_key>`.
 
 ---
 
@@ -60,7 +62,7 @@ npx supabase link --project-ref <ref>   # confirm the target first
 npx supabase db push                    # apply migrations
 ```
 
-Twenty migrations in `supabase/migrations/`. They are the schema's source of truth;
+Twenty-three migrations in `supabase/migrations/`. They are the schema's source of truth;
 migrations are never edited after being applied to a shared project (one
 pre-release exception is recorded in
 [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md)).

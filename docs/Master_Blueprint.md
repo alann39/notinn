@@ -168,16 +168,16 @@ Limits may later differ by subscription plan.
 
 ### 6.2 Custom templates
 
-Custom templates are a post-MVP or Pro feature. A custom template defines:
+Custom templates are a Phase 5 feature. A custom template defines:
 
-- Name and description.
+- Name.
 - Applicable input types.
-- Required and optional sections.
-- Output language and verbosity.
-- JSON output schema.
-- Rendering instructions.
+- A bounded generation objective and rendering emphasis.
 
-User-provided instructions are treated as configuration data and cannot override security, privacy, or platform rules.
+The structured-note JSON schema remains fixed and application-owned. A user may
+keep at most five active custom templates. User-provided instructions are treated
+as untrusted configuration data and cannot override output validation, security,
+privacy, or platform rules.
 
 ### 6.3 Default template routing
 

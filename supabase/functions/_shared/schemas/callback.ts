@@ -1,7 +1,7 @@
 import {
-  SYSTEM_TEMPLATE_KEYS,
-  type SystemTemplateKey,
   TELEGRAM_MAX_CALLBACK_DATA_BYTES,
+  TEMPLATE_KEY_PATTERN,
+  type TemplateKey,
 } from "../config/constants.ts";
 import { AppError } from "../errors/app-error.ts";
 
@@ -104,7 +104,7 @@ const FORMAT_PREFIX = "format.";
 
 export type CallbackAction =
   | { readonly kind: SimpleCallbackAction }
-  | { readonly kind: "format"; readonly templateKey: SystemTemplateKey };
+  | { readonly kind: "format"; readonly templateKey: TemplateKey };
 
 export interface CallbackPayload {
   readonly action: CallbackAction;
@@ -197,10 +197,10 @@ function encodeAction(action: CallbackAction): string {
 function decodeAction(token: string): CallbackAction {
   if (token.startsWith(FORMAT_PREFIX)) {
     const key = token.slice(FORMAT_PREFIX.length);
-    if (!(SYSTEM_TEMPLATE_KEYS as readonly string[]).includes(key)) {
-      throw AppError.validation(`callback names unknown template "${key}"`);
+    if (!TEMPLATE_KEY_PATTERN.test(key)) {
+      throw AppError.validation("callback names an invalid template key");
     }
-    return { kind: "format", templateKey: key as SystemTemplateKey };
+    return { kind: "format", templateKey: key };
   }
 
   if (!(CALLBACK_ACTIONS as readonly string[]).includes(token)) {

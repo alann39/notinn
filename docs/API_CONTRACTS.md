@@ -308,8 +308,15 @@ only by `service_role`. The PGMQ payload is exactly `{ "job_id": "uuid" }`.
 | `accept_and_enqueue_telegram_update_v2(...)` | Snapshots template, language, and privacy before queue publication    |
 | `claim_processing_job(uuid, integer)`        | Returns the immutable language/privacy snapshots to the worker        |
 | `stage_note_for_delivery(...)`               | Enforces minimal retention from the database-owned job snapshot       |
+| `list_available_templates(uuid, input_type)` | Lists built-ins plus active owned templates, optionally by input type |
+| `create_custom_template(...)`                | Creates an owned template with the fixed note schema and a quota of 5 |
+| `archive_custom_template(uuid, text)`        | Archives an owned template when no active job still uses it           |
+| `find_template_for_generation(...)`          | Rechecks owner, status, and input applicability before generation     |
 
 `/settings` accepts `language mirror|id|en`, `privacy balanced|minimal`, and
-`text|voice|document default|<system_template_key>`. Changes affect only updates
+`text|voice|document default|<template_key>`. `/template create` accepts the
+pipe-delimited form `Name | text,voice,document | Instructions`; `/templates`
+lists keys, and `/template archive <template_key>` soft-archives one owned custom
+template. Changes affect only updates
 accepted after the preference write. All preference RPCs are denied to
 `PUBLIC`, `anon`, and `authenticated` and granted only to `service_role`.

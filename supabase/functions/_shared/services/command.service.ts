@@ -9,7 +9,12 @@ import {
   type UserPreferences,
   type UserPreferencesRepository,
 } from "../repositories/user-preferences.repository.ts";
-import { SYSTEM_TEMPLATE_KEYS } from "../config/constants.ts";
+import {
+  type InputType,
+  MAX_CUSTOM_TEMPLATE_INSTRUCTION_CHARS,
+  MAX_CUSTOM_TEMPLATE_NAME_CHARS,
+  TEMPLATE_KEY_PATTERN,
+} from "../config/constants.ts";
 import type { EmbeddingProvider, LibraryAnswerProvider } from "../providers/library-ai.provider.ts";
 import type { TelegramGateway } from "../telegram/client.ts";
 import type { CommandMessage } from "../telegram/parse-update.ts";
@@ -37,7 +42,9 @@ export interface CommandDependencies {
   readonly answers?: LibraryAnswerProvider;
   readonly usage?: Pick<UsageRepository, "recordGeneration" | "recordEmbedding">;
   readonly preferences?: Pick<UserPreferencesRepository, "get" | "update">;
-  readonly templates?: Pick<TemplatesRepository, "listSystemLabels">;
+  readonly templates?:
+    & Pick<TemplatesRepository, "listLabels">
+    & Partial<Pick<TemplatesRepository, "listAvailable" | "createCustom" | "archiveCustom">>;
 }
 
 const SETTINGS_HELP = [
@@ -49,6 +56,20 @@ const SETTINGS_HELP = [
   "/settings voice default|<template_key>",
   "/settings document default|<template_key>",
 ].join("\n");
+
+const TEMPLATE_HELP = [
+  "Template commands:",
+  "/templates — list available templates",
+  "/template create Name | text,voice,document | Instructions",
+  "/template archive <template_key>",
+  "You can keep up to 5 active custom templates.",
+].join("\n");
+
+const INPUT_TYPES_BY_GROUP: Readonly<Record<string, readonly InputType[]>> = {
+  text: ["text"],
+  voice: ["voice", "audio"],
+  document: ["image", "pdf", "docx", "txt", "md"],
+};
 
 function templateLabel(
   key: string | null,
@@ -86,7 +107,7 @@ async function handleSettings(
     return;
   }
 
-  const labels = await deps.templates.listSystemLabels();
+  const labels = await deps.templates.listLabels(userId);
   const raw = command.argumentsText?.trim() ?? "";
   if (raw === "" || raw === "show") {
     const preferences = await deps.preferences.get(userId);
@@ -94,7 +115,7 @@ async function handleSettings(
     return;
   }
   if (raw === "help") {
-    const available = SYSTEM_TEMPLATE_KEYS.map((key) => `- ${key}: ${labels.get(key) ?? key}`);
+    const available = [...labels].map(([key, name]) => `- ${key}: ${name}`);
     await deps.telegram.sendMessage(
       command.telegramChatId,
       [SETTINGS_HELP, "", "Available templates:", ...available].join("\n"),
@@ -118,7 +139,13 @@ async function handleSettings(
     valid = value === "balanced" || value === "minimal";
   } else if (category === "text" || category === "voice" || category === "document") {
     setting = `${category}_template` as PreferenceSetting;
-    valid = value === "default" || (SYSTEM_TEMPLATE_KEYS as readonly string[]).includes(value);
+    const representativeInput: InputType = category === "text"
+      ? "text"
+      : category === "voice"
+      ? "voice"
+      : "pdf";
+    const applicableLabels = await deps.templates.listLabels(userId, representativeInput);
+    valid = value === "default" || applicableLabels.has(value);
   } else {
     await deps.telegram.sendMessage(command.telegramChatId, SETTINGS_HELP);
     return;
@@ -134,6 +161,113 @@ async function handleSettings(
     command.telegramChatId,
     ["Setting saved.", "", renderSettings(preferences, labels)].join("\n"),
   );
+}
+
+function inputGroupLabels(inputTypes: readonly InputType[]): string {
+  const groups = Object.entries(INPUT_TYPES_BY_GROUP)
+    .filter(([, types]) => types.some((type) => inputTypes.includes(type)))
+    .map(([group]) => group);
+  return groups.join(",");
+}
+
+async function handleTemplates(
+  command: CommandMessage,
+  userId: string,
+  deps: CommandDependencies,
+): Promise<void> {
+  if (
+    deps.templates?.listAvailable === undefined ||
+    deps.templates.createCustom === undefined ||
+    deps.templates.archiveCustom === undefined
+  ) {
+    await deps.telegram.sendMessage(
+      command.telegramChatId,
+      "Custom templates are not enabled yet.",
+    );
+    return;
+  }
+
+  const raw = command.argumentsText?.trim() ?? "";
+  if (command.command === "templates" || raw === "" || raw === "list") {
+    const templates = await deps.templates.listAvailable(userId);
+    const system = templates.filter((template) => !template.isCustom);
+    const custom = templates.filter((template) => template.isCustom);
+    const line = (template: (typeof templates)[number]) =>
+      `- ${template.name} (${template.key}) — ${inputGroupLabels(template.applicableInputTypes)}`;
+    await deps.telegram.sendMessage(
+      command.telegramChatId,
+      [
+        "Available templates:",
+        "",
+        "Built-in:",
+        ...system.map(line),
+        "",
+        `Custom (${custom.length}/5):`,
+        ...(custom.length === 0 ? ["- None yet"] : custom.map(line)),
+        "",
+        "Use /template help to create or archive one.",
+      ].join("\n"),
+    );
+    return;
+  }
+  if (raw === "help") {
+    await deps.telegram.sendMessage(command.telegramChatId, TEMPLATE_HELP);
+    return;
+  }
+  if (raw.toLowerCase().startsWith("create ")) {
+    const parts = raw.slice(7).split("|").map((part) => part.trim());
+    if (parts.length !== 3) {
+      await deps.telegram.sendMessage(command.telegramChatId, TEMPLATE_HELP);
+      return;
+    }
+    const [name = "", groupsText = "", instruction = ""] = parts;
+    const groups = [...new Set(groupsText.toLowerCase().split(",").map((group) => group.trim()))];
+    if (
+      name.length === 0 || name.length > MAX_CUSTOM_TEMPLATE_NAME_CHARS ||
+      instruction.length === 0 || instruction.length > MAX_CUSTOM_TEMPLATE_INSTRUCTION_CHARS ||
+      groups.length === 0 || groups.some((group) => !(group in INPUT_TYPES_BY_GROUP))
+    ) {
+      await deps.telegram.sendMessage(command.telegramChatId, TEMPLATE_HELP);
+      return;
+    }
+    const active = await deps.templates.listAvailable(userId);
+    if (active.filter((template) => template.isCustom).length >= 5) {
+      await deps.telegram.sendMessage(
+        command.telegramChatId,
+        "You already have 5 active custom templates. Archive one before creating another.",
+      );
+      return;
+    }
+    const inputTypes = [...new Set(groups.flatMap((group) => INPUT_TYPES_BY_GROUP[group] ?? []))];
+    const created = await deps.templates.createCustom(userId, name, instruction, inputTypes);
+    await deps.telegram.sendMessage(
+      command.telegramChatId,
+      [
+        "Custom template created.",
+        `${created.name} (${created.key})`,
+        `For: ${inputGroupLabels(created.applicableInputTypes)}`,
+        "",
+        `Set it as a default with /settings text|voice|document ${created.key}`,
+      ].join("\n"),
+    );
+    return;
+  }
+  if (raw.toLowerCase().startsWith("archive ")) {
+    const key = raw.slice(8).trim().toLowerCase();
+    if (!TEMPLATE_KEY_PATTERN.test(key)) {
+      await deps.telegram.sendMessage(command.telegramChatId, TEMPLATE_HELP);
+      return;
+    }
+    const outcome = await deps.templates.archiveCustom(userId, key);
+    const message = outcome === "archived"
+      ? "Custom template archived. Any default that used it was reset to automatic."
+      : outcome === "in_use"
+      ? "That template is still being used by a pending note. Try archiving it after the note finishes."
+      : "I could not find that active custom template.";
+    await deps.telegram.sendMessage(command.telegramChatId, message);
+    return;
+  }
+  await deps.telegram.sendMessage(command.telegramChatId, TEMPLATE_HELP);
 }
 
 function embeddingText(title: string, contentJson: unknown): string {
@@ -270,16 +404,21 @@ export async function handleCommand(
 ): Promise<void> {
   if (
     command.command !== "recent" && command.command !== "search" && command.command !== "ask" &&
-    command.command !== "settings"
+    command.command !== "settings" && command.command !== "template" &&
+    command.command !== "templates"
   ) {
     await deps.telegram.sendMessage(
       command.telegramChatId,
-      "Send me content to create a note, or use /recent, /search, /ask, or /settings.",
+      "Send me content to create a note, or use /recent, /search, /ask, /settings, or /templates.",
     );
     return;
   }
 
   const userId = await deps.users.ensureUser(command);
+  if (command.command === "template" || command.command === "templates") {
+    await handleTemplates(command, userId, deps);
+    return;
+  }
   if (command.command === "settings") {
     await handleSettings(command, userId, deps);
     return;

@@ -1,7 +1,7 @@
 import {
   type GenerationReason,
-  SYSTEM_TEMPLATE_KEYS,
-  type SystemTemplateKey,
+  TEMPLATE_KEY_PATTERN,
+  type TemplateKey,
 } from "../config/constants.ts";
 import { AppError, toAppError } from "../errors/app-error.ts";
 import type { Logger } from "../observability/logger.ts";
@@ -33,7 +33,7 @@ export interface CallbackDependencies {
     | "setNoteSaved"
     | "deleteNote"
   >;
-  readonly templates: Pick<TemplatesRepository, "findForGeneration" | "listSystemLabels">;
+  readonly templates: Pick<TemplatesRepository, "findForGeneration" | "listLabels">;
   readonly usage: Pick<UsageRepository, "recordGeneration">;
   readonly provider: Pick<NoteAIProvider, "generateText">;
   readonly telegram: Pick<
@@ -43,11 +43,11 @@ export interface CallbackDependencies {
   readonly logger: Logger;
 }
 
-function systemTemplateKey(value: string): SystemTemplateKey {
-  if (!(SYSTEM_TEMPLATE_KEYS as readonly string[]).includes(value)) {
-    throw AppError.internal("stored note names an unknown system template");
+function templateKey(value: string): TemplateKey {
+  if (!TEMPLATE_KEY_PATTERN.test(value)) {
+    throw AppError.internal("stored note names an invalid template");
   }
-  return value as SystemTemplateKey;
+  return value;
 }
 
 async function sendCurrentNote(
@@ -61,11 +61,11 @@ async function sendCurrentNote(
 
   const note = parseStructuredNote(display.contentJson, AppError.outputValidationFailed);
   const rendered = renderNoteOutput(note);
-  const labels = await deps.templates.listSystemLabels();
+  const labels = await deps.templates.listLabels(userId, display.sourceType);
   const keyboard = {
     inline_keyboard: buildNoteKeyboard({
       noteId,
-      templateKey: systemTemplateKey(display.templateKey),
+      templateKey: templateKey(display.templateKey),
       isSaved: display.isSaved,
       templateLabels: labels,
     }),
@@ -85,7 +85,7 @@ async function regenerate(
   callback: CallbackActionRequest,
   userId: string,
   noteId: string,
-  targetTemplate: SystemTemplateKey | null,
+  targetTemplate: TemplateKey | null,
   reason: GenerationReason,
   deps: CallbackDependencies,
 ): Promise<boolean> {
@@ -99,12 +99,16 @@ async function regenerate(
     return true;
   }
 
-  const templateKey = targetTemplate ?? systemTemplateKey(source.templateKey);
-  const template = await deps.templates.findForGeneration(userId, templateKey);
+  const selectedTemplateKey = targetTemplate ?? templateKey(source.templateKey);
+  const template = await deps.templates.findForGeneration(
+    userId,
+    selectedTemplateKey,
+    source.sourceType,
+  );
   const generation = await deps.provider.generateText({
     sourceText: source.sourceText,
     template,
-    templateKey,
+    templateKey: selectedTemplateKey,
     reason,
     outputLanguage: source.language,
   });
@@ -123,7 +127,7 @@ async function regenerate(
   const output = await deps.notes.regenerateNoteOutput({
     userId,
     noteId,
-    templateKey,
+    templateKey: selectedTemplateKey,
     schemaVersion: STRUCTURED_NOTE_VERSION,
     contentJson: generation.note,
     renderedText: rendered.html,
@@ -135,11 +139,11 @@ async function regenerate(
 
   const display = await deps.notes.findNoteForDisplay(userId, noteId);
   if (display === null) return false;
-  const labels = await deps.templates.listSystemLabels();
+  const labels = await deps.templates.listLabels(userId, display.sourceType);
   const keyboard = {
     inline_keyboard: buildNoteKeyboard({
       noteId,
-      templateKey,
+      templateKey: selectedTemplateKey,
       isSaved: display.isSaved,
       templateLabels: labels,
     }),
@@ -208,14 +212,14 @@ export async function handleCallback(
           found = false;
           break;
         }
-        const labels = await deps.templates.listSystemLabels();
+        const labels = await deps.templates.listLabels(userId, display.sourceType);
         await deps.telegram.editMessageReplyMarkup(
           callback.telegramChatId,
           callback.messageId,
           {
             inline_keyboard: buildNoteKeyboard({
               noteId,
-              templateKey: systemTemplateKey(display.templateKey),
+              templateKey: templateKey(display.templateKey),
               isSaved: saved,
               templateLabels: labels,
             }),
@@ -255,14 +259,14 @@ export async function handleCallback(
           found = false;
           break;
         }
-        const labels = await deps.templates.listSystemLabels();
+        const labels = await deps.templates.listLabels(userId, display.sourceType);
         await deps.telegram.editMessageReplyMarkup(
           callback.telegramChatId,
           callback.messageId,
           {
             inline_keyboard: buildNoteKeyboard({
               noteId,
-              templateKey: systemTemplateKey(display.templateKey),
+              templateKey: templateKey(display.templateKey),
               isSaved: display.isSaved,
               templateLabels: labels,
             }),

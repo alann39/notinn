@@ -59,7 +59,7 @@ function harness() {
       findForGeneration: () => {
         throw new Error("template read must not run in an empty batch");
       },
-      listSystemLabels: () => Promise.resolve(new Map()),
+      listLabels: () => Promise.resolve(new Map()),
     },
     usage: { recordGeneration: () => Promise.resolve() },
     provider: {

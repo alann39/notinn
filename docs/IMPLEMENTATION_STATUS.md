@@ -7,7 +7,8 @@ output is recorded below.
 
 ## Phase 5 current snapshot
 
-The first Phase 5 slice is implemented and deployed to development:
+The preference and custom-template slices of Phase 5 are implemented and deployed
+to development:
 
 - `/settings` shows and updates output language (`mirror`, `id`, `en`), privacy
   mode (`balanced`, `minimal`), and default templates for text, voice/audio, and
@@ -27,18 +28,28 @@ The first Phase 5 slice is implemented and deployed to development:
   missing.
 - Existing users were backfilled with one preference row. New users receive the
   row during idempotent onboarding.
+- `/templates` lists built-in and owner-scoped custom templates. `/template create`
+  accepts a name, any combination of `text`, `voice`, and `document`, and a bounded
+  generation objective. `/template archive` soft-archives an owned template and
+  resets any default that referenced it.
+- Each user may keep at most five active custom templates. A per-owner advisory
+  transaction lock makes that quota race-safe, while an active job prevents its
+  template from being archived until processing finishes.
+- Custom objectives always reuse Notinn's fixed structured-note schema. Generation
+  reads recheck active status, owner, and source-type applicability, so callback
+  data and template text are never authorization or policy controls.
 - Preference RPCs are `SECURITY DEFINER`, use an empty `search_path`, and are
   executable only by `service_role`. Read-only production verification found one
   preference row for one user, no jobs missing snapshots, all four FK indexes,
   and no client-role execute privilege.
-- Migration `phase5_user_preference_contract` is applied. `telegram-webhook`
-  version 21 and `process-job` version 24 are active; an unsigned webhook POST
-  still returns an empty HTTP 401.
-- Type-check passes and the hermetic suite reports **490 passed, 0 failed**.
+- Migrations `phase5_user_preference_contract`,
+  `phase5_scrub_staged_job_payload`, and `phase5_custom_templates` are applied.
+  `telegram-webhook` version 23 and `process-job` version 25 are active.
+- Type-check passes and the hermetic suite reports **500 passed, 0 failed**.
 
 The consistency and retention decision is recorded in
-[ADR 0013](ADR/0013-future-job-preference-snapshots.md). Custom templates and
-Markdown/text export remain the next Phase 5 slices.
+[ADR 0013](ADR/0013-future-job-preference-snapshots.md). Markdown/text export is
+the next Phase 5 slice.
 
 ## Phase 4 snapshot (completed)
 

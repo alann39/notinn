@@ -1,4 +1,4 @@
-import type { JobState, SystemTemplateKey } from "../config/constants.ts";
+import type { JobState } from "../config/constants.ts";
 import { AppError, toAppError } from "../errors/app-error.ts";
 import type { Logger } from "../observability/logger.ts";
 import type { NoteAIProvider } from "../providers/note-ai.provider.ts";
@@ -15,7 +15,7 @@ import { buildNoteKeyboard, renderNoteOutput } from "./note-rendering.ts";
 export interface TextNoteDependencies {
   readonly jobs: Pick<ProcessingJobsRepository, "advance" | "markRetryable">;
   readonly notes: Pick<NotesRepository, "persistNote">;
-  readonly templates: Pick<TemplatesRepository, "findForGeneration" | "listSystemLabels">;
+  readonly templates: Pick<TemplatesRepository, "findForGeneration" | "listLabels">;
   readonly usage: Pick<UsageRepository, "recordGeneration">;
   readonly provider: Pick<NoteAIProvider, "generateText">;
   readonly telegram: Pick<TelegramGateway, "sendMessage">;
@@ -61,7 +61,7 @@ export async function createTextNote(
     await advance(deps, userId, jobId, state, "GENERATING");
     state = "GENERATING";
 
-    const template = await deps.templates.findForGeneration(userId, message.templateKey);
+    const template = await deps.templates.findForGeneration(userId, message.templateKey, "text");
     const generation = await deps.provider.generateText({
       sourceText: message.sourceText,
       template,
@@ -108,11 +108,11 @@ export async function createTextNote(
       throw AppError.internal(`persist_note returned ${persisted.outcome}`);
     }
 
-    const labels = await deps.templates.listSystemLabels();
+    const labels = await deps.templates.listLabels(userId, "text");
     const keyboard = {
       inline_keyboard: buildNoteKeyboard({
         noteId: persisted.noteId,
-        templateKey: message.templateKey as SystemTemplateKey,
+        templateKey: message.templateKey,
         isSaved: false,
         templateLabels: labels,
       }),
