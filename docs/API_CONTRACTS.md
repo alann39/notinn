@@ -105,7 +105,7 @@ only. A client-role call is refused, asserted in
 
 Records an accepted update and creates exactly one job, in one transaction.
 
-Production ingestion calls `accept_and_enqueue_telegram_update`, below. This
+Phase 5 production ingestion calls `accept_and_enqueue_telegram_update_v2`, below. This
 inner function remains the single deduplication primitive and is wrapped in the
 same transaction as PGMQ publication.
 
@@ -284,17 +284,32 @@ path that bypasses durability.
 
 ## 8. Phase 2 database surface
 
-| Function                             | Contract                                                               |
-| ------------------------------------ | ---------------------------------------------------------------------- |
-| `accept_and_enqueue_telegram_update` | Calls the ingestion primitive and `pgmq.send` in one transaction       |
-| `read_processing_queue`              | Reads 1–10 messages with a bounded 30–900 second visibility timeout    |
-| `delete_processing_queue_message`    | Acknowledges a completed, permanent, exhausted, or stale queue message |
-| `find_processing_queue_message_id`   | Resolves a direct invocation to the same durable queue message         |
-| `claim_processing_job`               | Claims due work, requeues due retries, and terminalises exhausted jobs |
-| `set_processing_job_status_message`  | Attaches the bot-owned progress message to an active owned job         |
-| `stage_note_for_delivery`            | Idempotently persists a note while the job remains `DELIVERING`        |
-| `complete_processing_job`            | Completes only a `DELIVERING` job after Telegram delivery              |
-| `fail_processing_job`                | Walks a permanent failure through the legal state transition           |
+| Function                                | Contract                                                                         |
+| --------------------------------------- | -------------------------------------------------------------------------------- |
+| `accept_and_enqueue_telegram_update_v2` | Resolves preference snapshots, creates the job, and calls `pgmq.send` atomically |
+| `read_processing_queue`                 | Reads 1–10 messages with a bounded 30–900 second visibility timeout              |
+| `delete_processing_queue_message`       | Acknowledges a completed, permanent, exhausted, or stale queue message           |
+| `find_processing_queue_message_id`      | Resolves a direct invocation to the same durable queue message                   |
+| `claim_processing_job`                  | Claims due work, requeues due retries, and terminalises exhausted jobs           |
+| `set_processing_job_status_message`     | Attaches the bot-owned progress message to an active owned job                   |
+| `stage_note_for_delivery`               | Idempotently persists a note while the job remains `DELIVERING`                  |
+| `complete_processing_job`               | Completes only a `DELIVERING` job after Telegram delivery                        |
+| `fail_processing_job`                   | Walks a permanent failure through the legal state transition                     |
 
 All are `SECURITY DEFINER`, have an empty pinned `search_path`, and are executable
 only by `service_role`. The PGMQ payload is exactly `{ "job_id": "uuid" }`.
+
+## 9. Phase 5 preference surface
+
+| Function                                     | Contract                                                              |
+| -------------------------------------------- | --------------------------------------------------------------------- |
+| `get_user_preferences(uuid)`                 | Returns the active owner's language, privacy mode, and three defaults |
+| `update_user_preference(uuid, text, text)`   | Validates and updates one allowlisted setting                         |
+| `accept_and_enqueue_telegram_update_v2(...)` | Snapshots template, language, and privacy before queue publication    |
+| `claim_processing_job(uuid, integer)`        | Returns the immutable language/privacy snapshots to the worker        |
+| `stage_note_for_delivery(...)`               | Enforces minimal retention from the database-owned job snapshot       |
+
+`/settings` accepts `language mirror|id|en`, `privacy balanced|minimal`, and
+`text|voice|document default|<system_template_key>`. Changes affect only updates
+accepted after the preference write. All preference RPCs are denied to
+`PUBLIC`, `anon`, and `authenticated` and granted only to `service_role`.

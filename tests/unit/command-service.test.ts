@@ -237,3 +237,76 @@ Deno.test("ask remains safely unavailable until the embedding model is configure
   });
   assertEquals(sent[0]?.includes("not enabled"), true);
 });
+
+Deno.test("settings displays the current preference snapshot", async () => {
+  const test = harness();
+  const sent: string[] = [];
+
+  await handleCommand(command("settings", null), {
+    ...test.deps,
+    preferences: {
+      get: () =>
+        Promise.resolve({
+          outputLanguage: "id" as const,
+          defaultTextTemplate: "clean_note" as const,
+          defaultVoiceTemplate: null,
+          defaultDocumentTemplate: "detailed_summary" as const,
+          privacyMode: "balanced" as const,
+        }),
+      update: () => Promise.reject(new Error("update must not run")),
+    },
+    templates: {
+      listSystemLabels: () =>
+        Promise.resolve(
+          new Map([
+            ["clean_note", "Clean Note"],
+            ["detailed_summary", "Detailed Summary"],
+          ]),
+        ),
+    },
+    telegram: {
+      sendMessage: (_chatId, text) => {
+        sent.push(text);
+        return Promise.resolve({ messageId: 1 });
+      },
+    },
+  });
+
+  assertEquals(sent[0]?.includes("Language: id"), true);
+  assertEquals(sent[0]?.includes("Privacy: balanced"), true);
+  assertEquals(sent[0]?.includes("Voice template: Automatic default"), true);
+});
+
+Deno.test("settings validates and saves a future-job privacy preference", async () => {
+  const test = harness();
+  const updates: unknown[] = [];
+  const sent: string[] = [];
+
+  await handleCommand(command("settings", "privacy minimal"), {
+    ...test.deps,
+    preferences: {
+      get: () => Promise.reject(new Error("get must not run")),
+      update: (userId, setting, value) => {
+        updates.push({ userId, setting, value });
+        return Promise.resolve({
+          outputLanguage: "mirror" as const,
+          defaultTextTemplate: null,
+          defaultVoiceTemplate: null,
+          defaultDocumentTemplate: null,
+          privacyMode: "minimal" as const,
+        });
+      },
+    },
+    templates: { listSystemLabels: () => Promise.resolve(new Map()) },
+    telegram: {
+      sendMessage: (_chatId, text) => {
+        sent.push(text);
+        return Promise.resolve({ messageId: 1 });
+      },
+    },
+  });
+
+  assertEquals(updates, [{ userId: USER_ID, setting: "privacy", value: "minimal" }]);
+  assertEquals(sent[0]?.includes("Setting saved."), true);
+  assertEquals(sent[0]?.includes("Privacy: minimal"), true);
+});

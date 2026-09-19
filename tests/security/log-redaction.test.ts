@@ -160,6 +160,7 @@ async function runDelivery(
           chat_id: 900_000_001,
           message_id: 1,
           queue_message_id: 900_000_003,
+          template_key: "clean_note",
         }];
 
         return Promise.resolve(
@@ -251,6 +252,7 @@ for (const kind of ["text", "document", "photo", "voice"] as const) {
             chat_id: 900_000_001,
             message_id: 1,
             queue_message_id: 900_000_003,
+            template_key: "clean_note",
           }],
         },
     });

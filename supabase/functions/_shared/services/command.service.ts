@@ -2,6 +2,14 @@ import { encodeCallbackPayload } from "../schemas/callback.ts";
 import type { IngestionRepository } from "../repositories/ingestion.repository.ts";
 import type { NotesRepository } from "../repositories/notes.repository.ts";
 import type { UsageRepository } from "../repositories/usage.repository.ts";
+import type { TemplatesRepository } from "../repositories/templates.repository.ts";
+import {
+  OUTPUT_LANGUAGES,
+  type PreferenceSetting,
+  type UserPreferences,
+  type UserPreferencesRepository,
+} from "../repositories/user-preferences.repository.ts";
+import { SYSTEM_TEMPLATE_KEYS } from "../config/constants.ts";
 import type { EmbeddingProvider, LibraryAnswerProvider } from "../providers/library-ai.provider.ts";
 import type { TelegramGateway } from "../telegram/client.ts";
 import type { CommandMessage } from "../telegram/parse-update.ts";
@@ -28,6 +36,104 @@ export interface CommandDependencies {
   readonly embeddings?: EmbeddingProvider;
   readonly answers?: LibraryAnswerProvider;
   readonly usage?: Pick<UsageRepository, "recordGeneration" | "recordEmbedding">;
+  readonly preferences?: Pick<UserPreferencesRepository, "get" | "update">;
+  readonly templates?: Pick<TemplatesRepository, "listSystemLabels">;
+}
+
+const SETTINGS_HELP = [
+  "Settings commands:",
+  "/settings — show current settings",
+  "/settings language mirror|id|en",
+  "/settings privacy balanced|minimal",
+  "/settings text default|<template_key>",
+  "/settings voice default|<template_key>",
+  "/settings document default|<template_key>",
+].join("\n");
+
+function templateLabel(
+  key: string | null,
+  labels: ReadonlyMap<string, string>,
+): string {
+  if (key === null) return "Automatic default";
+  return `${labels.get(key) ?? key} (${key})`;
+}
+
+function renderSettings(
+  preferences: UserPreferences,
+  labels: ReadonlyMap<string, string>,
+): string {
+  return [
+    "Your Notinn settings:",
+    "",
+    `Language: ${preferences.outputLanguage}`,
+    `Privacy: ${preferences.privacyMode}`,
+    `Text template: ${templateLabel(preferences.defaultTextTemplate, labels)}`,
+    `Voice template: ${templateLabel(preferences.defaultVoiceTemplate, labels)}`,
+    `Document template: ${templateLabel(preferences.defaultDocumentTemplate, labels)}`,
+    "",
+    "These settings apply only to notes you send after the change.",
+    "Use /settings help to see update commands.",
+  ].join("\n");
+}
+
+async function handleSettings(
+  command: CommandMessage,
+  userId: string,
+  deps: CommandDependencies,
+): Promise<void> {
+  if (deps.preferences === undefined || deps.templates === undefined) {
+    await deps.telegram.sendMessage(command.telegramChatId, "Settings are not enabled yet.");
+    return;
+  }
+
+  const labels = await deps.templates.listSystemLabels();
+  const raw = command.argumentsText?.trim() ?? "";
+  if (raw === "" || raw === "show") {
+    const preferences = await deps.preferences.get(userId);
+    await deps.telegram.sendMessage(command.telegramChatId, renderSettings(preferences, labels));
+    return;
+  }
+  if (raw === "help") {
+    const available = SYSTEM_TEMPLATE_KEYS.map((key) => `- ${key}: ${labels.get(key) ?? key}`);
+    await deps.telegram.sendMessage(
+      command.telegramChatId,
+      [SETTINGS_HELP, "", "Available templates:", ...available].join("\n"),
+    );
+    return;
+  }
+
+  const [category, value, ...extra] = raw.toLowerCase().split(/\s+/);
+  if (category === undefined || value === undefined || extra.length > 0) {
+    await deps.telegram.sendMessage(command.telegramChatId, SETTINGS_HELP);
+    return;
+  }
+
+  let setting: PreferenceSetting;
+  let valid = false;
+  if (category === "language") {
+    setting = "language";
+    valid = (OUTPUT_LANGUAGES as readonly string[]).includes(value);
+  } else if (category === "privacy") {
+    setting = "privacy";
+    valid = value === "balanced" || value === "minimal";
+  } else if (category === "text" || category === "voice" || category === "document") {
+    setting = `${category}_template` as PreferenceSetting;
+    valid = value === "default" || (SYSTEM_TEMPLATE_KEYS as readonly string[]).includes(value);
+  } else {
+    await deps.telegram.sendMessage(command.telegramChatId, SETTINGS_HELP);
+    return;
+  }
+
+  if (!valid) {
+    await deps.telegram.sendMessage(command.telegramChatId, SETTINGS_HELP);
+    return;
+  }
+
+  const preferences = await deps.preferences.update(userId, setting, value);
+  await deps.telegram.sendMessage(
+    command.telegramChatId,
+    ["Setting saved.", "", renderSettings(preferences, labels)].join("\n"),
+  );
 }
 
 function embeddingText(title: string, contentJson: unknown): string {
@@ -162,15 +268,22 @@ export async function handleCommand(
   command: CommandMessage,
   deps: CommandDependencies,
 ): Promise<void> {
-  if (command.command !== "recent" && command.command !== "search" && command.command !== "ask") {
+  if (
+    command.command !== "recent" && command.command !== "search" && command.command !== "ask" &&
+    command.command !== "settings"
+  ) {
     await deps.telegram.sendMessage(
       command.telegramChatId,
-      "Send me content to create a note, use /recent, /search <keywords>, or /ask <question>.",
+      "Send me content to create a note, or use /recent, /search, /ask, or /settings.",
     );
     return;
   }
 
   const userId = await deps.users.ensureUser(command);
+  if (command.command === "settings") {
+    await handleSettings(command, userId, deps);
+    return;
+  }
   if (command.command === "ask") {
     const question = command.argumentsText;
     if (question === null || question.length < 2 || question.length > ASK_QUERY_MAX_CHARS) {

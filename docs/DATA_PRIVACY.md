@@ -93,20 +93,37 @@ fields are **present**, so a logger that wrote nothing cannot pass.
 
 ## What is stored
 
-| Table              | Content                                                                                | Notes                                                                                  |
-| ------------------ | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `users`            | Telegram user id, chat id, username, display name, status, plan                        | Identity, not content                                                                  |
-| `telegram_updates` | `update_id`, type, routing metadata, a SHA-256 of the raw body                         | The digest is a tripwire, not a key — see [ADR 0003](ADR/0003-ingestion-contract.md)   |
-| `processing_jobs`  | Input type, template, state, file metadata (`file_id`, filename, MIME, size, duration) | `file_id` is cleared when the job becomes terminal                                     |
-| `notes`            | Title, language, normalized text or audio transcript, source SHA-256                   | Derived text only; never raw binary                                                    |
-| `note_outputs`     | Validated structured content and its rendered text                                     | Provider output only after application validation                                      |
-| `note_embeddings`  | Vector, model, content hash, and owned note/output references                          | **No duplicate note text and no raw media.** Deleted or invalidated with library state |
-| `usage_events`     | Counters and an internal cost estimate                                                 | **No user content.** Counts, provider identifiers only                                 |
+| Table              | Content                                                                  | Notes                                                                                  |
+| ------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `users`            | Telegram user id, chat id, username, display name, status, plan          | Identity, not content                                                                  |
+| `telegram_updates` | `update_id`, type, routing metadata, a SHA-256 of the raw body           | The digest is a tripwire, not a key — see [ADR 0003](ADR/0003-ingestion-contract.md)   |
+| `processing_jobs`  | Input type, preference snapshots, state, and bounded processing metadata | Direct text, file handles/identifiers, and filenames are cleared when output is staged |
+| `notes`            | Title, language, optional normalized source, optional source SHA-256     | `minimal` stores neither source text nor its digest; never raw binary                  |
+| `note_outputs`     | Validated structured content and its rendered text                       | Provider output only after application validation                                      |
+| `note_embeddings`  | Vector, model, content hash, and owned note/output references            | **No duplicate note text and no raw media.** Deleted or invalidated with library state |
+| `usage_events`     | Counters and an internal cost estimate                                   | **No user content.** Counts, provider identifiers only                                 |
 
 `processing_jobs.telegram_file_id` is marked **secret-adjacent** in the schema
 comment: the Telegram download URL derived from it embeds the bot token. It is
 never logged, never placed in a queue payload, and never forwarded to a provider
 (blueprint §13.11).
+
+## Balanced and minimal modes
+
+Preferences are copied onto the durable job when Telegram ingestion commits, so
+a later `/settings` change cannot alter a queued or retrying job. `balanced`
+retains normalized pasted text, transcript, or extracted text with the note.
+`minimal` retains the validated generated note only: the note write stores no
+normalized source and no source digest. The database function enforces this from
+the job snapshot rather than trusting an application-supplied flag.
+
+Once an output is staged, delivery retries use that note rather than the input,
+so direct text, file handles/identifiers, and filenames are immediately scrubbed
+from the job. Terminal transitions repeat the scrub defensively.
+
+Minimal mode intentionally disables later reformatting for that note because the
+source needed to regenerate it no longer exists. It does not retroactively delete
+source belonging to older notes.
 
 ## Raw audio lifecycle
 

@@ -35,7 +35,7 @@ import {
  * implementation that authenticated *after* writing a row.
  *
  * What is deliberately NOT proven here is deduplication. `update_id` uniqueness
- * is enforced by a unique index inside `accept_and_enqueue_telegram_update`; a fake
+ * is enforced by a unique index inside `accept_and_enqueue_telegram_update_v2`; a fake
  * transport can only assert that the application asks the database to dedup, not
  * that the database does. That proof needs a real instance and lives in
  * tests/integration/.
@@ -107,7 +107,7 @@ function stubTransport(respond: (fn: string, args: Record<string, unknown>) => R
 function happyPath(fn: string): RpcResponse {
   if (fn === "ensure_telegram_user") return { status: 200, body: USER_ID };
 
-  if (fn === "accept_and_enqueue_telegram_update") {
+  if (fn === "accept_and_enqueue_telegram_update_v2") {
     return {
       status: 200,
       body: [{
@@ -119,6 +119,7 @@ function happyPath(fn: string): RpcResponse {
         chat_id: SYNTHETIC_ID_BASE + 1,
         message_id: SYNTHETIC_ID_BASE + 2,
         queue_message_id: SYNTHETIC_ID_BASE + 3,
+        template_key: "clean_note",
       }],
     };
   }
@@ -354,7 +355,7 @@ Deno.test("a private text message is accepted and creates one job", async () => 
 
   assertEquals(calls.map((call) => call.fn), [
     "ensure_telegram_user",
-    "accept_and_enqueue_telegram_update",
+    "accept_and_enqueue_telegram_update_v2",
   ]);
   assertEquals(calls[1]?.args["p_update_id"], 900_000_017);
   assertEquals(calls[1]?.args["p_template_key"], "clean_note");
@@ -375,7 +376,7 @@ Deno.test("each accepted delivery creates exactly one job", async () => {
   const { calls } = await deliver(textUpdate());
 
   assertEquals(
-    calls.filter((call) => call.fn === "accept_and_enqueue_telegram_update").length,
+    calls.filter((call) => call.fn === "accept_and_enqueue_telegram_update_v2").length,
     1,
   );
 });
@@ -402,6 +403,7 @@ Deno.test("a replayed update is acknowledged without being reported as failed", 
             chat_id: SYNTHETIC_ID_BASE + 1,
             message_id: SYNTHETIC_ID_BASE + 2,
             queue_message_id: SYNTHETIC_ID_BASE + 3,
+            template_key: "clean_note",
           }],
         },
   });
@@ -439,6 +441,7 @@ Deno.test("a reply to a duplicate is byte-identical to a reply to a new update",
             chat_id: SYNTHETIC_ID_BASE + 1,
             message_id: SYNTHETIC_ID_BASE + 2,
             queue_message_id: SYNTHETIC_ID_BASE + 3,
+            template_key: "clean_note",
           }],
         },
   });
@@ -461,6 +464,7 @@ Deno.test("a refusal for an inactive account is acknowledged without creating a 
           chat_id: null,
           message_id: null,
           queue_message_id: null,
+          template_key: null,
         }],
       },
   });
@@ -482,7 +486,7 @@ Deno.test("every media kind that Phase 0 accepts reaches the database once", asy
     assertEquals(response.status, 200);
     assertEquals(calls.map((call) => call.fn), [
       "ensure_telegram_user",
-      "accept_and_enqueue_telegram_update",
+      "accept_and_enqueue_telegram_update_v2",
     ]);
   }
 });
@@ -563,7 +567,7 @@ Deno.test("a malformed reply is never reported to the caller as its detail", asy
   });
 
   const body = await response.text();
-  assertEquals(body.includes("accept_and_enqueue_telegram_update"), false);
+  assertEquals(body.includes("accept_and_enqueue_telegram_update_v2"), false);
   assertEquals(body.includes("shape"), false);
 });
 

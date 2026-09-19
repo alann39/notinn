@@ -86,7 +86,7 @@ export async function ingestMessage(
     job_id: result.jobId,
     job_state: result.jobState,
     input_type: message.inputType,
-    template_key: message.templateKey,
+    template_key: result.templateKey ?? message.templateKey,
     ...(message.sizeBytes === null ? {} : { size_bytes: message.sizeBytes }),
     ...(message.durationSeconds === null ? {} : { duration_seconds: message.durationSeconds }),
   });

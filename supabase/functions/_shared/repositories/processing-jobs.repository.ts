@@ -1,5 +1,13 @@
 import { z } from "zod";
-import { INPUT_TYPES, type InputType, JOB_STATES, type JobState } from "../config/constants.ts";
+import {
+  INPUT_TYPES,
+  type InputType,
+  JOB_STATES,
+  type JobState,
+  PRIVACY_MODES,
+  type PrivacyMode,
+} from "../config/constants.ts";
+import { OUTPUT_LANGUAGES, type OutputLanguage } from "./user-preferences.repository.ts";
 import type { ServiceClient } from "../db/client.ts";
 import { AppError } from "../errors/app-error.ts";
 import { classifyPostgresError, toDatabaseError } from "./postgres-errors.ts";
@@ -31,6 +39,8 @@ const ClaimedJobRowSchema = z.object({
   size_bytes: IdSchema.nullable(),
   duration_seconds: z.number().int().nonnegative().nullable(),
   template_key: z.string().nullable(),
+  output_language: z.enum(OUTPUT_LANGUAGES).nullable(),
+  privacy_mode: z.enum(PRIVACY_MODES).nullable(),
   job_state: z.enum(JOB_STATES).nullable(),
   attempt_count: z.number().int().nonnegative().nullable(),
   note_id: UuidSchema.nullable(),
@@ -60,6 +70,8 @@ export interface ClaimedProcessingJob {
   readonly sizeBytes: number | null;
   readonly durationSeconds: number | null;
   readonly templateKey: string | null;
+  readonly outputLanguage: OutputLanguage | null;
+  readonly privacyMode: PrivacyMode | null;
   readonly state: JobState | null;
   readonly attemptCount: number | null;
   readonly noteId: string | null;
@@ -186,6 +198,8 @@ export class ProcessingJobsRepository {
         sizeBytes: row.size_bytes,
         durationSeconds: row.duration_seconds,
         templateKey: row.template_key,
+        outputLanguage: row.output_language,
+        privacyMode: row.privacy_mode,
         state: row.job_state,
         attemptCount: row.attempt_count,
         noteId: row.note_id,

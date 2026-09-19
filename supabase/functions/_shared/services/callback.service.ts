@@ -90,7 +90,14 @@ async function regenerate(
   deps: CallbackDependencies,
 ): Promise<boolean> {
   const source = await deps.notes.findNoteForRegeneration(userId, noteId);
-  if (source === null || source.sourceText === null) return false;
+  if (source === null) return false;
+  if (source.sourceText === null) {
+    await deps.telegram.sendMessage(
+      callback.telegramChatId,
+      "This note was created in minimal privacy mode, so its source was not retained and it cannot be reformatted.",
+    );
+    return true;
+  }
 
   const templateKey = targetTemplate ?? systemTemplateKey(source.templateKey);
   const template = await deps.templates.findForGeneration(userId, templateKey);

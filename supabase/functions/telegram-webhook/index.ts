@@ -9,6 +9,7 @@ import { ProcessingJobsRepository } from "../_shared/repositories/processing-job
 import { RejectedChatsRepository } from "../_shared/repositories/rejected-chats.repository.ts";
 import { TemplatesRepository } from "../_shared/repositories/templates.repository.ts";
 import { UsageRepository } from "../_shared/repositories/usage.repository.ts";
+import { UserPreferencesRepository } from "../_shared/repositories/user-preferences.repository.ts";
 import { GeminiNoteProvider } from "../_shared/providers/gemini-note.provider.ts";
 import { GeminiEmbeddingProvider } from "../_shared/providers/gemini-embedding.provider.ts";
 import { createTelegramGateway } from "../_shared/telegram/client.ts";
@@ -93,6 +94,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
       rejectedChats: new RejectedChatsRepository(client),
       templates: new TemplatesRepository(client),
       usage: new UsageRepository(client),
+      preferences: new UserPreferencesRepository(client),
       provider: noteProvider,
       embeddings: config.ai.embeddingModel === null
         ? undefined

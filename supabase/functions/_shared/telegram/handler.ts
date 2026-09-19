@@ -13,6 +13,7 @@ import type { ProcessingJobsRepository } from "../repositories/processing-jobs.r
 import type { RejectedChatsRepository } from "../repositories/rejected-chats.repository.ts";
 import type { TemplatesRepository } from "../repositories/templates.repository.ts";
 import type { UsageRepository } from "../repositories/usage.repository.ts";
+import type { UserPreferencesRepository } from "../repositories/user-preferences.repository.ts";
 import type { NoteAIProvider } from "../providers/note-ai.provider.ts";
 import type { EmbeddingProvider, LibraryAnswerProvider } from "../providers/library-ai.provider.ts";
 import { handleCallback } from "../services/callback.service.ts";
@@ -58,6 +59,7 @@ export interface WebhookDependencies {
     readonly rejectedChats: RejectedChatsRepository;
     readonly templates: TemplatesRepository;
     readonly usage: UsageRepository;
+    readonly preferences: UserPreferencesRepository;
     readonly provider: Pick<NoteAIProvider, "generateText">;
     readonly embeddings?: EmbeddingProvider;
     readonly answers?: LibraryAnswerProvider;
@@ -189,6 +191,8 @@ export async function handleWebhookRequest(
           embeddings: deps.phase1.embeddings,
           answers: deps.phase1.answers,
           usage: deps.phase1.usage,
+          preferences: deps.phase1.preferences,
+          templates: deps.phase1.templates,
         });
       }
       log.info("webhook.command", {

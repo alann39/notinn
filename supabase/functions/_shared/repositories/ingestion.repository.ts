@@ -24,7 +24,7 @@ import { classifyPostgresError, toDatabaseError } from "./postgres-errors.ts";
 const UuidSchema = z.uuid();
 const IdSchema = z.coerce.number().int();
 
-/** One row of `accept_and_enqueue_telegram_update`'s result set. */
+/** One row of `accept_and_enqueue_telegram_update_v2`'s result set. */
 const AcceptRowSchema = z.object({
   update_id: IdSchema,
   user_id: UuidSchema.nullable(),
@@ -34,6 +34,7 @@ const AcceptRowSchema = z.object({
   chat_id: IdSchema.nullable(),
   message_id: IdSchema.nullable(),
   queue_message_id: IdSchema.nullable(),
+  template_key: z.string().nullable(),
 });
 
 export type IngestionOutcome = "accepted" | "duplicate" | "user_not_active";
@@ -45,6 +46,7 @@ export interface AcceptResult {
   readonly jobId: string | null;
   readonly jobState: JobState | null;
   readonly queueMessageId: number | null;
+  readonly templateKey: string | null;
   /** Null for a first delivery or when the ledger had no digest. */
   readonly payloadDigestMatches: boolean | null;
 }
@@ -99,7 +101,7 @@ export class IngestionRepository {
     payloadDigest: string,
   ): Promise<AcceptResult> {
     try {
-      const { data, error } = await this.#client.rpc("accept_and_enqueue_telegram_update", {
+      const { data, error } = await this.#client.rpc("accept_and_enqueue_telegram_update_v2", {
         p_update_id: message.updateId,
         p_update_type: "message",
         p_user_id: userId,
@@ -122,13 +124,13 @@ export class IngestionRepository {
       const rows = Array.isArray(data) ? data : [data];
       const first = rows[0];
       if (first === undefined) {
-        throw AppError.internal("accept_and_enqueue_telegram_update returned no rows");
+        throw AppError.internal("accept_and_enqueue_telegram_update_v2 returned no rows");
       }
 
       const parsed = AcceptRowSchema.safeParse(first);
       if (!parsed.success) {
         throw AppError.internal(
-          "accept_and_enqueue_telegram_update returned an unexpected row shape",
+          "accept_and_enqueue_telegram_update_v2 returned an unexpected row shape",
         );
       }
 
@@ -154,6 +156,7 @@ export class IngestionRepository {
         jobId: parsed.data.job_id,
         jobState: parsed.data.job_state as JobState | null,
         queueMessageId: parsed.data.queue_message_id,
+        templateKey: parsed.data.template_key,
         payloadDigestMatches,
       };
     } catch (thrown) {

@@ -43,6 +43,7 @@ const NOTES_REPOSITORY = new URL("notes.repository.ts", REPOSITORY_DIR);
 const REJECTED_CHATS_REPOSITORY = new URL("rejected-chats.repository.ts", REPOSITORY_DIR);
 const TEMPLATES_REPOSITORY = new URL("templates.repository.ts", REPOSITORY_DIR);
 const PROCESSING_JOBS_REPOSITORY = new URL("processing-jobs.repository.ts", REPOSITORY_DIR);
+const USER_PREFERENCES_REPOSITORY = new URL("user-preferences.repository.ts", REPOSITORY_DIR);
 
 /** Read every migration, concatenated, with its filename attached for messages. */
 async function loadMigrations(): Promise<{ name: string; sql: string }[]> {
@@ -81,6 +82,8 @@ const FILE_SUFFIXES = [
   "phase4_full_text_library.sql",
   "phase4_semantic_library.sql",
   "phase4_embedding_fk_index.sql",
+  "phase5_user_preference_contract.sql",
+  "phase5_scrub_staged_job_payload.sql",
 ] as const;
 
 /** Read the one migration whose filename ends with `suffix`. */
@@ -104,6 +107,7 @@ const PIPELINE_FUNCTIONS_SQL = await loadMigration("phase1_pipeline_functions.sq
 const PHASE2_WORKER_SQL = await loadMigration("phase2_durable_queue_worker.sql");
 const PHASE4_LIBRARY_SQL = await loadMigration("phase4_full_text_library.sql");
 const PHASE4_SEMANTIC_SQL = await loadMigration("phase4_semantic_library.sql");
+const PHASE5_PREFERENCES_SQL = await loadMigration("phase5_user_preference_contract.sql");
 const ALL_MIGRATIONS = await loadMigrations();
 const ALL_SQL = ALL_MIGRATIONS.map((migration) => migration.sql).join("\n");
 
@@ -623,7 +627,7 @@ function declaredParameters(
  */
 const RPC_CONTRACTS = [
   [INGESTION_REPOSITORY, "ensure_telegram_user", INGESTION_SQL],
-  [INGESTION_REPOSITORY, "accept_and_enqueue_telegram_update", PHASE2_WORKER_SQL],
+  [INGESTION_REPOSITORY, "accept_and_enqueue_telegram_update_v2", PHASE5_PREFERENCES_SQL],
   [INGESTION_REPOSITORY, "telegram_update_digest_matches", PIPELINE_FUNCTIONS_SQL],
   [NOTES_REPOSITORY, "persist_note", NOTE_FUNCTIONS_SQL],
   [NOTES_REPOSITORY, "regenerate_note_output", NOTE_FUNCTIONS_SQL],
@@ -641,7 +645,9 @@ const RPC_CONTRACTS = [
   [TEMPLATES_REPOSITORY, "find_template_for_generation", PIPELINE_FUNCTIONS_SQL],
   [PROCESSING_JOBS_REPOSITORY, "read_processing_queue", PHASE2_WORKER_SQL],
   [PROCESSING_JOBS_REPOSITORY, "find_processing_queue_message_id", PHASE2_WORKER_SQL],
-  [PROCESSING_JOBS_REPOSITORY, "claim_processing_job", PHASE2_WORKER_SQL],
+  [PROCESSING_JOBS_REPOSITORY, "claim_processing_job", PHASE5_PREFERENCES_SQL],
+  [USER_PREFERENCES_REPOSITORY, "get_user_preferences", PHASE5_PREFERENCES_SQL],
+  [USER_PREFERENCES_REPOSITORY, "update_user_preference", PHASE5_PREFERENCES_SQL],
 ] as const;
 
 for (const [repository, name, sql] of RPC_CONTRACTS) {
@@ -686,9 +692,8 @@ for (const [repository, name, sql] of RPC_CONTRACTS) {
 const OUTCOME_VOCABULARIES = [
   {
     repository: INGESTION_REPOSITORY,
-    fn: "accept_and_enqueue_telegram_update",
-    // The wrapper forwards the Phase 0 ingestion function's outcome verbatim.
-    sql: `${PHASE2_WORKER_SQL}\n${INGESTION_SQL}`,
+    fn: "accept_and_enqueue_telegram_update_v2",
+    sql: PHASE5_PREFERENCES_SQL,
     outcomes: ["accepted", "duplicate", "user_not_active"],
   },
   {

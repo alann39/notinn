@@ -27,6 +27,8 @@ function claimed(overrides: Partial<ClaimedProcessingJob> = {}): ClaimedProcessi
     sizeBytes: null,
     durationSeconds: null,
     templateKey: "clean_note",
+    outputLanguage: "mirror",
+    privacyMode: "balanced",
     state: "ACQUIRING",
     attemptCount: 0,
     noteId: null,

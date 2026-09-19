@@ -1,11 +1,13 @@
 # Architecture
 
-Phase 4. Telegram ingestion is separated from processing by an atomic PGMQ
+Phase 5. Telegram ingestion is separated from processing by an atomic PGMQ
 message. One Gemini adapter handles text, audio, images, and PDFs; deterministic
 extractors handle DOCX/TXT/Markdown. See
 [ADR 0008](ADR/0008-phase-2-durable-worker.md) and
 [ADR 0009](ADR/0009-phase-3-ephemeral-documents.md), and
-[ADR 0011](ADR/0011-phase-4-search-first.md).
+[ADR 0011](ADR/0011-phase-4-search-first.md). Preference snapshotting and
+minimal-retention enforcement are defined in
+[ADR 0013](ADR/0013-future-job-preference-snapshots.md).
 
 ## The shape
 
@@ -31,7 +33,7 @@ claim permits only one legal `QUEUED → ACQUIRING` transition.
 
 ```
 supabase/
-  migrations/          fourteen ordered migrations; the schema's source of truth
+  migrations/          ordered migrations; the schema's source of truth
   functions/
     telegram-webhook/index.ts     ingestion composition root
     process-job/index.ts          worker composition root

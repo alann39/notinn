@@ -117,10 +117,12 @@ function requiredClaim(job: ClaimedProcessingJob): asserts job is ClaimedProcess
   readonly chatId: number;
   readonly inputType: NonNullable<ClaimedProcessingJob["inputType"]>;
   readonly state: "ACQUIRING";
+  readonly outputLanguage: NonNullable<ClaimedProcessingJob["outputLanguage"]>;
+  readonly privacyMode: NonNullable<ClaimedProcessingJob["privacyMode"]>;
 } {
   if (
     job.userId === null || job.chatId === null || job.inputType === null ||
-    job.state !== "ACQUIRING"
+    job.state !== "ACQUIRING" || job.outputLanguage === null || job.privacyMode === null
   ) {
     throw AppError.internal("claimed job omitted required worker metadata");
   }
@@ -240,6 +242,7 @@ async function generateNewNote(
     readonly userId: string;
     readonly chatId: number;
     readonly inputType: NonNullable<ClaimedProcessingJob["inputType"]>;
+    readonly outputLanguage: NonNullable<ClaimedProcessingJob["outputLanguage"]>;
   },
   templateKey: SystemTemplateKey,
   state: { value: JobState },
@@ -262,7 +265,7 @@ async function generateNewNote(
       template,
       templateKey,
       reason: "initial",
-      outputLanguage: null,
+      outputLanguage: job.outputLanguage === "mirror" ? null : job.outputLanguage,
     });
     return { generation, sourceText: job.sourceText, operation: "generation", documentPages: null };
   }
@@ -288,7 +291,7 @@ async function generateNewNote(
         mimeType,
         template,
         templateKey,
-        outputLanguage: null,
+        outputLanguage: job.outputLanguage === "mirror" ? null : job.outputLanguage,
       });
       return {
         generation,
@@ -317,7 +320,7 @@ async function generateNewNote(
         pdf,
         template,
         templateKey,
-        outputLanguage: null,
+        outputLanguage: job.outputLanguage === "mirror" ? null : job.outputLanguage,
       });
       return {
         generation,
@@ -350,7 +353,7 @@ async function generateNewNote(
         template,
         templateKey,
         reason: "initial",
-        outputLanguage: null,
+        outputLanguage: job.outputLanguage === "mirror" ? null : job.outputLanguage,
       });
       return { generation, sourceText, operation: "generation", documentPages: null };
     } finally {
@@ -387,7 +390,7 @@ async function generateNewNote(
       mimeType,
       template,
       templateKey,
-      outputLanguage: null,
+      outputLanguage: job.outputLanguage === "mirror" ? null : job.outputLanguage,
     });
     return {
       generation,

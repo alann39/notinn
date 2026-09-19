@@ -3,7 +3,7 @@
 Telegram-first note capture. Send Notinn a message, a voice note, a screenshot, a
 PDF or a document, and get back a structured, searchable note.
 
-**Status: Phase 4 Semantic Library is complete in development.** Text, voice/audio, screenshots,
+**Status: Phase 5 personalization is in progress.** Text, voice/audio, screenshots,
 PDF, DOCX, TXT, and Markdown are processed by the durable PGMQ worker using one
 Gemini API key with a configured primary and transient-error fallback model. Raw
 media is downloaded into bounded memory, never stored, and zero-filled after
@@ -13,6 +13,11 @@ processing. DOCX/TXT/Markdown are extracted locally before model generation. See
 Saved notes can be listed with `/recent`, searched by title, tags, retained source,
 or current note content with `/search <keywords>`, and queried with evidence-only
 answers through `/ask <question>` after the embedding model is enabled.
+
+`/settings` now controls output language (`mirror`, Indonesian, or English),
+balanced/minimal privacy, and default templates for text, voice, and document
+inputs. Changes are snapshotted onto future jobs and never rewrite queued or
+existing notes.
 
 ---
 

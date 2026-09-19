@@ -1,11 +1,46 @@
 # Implementation status
 
-**Phase:** 4 — Knowledge Library (completed)
-**Date:** 2026-09-18
+**Phase:** 5 — Personalization and templates (in progress)
+**Date:** 2026-09-19
 **Last verified:** the commands in [Verification](#verification) were run and their
-output is quoted verbatim below.
+output is recorded below.
 
-## Phase 4 current snapshot
+## Phase 5 current snapshot
+
+The first Phase 5 slice is implemented and deployed to development:
+
+- `/settings` shows and updates output language (`mirror`, `id`, `en`), privacy
+  mode (`balanced`, `minimal`), and default templates for text, voice/audio, and
+  document/image inputs.
+- The atomic ingestion RPC resolves template overrides and snapshots template,
+  output language, and privacy mode onto the durable job. Settings changes affect
+  future accepted updates only; queued/retrying jobs remain deterministic.
+- The worker sends the snapped output language to Gemini. `mirror` keeps the
+  existing source-language behavior.
+- `stage_note_for_delivery` enforces minimal retention from the database-owned
+  job snapshot. Minimal jobs persist no normalized source and no source digest;
+  staging immediately scrubs direct text, Telegram file handles/identifiers, and
+  filenames because delivery retries reuse the staged note. Terminal transitions
+  repeat the scrub defensively.
+- A minimal note cannot be regenerated or reformatted because its source was not
+  retained. Telegram now explains that condition instead of saying the note is
+  missing.
+- Existing users were backfilled with one preference row. New users receive the
+  row during idempotent onboarding.
+- Preference RPCs are `SECURITY DEFINER`, use an empty `search_path`, and are
+  executable only by `service_role`. Read-only production verification found one
+  preference row for one user, no jobs missing snapshots, all four FK indexes,
+  and no client-role execute privilege.
+- Migration `phase5_user_preference_contract` is applied. `telegram-webhook`
+  version 21 and `process-job` version 24 are active; an unsigned webhook POST
+  still returns an empty HTTP 401.
+- Type-check passes and the hermetic suite reports **490 passed, 0 failed**.
+
+The consistency and retention decision is recorded in
+[ADR 0013](ADR/0013-future-job-preference-snapshots.md). Custom templates and
+Markdown/text export remain the next Phase 5 slices.
+
+## Phase 4 snapshot (completed)
 
 Library Search and the Semantic Library foundation are implemented and deployed to development:
 
@@ -562,9 +597,8 @@ the user approved continuing to the deployment stage.
 
 ## Recommended next step
 
-Begin Phase 5 with the user-preference contract: default template by input type,
-output language, and balanced/minimal privacy mode. Keep those settings scoped to
-future jobs before adding custom templates and Markdown/text export. Before
-promoting beyond development, configure `NOTINN_TEST_*` and run the automated
-integration/e2e release gate.
+Run one live `/settings` matrix (language, template override, and minimal privacy)
+through Telegram, then implement owner-scoped custom templates. Markdown/text
+export follows custom-template validation. Before promoting beyond development,
+configure `NOTINN_TEST_*` and run the automated integration/e2e release gate.
 191666d7eabac7948c21d3c2d4566b69e43719a1
