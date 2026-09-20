@@ -1,14 +1,15 @@
 # Implementation status
 
-**Phase:** 5 — Personalization, templates, and export (implemented; live export check pending)
-**Date:** 2026-09-19
+**Phase:** 5 — Personalization, templates, and export (implemented; UI polish deployed)
+**Date:** 2026-09-20
 **Last verified:** the commands in [Verification](#verification) were run and their
 output is recorded below.
 
 ## Phase 5 current snapshot
 
 The preference, custom-template, and export slices of Phase 5 are implemented and
-deployed to development. Export is awaiting its final live Telegram check:
+deployed to development. The completed-note UI and export typography have also
+received their pre-Phase-6 polish pass:
 
 - `/settings` shows and updates output language (`mirror`, `id`, `en`), privacy
   mode (`balanced`, `minimal`), and default templates for text, voice/audio, and
@@ -38,9 +39,12 @@ deployed to development. Export is awaiting its final live Telegram check:
 - Custom objectives always reuse Notinn's fixed structured-note schema. Generation
   reads recheck active status, owner, and source-type applicability, so callback
   data and template text are never authorization or policy controls.
-- Every note keyboard offers Markdown, plain-text, and PDF export. The callback performs
-  the same owner-scoped current-note read used by Open, validates `content_json`,
-  and renders every structured-note group without another Gemini request.
+- Every note initially shows only Save/Unsave, Edit, and Delete. Edit reveals
+  regeneration, a paginated format picker, and a dedicated export submenu only
+  when requested. Template labels are not queried during normal note delivery.
+- Markdown, plain-text, and PDF export use the same owner-scoped current-note read
+  used by Open, validate `content_json`, and render every structured-note group
+  without another Gemini request.
 - PDF export uses an A4 multipage layout, deterministic wrapping, page numbers,
   document metadata, and an embedded exact UTF-8 text copy for source characters
   outside the standard PDF display font.
@@ -54,8 +58,8 @@ deployed to development. Export is awaiting its final live Telegram check:
   and no client-role execute privilege.
 - Migrations `phase5_user_preference_contract`,
   `phase5_scrub_staged_job_payload`, and `phase5_custom_templates` are applied.
-  `telegram-webhook` version 26 and `process-job` version 27 are active.
-- Type-check passes and the hermetic suite reports **510 passed, 0 failed**.
+  `telegram-webhook` version 27 and `process-job` version 28 are active.
+- Type-check passes and the hermetic suite reports **513 passed, 0 failed**.
 
 The consistency and retention decision is recorded in
 [ADR 0013](ADR/0013-future-job-preference-snapshots.md).
@@ -617,7 +621,6 @@ the user approved continuing to the deployment stage.
 
 ## Recommended next step
 
-Tap all three export buttons on a newly generated or reopened note and verify the
-downloaded Markdown, text, and PDF files. Before promoting beyond development,
-configure `NOTINN_TEST_*` and run the automated integration/e2e release gate.
-191666d7eabac7948c21d3c2d4566b69e43719a1
+Verify the compact Save/Edit/Delete row and each nested Edit path on one newly
+generated note. Before promoting beyond development, configure `NOTINN_TEST_*`
+and run the automated integration/e2e release gate.
