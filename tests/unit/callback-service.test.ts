@@ -206,24 +206,27 @@ Deno.test("malformed callback data is acknowledged without resolving a user", as
   assertEquals(test.events, ["answer"]);
 });
 
-Deno.test("Edit reveals each submenu only when requested", async () => {
+Deno.test("Options reveals each submenu only when requested", async () => {
   const test = harness();
 
   await handleCallback(callback(payload("edit")), test.deps);
   assertEquals(test.keyboards.at(-1), [
-    ["Shorter", "More detailed"],
-    ["Change format", "Export"],
-    ["Back"],
+    ["✂️ Shorter", "📝 More detail"],
+    ["🎨 Change format", "📤 Export"],
+    ["⬅️ Back"],
   ]);
 
   await handleCallback(callback(payload("edit_export")), test.deps);
-  assertEquals(test.keyboards.at(-1), [["Markdown", "Text", "PDF"], ["Back"]]);
+  assertEquals(test.keyboards.at(-1), [
+    ["📝 Markdown", "📄 Text", "📕 PDF"],
+    ["⬅️ Back to options"],
+  ]);
 
   await handleCallback(callback(payload("edit_format")), test.deps);
-  assertEquals(test.keyboards.at(-1), [["Short Summary"], ["Back"]]);
+  assertEquals(test.keyboards.at(-1), [["⚡ Short Summary"], ["⬅️ Back to options"]]);
 
   await handleCallback(callback(payload("edit_back")), test.deps);
-  assertEquals(test.keyboards.at(-1), [["Unsave", "Edit", "Delete"]]);
+  assertEquals(test.keyboards.at(-1), [["📤 Unsave", "⚙️ Options", "🗑️ Delete"]]);
   assertEquals(test.providerCalls(), 0);
 });
 

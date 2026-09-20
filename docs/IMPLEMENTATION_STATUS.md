@@ -39,9 +39,15 @@ received their pre-Phase-6 polish pass:
 - Custom objectives always reuse Notinn's fixed structured-note schema. Generation
   reads recheck active status, owner, and source-type applicability, so callback
   data and template text are never authorization or policy controls.
-- Every note initially shows only Save/Unsave, Edit, and Delete. Edit reveals
+- Every note initially shows only icon-labelled Save/Unsave, Options, and Delete.
+  Options reveals
   regeneration, a paginated format picker, and a dedicated export submenu only
-  when requested. Template labels are not queried during normal note delivery.
+  when requested. Semantic button colors distinguish primary, success, and danger
+  actions. Template labels are not queried during normal note delivery.
+- List-like lines inside summaries and sections are normalized before rendering.
+  Hyphen, asterisk, bullet, checkbox, and numbered prefixes become compact lists
+  with continuation indentation in Telegram, Markdown, TXT, and PDF instead of
+  collapsing into prose or gaining paragraph-sized gaps between every item.
 - Markdown, plain-text, and PDF export use the same owner-scoped current-note read
   used by Open, validate `content_json`, and render every structured-note group
   without another Gemini request.
@@ -59,7 +65,10 @@ received their pre-Phase-6 polish pass:
 - Migrations `phase5_user_preference_contract`,
   `phase5_scrub_staged_job_payload`, and `phase5_custom_templates` are applied.
   `telegram-webhook` version 27 and `process-job` version 28 are active.
-- Type-check passes and the hermetic suite reports **513 passed, 0 failed**.
+- Type-check passes and the hermetic suite reports **515 passed, 0 failed**.
+- The bullet normalization and icon-labelled Options UI are source-verified but
+  not yet live. Production deployment requires explicit approval; the active
+  versions remain `telegram-webhook` v27 and `process-job` v28 until that approval.
 
 The consistency and retention decision is recorded in
 [ADR 0013](ADR/0013-future-job-preference-snapshots.md).
@@ -621,6 +630,6 @@ the user approved continuing to the deployment stage.
 
 ## Recommended next step
 
-Verify the compact Save/Edit/Delete row and each nested Edit path on one newly
+Verify the compact Save/Options/Delete row and each nested Options path on one newly
 generated note. Before promoting beyond development, configure `NOTINN_TEST_*`
 and run the automated integration/e2e release gate.

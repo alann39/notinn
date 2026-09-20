@@ -168,6 +168,29 @@ Deno.test("paragraphs inside a section keep their break as a blank line", () => 
   );
 });
 
+Deno.test("list-like section content becomes one compact semantic list", () => {
+  const { html } = renderNoteOutput(
+    structuredNoteFixture({
+      summary: "",
+      sections: [{
+        heading: "Structure",
+        content:
+          "- Coordinator: Dyas\n\n- Vice coordinator: Griselda\n  and the supporting team\n\n1) Treasurer: Fadhilah",
+      }],
+      key_points: [],
+      action_items: [],
+      decisions: [],
+      uncertainties: [],
+    }),
+  );
+
+  assertEquals(
+    html,
+    "<b>Synthetic weekly sync</b>\n\n<b>Structure</b>\n• Coordinator: Dyas\n• Vice coordinator: Griselda and the supporting team\n1. Treasurer: Fadhilah",
+  );
+  assertEquals(html.includes("\n\n• Vice coordinator"), false);
+});
+
 Deno.test("an action item loses a clause rather than gaining a placeholder", () => {
   // Blueprint 12.4: unknown values are null, never fabricated. Rendering a null
   // owner as "unassigned" would put a value where the contract says there is none.
@@ -422,7 +445,12 @@ Deno.test("the primary keyboard stays minimal", () => {
   });
 
   assertEquals(keyboard.length, 1);
-  assertEquals(keyboard[0]?.map((button) => button.text), ["Save", "Edit", "Delete"]);
+  assertEquals(keyboard[0]?.map((button) => button.text), [
+    "💾 Save",
+    "⚙️ Options",
+    "🗑️ Delete",
+  ]);
+  assertEquals(keyboard[0]?.map((button) => button.style), ["success", "primary", "danger"]);
   assertEquals(
     keyboard[0]?.map((button) => decodeCallbackPayload(button.callback_data).action),
     [{ kind: "save" }, { kind: "edit" }, { kind: "delete" }],
@@ -437,28 +465,28 @@ Deno.test("the save button becomes unsave, and its payload changes with it", () 
     });
 
   const unsaved = build(false)[0]?.[0];
-  assertEquals(unsaved?.text, "Save");
+  assertEquals(unsaved?.text, "💾 Save");
   assertEquals(decodeCallbackPayload(unsaved?.callback_data ?? "").action, { kind: "save" });
 
   const saved = build(true)[0]?.[0];
-  assertEquals(saved?.text, "Unsave");
+  assertEquals(saved?.text, "📤 Unsave");
   assertEquals(decodeCallbackPayload(saved?.callback_data ?? "").action, { kind: "unsave" });
 });
 
-Deno.test("Edit progressively reveals regeneration, format, and export actions", () => {
+Deno.test("Options progressively reveals regeneration, format, and export actions", () => {
   const keyboard = buildEditKeyboard(NOTE_ID);
   assertEquals(keyboard.map((row) => row.map((item) => item.text)), [
-    ["Shorter", "More detailed"],
-    ["Change format", "Export"],
-    ["Back"],
+    ["✂️ Shorter", "📝 More detail"],
+    ["🎨 Change format", "📤 Export"],
+    ["⬅️ Back"],
   ]);
 });
 
 Deno.test("the export submenu offers all file types and a way back", () => {
   const keyboard = buildExportKeyboard(NOTE_ID);
   assertEquals(keyboard.map((row) => row.map((item) => item.text)), [
-    ["Markdown", "Text", "PDF"],
-    ["Back"],
+    ["📝 Markdown", "📄 Text", "📕 PDF"],
+    ["⬅️ Back to options"],
   ]);
   assertEquals(
     keyboard[0]?.map((button) => decodeCallbackPayload(button.callback_data).action),
@@ -531,7 +559,9 @@ Deno.test("an empty available-template list produces only a way back", () => {
   const formats = keyboard.flat().filter((button) => button.callback_data.includes("format."));
 
   assertEquals(formats.length, 0);
-  assertEquals(keyboard.map((row) => row.map((item) => item.text)), [["Back"]]);
+  assertEquals(keyboard.map((row) => row.map((item) => item.text)), [[
+    "⬅️ Back to options",
+  ]]);
 });
 
 Deno.test("every button payload fits Telegram's byte limit", () => {

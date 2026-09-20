@@ -283,6 +283,8 @@ export const SUBSCRIBED_UPDATE_KINDS = ["message", "callback_query"] as const;
 /** One button on an inline keyboard. */
 export interface InlineKeyboardButton {
   readonly text: string;
+  /** Visual emphasis supported by Telegram Bot API 10.x clients. */
+  readonly style?: "danger" | "success" | "primary";
   /**
    * The payload, from `schemas/callback.ts`. Never user content: blueprint 17.4
    * requires opaque ids, and Telegram echoes this value back verbatim.

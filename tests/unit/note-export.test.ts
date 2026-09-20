@@ -61,6 +61,23 @@ Deno.test("plain-text export remains readable and uses a safe fallback filename"
   assert(content.includes("Confidence: 80%"));
 });
 
+Deno.test("list-like section content stays structured in Markdown and plain text", async () => {
+  const overrides = {
+    sections: [{
+      heading: "Structure",
+      content: "- Coordinator: Dyas\n\n- Vice coordinator: Griselda\n\n1) Treasurer: Fadhilah",
+    }],
+  };
+  const markdown = (await decoded("markdown", overrides)).content;
+  const text = (await decoded("text", overrides)).content;
+
+  assert(markdown.includes("## Structure\n\n- Coordinator: Dyas\n- Vice coordinator: Griselda"));
+  assert(markdown.includes("1. Treasurer: Fadhilah"));
+  assert(text.includes("Structure\n---------\n• Coordinator: Dyas\n• Vice coordinator: Griselda"));
+  assert(text.includes("1. Treasurer: Fadhilah"));
+  assertEquals(text.includes("\n\n• Vice coordinator"), false);
+});
+
 Deno.test("empty optional groups are omitted from both text export formats", async () => {
   const overrides = {
     summary: "",

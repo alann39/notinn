@@ -64,8 +64,8 @@ const SEGMENT_COUNT = 4;
  * The inline actions the completed-note surface can decode.
  *
  * This is a subset of the inline actions blueprint 7.5 requires, on purpose and on
- * the record. The compact surface delivers Save/Unsave, Edit and Delete first;
- * Edit progressively reveals Shorter, More detailed, Change format and exports.
+ * the record. The compact surface delivers Save/Unsave, Options and Delete first;
+ * Options progressively reveals Shorter, More detail, Change format and exports.
  * The rest are deferred with the phase that takes them:
  *
  *   * Show transcript/extracted text — Phase 2, where "Transcript review" is a

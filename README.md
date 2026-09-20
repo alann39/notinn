@@ -22,12 +22,16 @@ created with `/template create Name | text,voice,document | Instructions` and
 archived with `/template archive <template_key>`.
 
 Every delivered or reopened note now starts with one compact action row: `Save`,
-`Edit`, and `Delete`. Edit progressively reveals shorter/detailed regeneration,
+`Options`, and `Delete`. Options progressively reveals shorter/detailed regeneration,
 paginated format choices, and Markdown/TXT/PDF export, so template buttons no
-longer crowd the result. Exports are rendered in memory without another Gemini
-request and are never written to Supabase Storage. TXT output uses a 72-character
-measure, while PDFs use a readable A4 multipage hierarchy and carry an exact
-UTF-8 text attachment for characters outside the built-in display font.
+longer crowd the result. Every action has a stable icon and primary, success, and
+danger actions use Telegram's matching button emphasis. List-like lines inside a
+summary or section are normalized into compact bullets, numbered items, or
+checkboxes instead of being displayed as loosely spaced prose. Exports are
+rendered in memory without another Gemini request and are never written to
+Supabase Storage. TXT output uses a 72-character measure, while PDFs use a readable
+A4 multipage hierarchy and carry an exact UTF-8 text attachment for characters
+outside the built-in display font.
 
 ---
 

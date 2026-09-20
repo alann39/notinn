@@ -3,6 +3,7 @@ import { AppError } from "../errors/app-error.ts";
 import { encodeCallbackPayload } from "../schemas/callback.ts";
 import type { StructuredNote } from "../schemas/structured-note.ts";
 import type { InlineKeyboardButton, InlineKeyboardMarkup } from "../telegram/client.ts";
+import { parseStructuredText } from "./structured-text.ts";
 
 /** The rows inside Telegram's reply_markup object. */
 type InlineKeyboard = InlineKeyboardMarkup["inline_keyboard"];
@@ -73,6 +74,8 @@ export type BlockStyle = "bold" | "plain" | "bullet";
 export interface Block {
   readonly style: BlockStyle;
   readonly text: string;
+  /** List marker rendered outside escaped content. */
+  readonly prefix?: string;
 }
 
 /** Markup added at render time. Never part of `text`, so it is never escaped. */
@@ -80,8 +83,8 @@ const BOLD_OPEN = "<b>";
 const BOLD_CLOSE = "</b>";
 const BULLET = "• ";
 
-function prefixOf(style: BlockStyle): string {
-  return style === "bullet" ? BULLET : "";
+function prefixOf(block: Block): string {
+  return block.prefix ?? (block.style === "bullet" ? BULLET : "");
 }
 
 /**
@@ -93,7 +96,7 @@ function prefixOf(style: BlockStyle): string {
  * the safe direction, since it can only make a message shorter than the limit.
  */
 function displayLength(block: Block): number {
-  return block.text.length + prefixOf(block.style).length;
+  return block.text.length + prefixOf(block).length;
 }
 
 /** A blank line. Costs nothing to display and one separator to pack. */
@@ -142,12 +145,14 @@ export const NOTE_LABELS = {
  * blank lines.
  */
 function pushParagraphs(blocks: Block[], content: string): void {
-  const paragraphs = content.split(/\n+/).map((line) => line.trim()).filter((line) => line !== "");
-
-  paragraphs.forEach((text, index) => {
-    if (index > 0) blocks.push(spacer());
-    blocks.push({ style: "plain", text });
-  });
+  for (const part of parseStructuredText(content)) {
+    if (part.breakBefore) blocks.push(spacer());
+    blocks.push(
+      part.kind === "list_item"
+        ? { style: "bullet", text: part.text, prefix: `${part.marker ?? "•"} ` }
+        : { style: "plain", text: part.text },
+    );
+  }
 }
 
 /**
@@ -288,10 +293,10 @@ function wrapText(text: string, width: number): string[] {
  * confusing than silently changing it to prose.
  */
 function splitBlock(block: Block, limit: number): Block[] {
-  const width = limit - prefixOf(block.style).length;
+  const width = limit - prefixOf(block).length;
   if (block.text.length <= width) return [block];
 
-  return wrapText(block.text, width).map((text): Block => ({ style: block.style, text }));
+  return wrapText(block.text, width).map((text): Block => ({ ...block, text }));
 }
 
 function splitNoteBlocks(blocks: readonly Block[], limit: number): Block[][] {
@@ -339,7 +344,7 @@ function renderPage(blocks: readonly Block[]): string {
     .map((block) =>
       block.style === "bold"
         ? `${BOLD_OPEN}${escapeHtml(block.text)}${BOLD_CLOSE}`
-        : `${prefixOf(block.style)}${escapeHtml(block.text)}`
+        : `${prefixOf(block)}${escapeHtml(block.text)}`
     )
     .join("\n");
 }
@@ -439,18 +444,37 @@ function button(
   action: Parameters<typeof encodeCallbackPayload>[0]["action"],
   noteId: string,
   revision = 0,
+  style?: InlineKeyboardButton["style"],
 ): InlineKeyboardButton {
   return {
     text,
+    ...(style === undefined ? {} : { style }),
     callback_data: encodeCallbackPayload({ action, resourceId: noteId, revision }),
   };
+}
+
+function templateIcon(key: string): string {
+  const icons: Readonly<Record<string, string>> = {
+    clean_note: "📝",
+    short_summary: "⚡",
+    detailed_summary: "📚",
+    key_points: "📌",
+    action_items: "✅",
+    meeting_notes: "👥",
+    study_notes: "🎓",
+    decision_log: "🧭",
+    sop_procedure: "🧩",
+    research_note: "🔬",
+    extract_and_summarize: "🔎",
+  };
+  return icons[key] ?? "✨";
 }
 
 /**
  * The compact keyboard attached to every delivered note.
  *
  * The three primary intents stay visible; regeneration, format selection and
- * export live behind Edit. Progressive disclosure keeps the result itself in
+ * export live behind Options. Progressive disclosure keeps the result itself in
  * focus and prevents eleven system templates plus custom templates from taking
  * over the conversation.
  *
@@ -465,24 +489,30 @@ function button(
 export function buildNoteKeyboard(options: NoteKeyboardOptions): InlineKeyboard {
   const { noteId, isSaved } = options;
   return [[
-    button(isSaved ? "Unsave" : "Save", isSaved ? { kind: "unsave" } : { kind: "save" }, noteId),
-    button("Edit", { kind: "edit" }, noteId),
-    button("Delete", { kind: "delete" }, noteId),
+    button(
+      isSaved ? "📤 Unsave" : "💾 Save",
+      isSaved ? { kind: "unsave" } : { kind: "save" },
+      noteId,
+      0,
+      "success",
+    ),
+    button("⚙️ Options", { kind: "edit" }, noteId, 0, "primary"),
+    button("🗑️ Delete", { kind: "delete" }, noteId, 0, "danger"),
   ]];
 }
 
-/** The first level revealed after Edit. */
+/** The first level revealed after Options. */
 export function buildEditKeyboard(noteId: string): InlineKeyboard {
   return [
     [
-      button("Shorter", { kind: "shorter" }, noteId),
-      button("More detailed", { kind: "detailed" }, noteId),
+      button("✂️ Shorter", { kind: "shorter" }, noteId),
+      button("📝 More detail", { kind: "detailed" }, noteId),
     ],
     [
-      button("Change format", { kind: "edit_format" }, noteId),
-      button("Export", { kind: "edit_export" }, noteId),
+      button("🎨 Change format", { kind: "edit_format" }, noteId),
+      button("📤 Export", { kind: "edit_export" }, noteId),
     ],
-    [button("Back", { kind: "edit_back" }, noteId)],
+    [button("⬅️ Back", { kind: "edit_back" }, noteId, 0, "primary")],
   ];
 }
 
@@ -490,11 +520,11 @@ export function buildEditKeyboard(noteId: string): InlineKeyboard {
 export function buildExportKeyboard(noteId: string): InlineKeyboard {
   return [
     [
-      button("Markdown", { kind: "export_md" }, noteId),
-      button("Text", { kind: "export_txt" }, noteId),
-      button("PDF", { kind: "export_pdf" }, noteId),
+      button("📝 Markdown", { kind: "export_md" }, noteId),
+      button("📄 Text", { kind: "export_txt" }, noteId),
+      button("📕 PDF", { kind: "export_pdf" }, noteId),
     ],
-    [button("Back", { kind: "edit" }, noteId)],
+    [button("⬅️ Back to options", { kind: "edit" }, noteId, 0, "primary")],
   ];
 }
 
@@ -512,7 +542,7 @@ export function buildFormatKeyboard(options: FormatKeyboardOptions): InlineKeybo
     rows.push(
       visible.slice(index, index + 2).map((key) =>
         button(
-          labelFor(options.templateLabels, key),
+          `${templateIcon(key)} ${labelFor(options.templateLabels, key)}`,
           { kind: "format", templateKey: key },
           options.noteId,
         )
@@ -522,13 +552,13 @@ export function buildFormatKeyboard(options: FormatKeyboardOptions): InlineKeybo
 
   const navigation: InlineKeyboardButton[] = [];
   if (page > 0) {
-    navigation.push(button("‹ Previous", { kind: "format_prev" }, options.noteId, page - 1));
+    navigation.push(button("⬅️ Previous", { kind: "format_prev" }, options.noteId, page - 1));
   }
   if (page < pageCount - 1) {
-    navigation.push(button("Next ›", { kind: "format_next" }, options.noteId, page + 1));
+    navigation.push(button("➡️ Next", { kind: "format_next" }, options.noteId, page + 1));
   }
   if (navigation.length > 0) rows.push(navigation);
-  rows.push([button("Back", { kind: "edit" }, options.noteId)]);
+  rows.push([button("⬅️ Back to options", { kind: "edit" }, options.noteId, 0, "primary")]);
   return rows;
 }
 
@@ -545,7 +575,7 @@ export function buildFormatKeyboard(options: FormatKeyboardOptions): InlineKeybo
  */
 export function buildDeleteConfirmationKeyboard(noteId: string): InlineKeyboard {
   return [[
-    button("Yes, delete", { kind: "delete_confirm" }, noteId),
-    button("Cancel", { kind: "cancel_delete" }, noteId),
+    button("🗑️ Yes, delete", { kind: "delete_confirm" }, noteId, 0, "danger"),
+    button("↩️ Cancel", { kind: "cancel_delete" }, noteId),
   ]];
 }

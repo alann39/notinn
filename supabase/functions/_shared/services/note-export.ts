@@ -1,6 +1,7 @@
 import { PDFDocument, type PDFFont, type PDFPage, rgb, StandardFonts } from "pdf-lib";
 import { AppError } from "../errors/app-error.ts";
 import type { StructuredNote } from "../schemas/structured-note.ts";
+import { parseStructuredText, type StructuredTextBlock } from "./structured-text.ts";
 
 export const NOTE_EXPORT_FORMATS = ["markdown", "text", "pdf"] as const;
 export type NoteExportFormat = (typeof NOTE_EXPORT_FORMATS)[number];
@@ -98,9 +99,42 @@ function textHeading(value: string, marker = "-"): string {
   return `${value}\n${marker.repeat(length)}`;
 }
 
-function textBullet(value: string): string {
-  const lines = wrapPlainLine(value, TEXT_MEASURE - 2);
-  return lines.map((line, index) => `${index === 0 ? "• " : "  "}${line}`).join("\n");
+function textBullet(value: string, marker = "•"): string {
+  const prefix = `${marker} `;
+  const indent = " ".repeat(prefix.length);
+  const lines = wrapPlainLine(value, TEXT_MEASURE - prefix.length);
+  return lines.map((line, index) => `${index === 0 ? prefix : indent}${line}`).join("\n");
+}
+
+function markdownMarker(block: StructuredTextBlock): string {
+  if (block.marker === "[ ]" || block.marker === "[x]") return `- ${block.marker}`;
+  return block.marker?.endsWith(".") ? block.marker : "-";
+}
+
+function markdownStructuredText(value: string): string {
+  const lines: string[] = [];
+  for (const block of parseStructuredText(value)) {
+    if (block.breakBefore && lines.at(-1) !== "") lines.push("");
+    lines.push(
+      block.kind === "list_item"
+        ? `${markdownMarker(block)} ${markdown(block.text)}`
+        : markdown(block.text),
+    );
+  }
+  return lines.join("\n");
+}
+
+function textStructuredText(value: string): string {
+  const lines: string[] = [];
+  for (const block of parseStructuredText(value)) {
+    if (block.breakBefore && lines.at(-1) !== "") lines.push("");
+    lines.push(
+      block.kind === "list_item"
+        ? textBullet(block.text, block.marker ?? "•")
+        : wrapPlainText(block.text),
+    );
+  }
+  return lines.join("\n");
 }
 
 function textAction(item: StructuredNote["action_items"][number]): string {
@@ -120,11 +154,11 @@ function textAction(item: StructuredNote["action_items"][number]): string {
 
 function markdownExport(note: StructuredNote): string {
   const blocks: string[] = [`# ${markdown(note.title)}`];
-  if (note.summary !== "") blocks.push(`## Summary\n\n${markdown(note.summary)}`);
+  if (note.summary !== "") blocks.push(`## Summary\n\n${markdownStructuredText(note.summary)}`);
   for (const section of note.sections) {
     blocks.push(
       `## ${markdown(section.heading)}${
-        section.content === "" ? "" : `\n\n${markdown(section.content)}`
+        section.content === "" ? "" : `\n\n${markdownStructuredText(section.content)}`
       }`,
     );
   }
@@ -165,16 +199,20 @@ function markdownExport(note: StructuredNote): string {
 
 function textExport(note: StructuredNote): string {
   const blocks: string[] = [textHeading(note.title, "=")];
-  if (note.summary !== "") blocks.push(`${textHeading("Summary")}\n${wrapPlainText(note.summary)}`);
+  if (note.summary !== "") {
+    blocks.push(`${textHeading("Summary")}\n${textStructuredText(note.summary)}`);
+  }
   for (const section of note.sections) {
     blocks.push(
       `${textHeading(section.heading)}${
-        section.content === "" ? "" : `\n${wrapPlainText(section.content)}`
+        section.content === "" ? "" : `\n${textStructuredText(section.content)}`
       }`,
     );
   }
   if (note.key_points.length > 0) {
-    blocks.push(`${textHeading("Key points")}\n${note.key_points.map(textBullet).join("\n")}`);
+    blocks.push(
+      `${textHeading("Key points")}\n${note.key_points.map((item) => textBullet(item)).join("\n")}`,
+    );
   }
   if (note.action_items.length > 0) {
     blocks.push(
@@ -182,11 +220,15 @@ function textExport(note: StructuredNote): string {
     );
   }
   if (note.decisions.length > 0) {
-    blocks.push(`${textHeading("Decisions")}\n${note.decisions.map(textBullet).join("\n")}`);
+    blocks.push(
+      `${textHeading("Decisions")}\n${note.decisions.map((item) => textBullet(item)).join("\n")}`,
+    );
   }
   if (note.uncertainties.length > 0) {
     blocks.push(
-      `${textHeading("Uncertainties")}\n${note.uncertainties.map(textBullet).join("\n")}`,
+      `${textHeading("Uncertainties")}\n${
+        note.uncertainties.map((item) => textBullet(item)).join("\n")
+      }`,
     );
   }
   if (note.source_references.length > 0) {
@@ -210,10 +252,21 @@ function pdfItems(note: StructuredNote): PdfItem[] {
     items.push({ text: "", style: "space" }, { text: heading, style: "heading" }, ...lines);
   };
 
-  if (note.summary !== "") section("Summary", [{ text: note.summary, style: "body" }]);
+  const structuredPdfItems = (value: string): PdfItem[] =>
+    parseStructuredText(value).flatMap((block) => [
+      ...(block.breakBefore ? [{ text: "", style: "space" as const }] : []),
+      block.kind === "list_item"
+        ? {
+          text: `${block.marker ?? "•"} ${block.text}`,
+          style: "bullet" as const,
+        }
+        : { text: block.text, style: "body" as const },
+    ]);
+
+  if (note.summary !== "") section("Summary", structuredPdfItems(note.summary));
   for (const value of note.sections) {
     items.push({ text: "", style: "space" }, { text: value.heading, style: "heading" });
-    if (value.content !== "") items.push({ text: value.content, style: "body" });
+    if (value.content !== "") items.push(...structuredPdfItems(value.content));
   }
   section(
     "Key Points",
