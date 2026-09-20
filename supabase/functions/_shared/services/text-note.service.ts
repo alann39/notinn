@@ -108,13 +108,10 @@ export async function createTextNote(
       throw AppError.internal(`persist_note returned ${persisted.outcome}`);
     }
 
-    const labels = await deps.templates.listLabels(userId, "text");
     const keyboard = {
       inline_keyboard: buildNoteKeyboard({
         noteId: persisted.noteId,
-        templateKey: message.templateKey,
         isSaved: false,
-        templateLabels: labels,
       }),
     };
 

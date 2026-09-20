@@ -209,23 +209,19 @@ async function deliverPersistedNote(
   },
   noteId: string,
 ): Promise<void> {
-  const [display, source, labels] = await Promise.all([
+  const [display, source] = await Promise.all([
     deps.notes.findNoteForDisplay(job.userId, noteId),
     deps.notes.findNoteForRegeneration(job.userId, noteId),
-    deps.templates.listLabels(job.userId, job.inputType),
   ]);
   if (display === null) throw AppError.internal("staged note was not readable for delivery");
 
   const note = parseStructuredNote(display.contentJson, AppError.outputValidationFailed);
   const rendered = renderNoteOutput(note);
-  const templateKey = templateKeyOf(display.templateKey);
   const keyboard = {
     inlineKeyboard: {
       inline_keyboard: buildNoteKeyboard({
         noteId,
-        templateKey,
         isSaved: display.isSaved,
-        templateLabels: labels,
       }),
     },
   } as const;

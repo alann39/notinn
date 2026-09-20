@@ -37,7 +37,7 @@ Deno.test("Markdown export includes every structured-note group", async () => {
       "## Tags",
     ]
   ) assert(content.includes(heading), `missing ${heading}`);
-  assert(content.endsWith("Template: clean\\_note\n"));
+  assert(content.endsWith("**Template:** clean\\_note\n"));
 });
 
 Deno.test("Markdown export escapes model text instead of creating active markup", async () => {
@@ -56,7 +56,7 @@ Deno.test("plain-text export remains readable and uses a safe fallback filename"
 
   assertEquals(exported.filename, "notinn-note.txt");
   assertEquals(exported.mimeType, "text/plain;charset=utf-8");
-  assert(content.startsWith("會議記錄\n\nSUMMARY\n"));
+  assert(content.startsWith("會議記錄\n====\n\nSummary\n-------\n"));
   assert(content.includes("Owner: Synthetic Owner"));
   assert(content.includes("Confidence: 80%"));
 });
@@ -77,8 +77,8 @@ Deno.test("empty optional groups are omitted from both text export formats", asy
 
   assertEquals(markdown.includes("## Summary"), false);
   assertEquals(markdown.includes("## Tags"), false);
-  assertEquals(text.includes("SUMMARY"), false);
-  assertEquals(text.includes("TAGS"), false);
+  assertEquals(text.includes("Summary\n-------"), false);
+  assertEquals(text.includes("Tags\n----"), false);
 });
 
 Deno.test("PDF export is valid, owner-readable metadata survives, and filename stays safe", async () => {

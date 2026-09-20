@@ -16,6 +16,9 @@ import type { TelegramGateway } from "../telegram/client.ts";
 import type { CallbackActionRequest } from "../telegram/parse-update.ts";
 import {
   buildDeleteConfirmationKeyboard,
+  buildEditKeyboard,
+  buildExportKeyboard,
+  buildFormatKeyboard,
   buildNoteKeyboard,
   renderNoteOutput,
 } from "./note-rendering.ts";
@@ -98,13 +101,10 @@ async function sendCurrentNote(
 
   const note = parseStructuredNote(display.contentJson, AppError.outputValidationFailed);
   const rendered = renderNoteOutput(note);
-  const labels = await deps.templates.listLabels(userId, display.sourceType);
   const keyboard = {
     inline_keyboard: buildNoteKeyboard({
       noteId,
-      templateKey: templateKey(display.templateKey),
       isSaved: display.isSaved,
-      templateLabels: labels,
     }),
   };
 
@@ -176,13 +176,10 @@ async function regenerate(
 
   const display = await deps.notes.findNoteForDisplay(userId, noteId);
   if (display === null) return false;
-  const labels = await deps.templates.listLabels(userId, display.sourceType);
   const keyboard = {
     inline_keyboard: buildNoteKeyboard({
       noteId,
-      templateKey: selectedTemplateKey,
       isSaved: display.isSaved,
-      templateLabels: labels,
     }),
   };
 
@@ -249,16 +246,13 @@ export async function handleCallback(
           found = false;
           break;
         }
-        const labels = await deps.templates.listLabels(userId, display.sourceType);
         await deps.telegram.editMessageReplyMarkup(
           callback.telegramChatId,
           callback.messageId,
           {
             inline_keyboard: buildNoteKeyboard({
               noteId,
-              templateKey: templateKey(display.templateKey),
               isSaved: saved,
-              templateLabels: labels,
             }),
           },
         );
@@ -274,6 +268,73 @@ export async function handleCallback(
           callback.telegramChatId,
           callback.messageId,
           { inline_keyboard: buildDeleteConfirmationKeyboard(noteId) },
+        );
+        break;
+      }
+      case "edit": {
+        const display = await deps.notes.findNoteForDisplay(userId, noteId);
+        if (display === null) {
+          found = false;
+          break;
+        }
+        await deps.telegram.editMessageReplyMarkup(
+          callback.telegramChatId,
+          callback.messageId,
+          { inline_keyboard: buildEditKeyboard(noteId) },
+        );
+        break;
+      }
+      case "edit_export": {
+        const display = await deps.notes.findNoteForDisplay(userId, noteId);
+        if (display === null) {
+          found = false;
+          break;
+        }
+        await deps.telegram.editMessageReplyMarkup(
+          callback.telegramChatId,
+          callback.messageId,
+          { inline_keyboard: buildExportKeyboard(noteId) },
+        );
+        break;
+      }
+      case "edit_format":
+      case "format_prev":
+      case "format_next": {
+        const display = await deps.notes.findNoteForDisplay(userId, noteId);
+        if (display === null) {
+          found = false;
+          break;
+        }
+        const labels = await deps.templates.listLabels(userId, display.sourceType);
+        await deps.telegram.editMessageReplyMarkup(
+          callback.telegramChatId,
+          callback.messageId,
+          {
+            inline_keyboard: buildFormatKeyboard({
+              noteId,
+              templateKey: templateKey(display.templateKey),
+              templateLabels: labels,
+              page: payload.action.kind === "edit_format" ? 0 : payload.revision,
+            }),
+          },
+        );
+        break;
+      }
+      case "edit_back": {
+        const display = await deps.notes.findNoteForDisplay(userId, noteId);
+        if (display === null) {
+          found = false;
+          break;
+        }
+        await deps.telegram.editMessageReplyMarkup(
+          callback.telegramChatId,
+          callback.messageId,
+          {
+            inline_keyboard: buildNoteKeyboard({
+              noteId,
+              isSaved: display.isSaved,
+            }),
+          },
         );
         break;
       }
@@ -296,16 +357,13 @@ export async function handleCallback(
           found = false;
           break;
         }
-        const labels = await deps.templates.listLabels(userId, display.sourceType);
         await deps.telegram.editMessageReplyMarkup(
           callback.telegramChatId,
           callback.messageId,
           {
             inline_keyboard: buildNoteKeyboard({
               noteId,
-              templateKey: templateKey(display.templateKey),
               isSaved: display.isSaved,
-              templateLabels: labels,
             }),
           },
         );

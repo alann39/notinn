@@ -1,6 +1,9 @@
 import { assert, assertEquals, assertThrows } from "@std/assert";
 import {
   buildDeleteConfirmationKeyboard,
+  buildEditKeyboard,
+  buildExportKeyboard,
+  buildFormatKeyboard,
   buildNoteKeyboard,
   escapeHtml,
   formatActionItem,
@@ -86,13 +89,14 @@ Deno.test("a note renders with its title, summary, sections and lists", () => {
   const lines = html.split("\n");
 
   assertEquals(lines[0], "<b>Synthetic weekly sync</b>");
+  assert(lines.includes(`<b>${NOTE_LABELS.summary}</b>`));
   assert(lines.includes("A synthetic note used by tests only."));
   assert(lines.includes("<b>Context</b>"));
   assert(lines.includes("The synthetic team met to discuss nothing real."));
   assert(lines.includes(`<b>${NOTE_LABELS.keyPoints}</b>`));
   assert(lines.includes("• Synthetic point one."));
   assert(lines.includes(`<b>${NOTE_LABELS.actionItems}</b>`));
-  assert(lines.includes("• Draft the synthetic document — Synthetic Owner, Friday"));
+  assert(lines.includes("• Draft the synthetic document — Synthetic Owner · Friday"));
   assert(lines.includes(`<b>${NOTE_LABELS.decisions}</b>`));
 });
 
@@ -186,7 +190,7 @@ Deno.test("an action item loses a clause rather than gaining a placeholder", () 
       due_date_iso: "2026-09-18",
       confidence: 0.5,
     }),
-    "Do the thing — Andi, 2026-09-18",
+    "Do the thing — Andi · 2026-09-18",
   );
 
   // The source's own wording wins over the normalised form: "Friday" is what the
@@ -411,35 +415,25 @@ Deno.test("a limit too small to hold a bullet is refused, not looped over", () =
 
 // --- The inline keyboard ----------------------------------------------------
 
-Deno.test("the keyboard offers note actions, all exports, and delete", () => {
+Deno.test("the primary keyboard stays minimal", () => {
   const keyboard = buildNoteKeyboard({
     noteId: NOTE_ID,
-    templateKey: "clean_note",
     isSaved: false,
-    templateLabels: LABELS,
   });
 
-  assertEquals(keyboard[0]?.map((button) => button.text), ["Save", "Shorter", "More detailed"]);
-  assertEquals(keyboard.at(-2)?.map((button) => button.text), [
-    "Export .md",
-    "Export .txt",
-    "Export .pdf",
-  ]);
+  assertEquals(keyboard.length, 1);
+  assertEquals(keyboard[0]?.map((button) => button.text), ["Save", "Edit", "Delete"]);
   assertEquals(
-    keyboard.at(-2)?.map((button) => decodeCallbackPayload(button.callback_data).action),
-    [{ kind: "export_md" }, { kind: "export_txt" }, { kind: "export_pdf" }],
+    keyboard[0]?.map((button) => decodeCallbackPayload(button.callback_data).action),
+    [{ kind: "save" }, { kind: "edit" }, { kind: "delete" }],
   );
-  assertEquals(keyboard.at(-1)?.map((button) => button.text), ["Delete"]);
-  assert(keyboard.length > 2, "the format buttons are missing");
 });
 
 Deno.test("the save button becomes unsave, and its payload changes with it", () => {
   const build = (isSaved: boolean) =>
     buildNoteKeyboard({
       noteId: NOTE_ID,
-      templateKey: "clean_note",
       isSaved,
-      templateLabels: LABELS,
     });
 
   const unsaved = build(false)[0]?.[0];
@@ -451,15 +445,41 @@ Deno.test("the save button becomes unsave, and its payload changes with it", () 
   assertEquals(decodeCallbackPayload(saved?.callback_data ?? "").action, { kind: "unsave" });
 });
 
-Deno.test("every other format is offered, and the current one is not", () => {
-  const keyboard = buildNoteKeyboard({
+Deno.test("Edit progressively reveals regeneration, format, and export actions", () => {
+  const keyboard = buildEditKeyboard(NOTE_ID);
+  assertEquals(keyboard.map((row) => row.map((item) => item.text)), [
+    ["Shorter", "More detailed"],
+    ["Change format", "Export"],
+    ["Back"],
+  ]);
+});
+
+Deno.test("the export submenu offers all file types and a way back", () => {
+  const keyboard = buildExportKeyboard(NOTE_ID);
+  assertEquals(keyboard.map((row) => row.map((item) => item.text)), [
+    ["Markdown", "Text", "PDF"],
+    ["Back"],
+  ]);
+  assertEquals(
+    keyboard[0]?.map((button) => decodeCallbackPayload(button.callback_data).action),
+    [{ kind: "export_md" }, { kind: "export_txt" }, { kind: "export_pdf" }],
+  );
+});
+
+Deno.test("format choices are paginated and omit the current format", () => {
+  const first = buildFormatKeyboard({
     noteId: NOTE_ID,
     templateKey: "clean_note",
-    isSaved: false,
     templateLabels: LABELS,
+    page: 0,
   });
-
-  const offered = keyboard
+  const second = buildFormatKeyboard({
+    noteId: NOTE_ID,
+    templateKey: "clean_note",
+    templateLabels: LABELS,
+    page: 1,
+  });
+  const offered = [...first, ...second]
     .flat()
     .map((button) => decodeCallbackPayload(button.callback_data).action)
     .filter((action) => action.kind === "format")
@@ -480,9 +500,15 @@ Deno.test("every button decodes back to the note it was built for", () => {
   const buttons = [
     ...buildNoteKeyboard({
       noteId: NOTE_ID,
-      templateKey: "clean_note",
       isSaved: true,
+    }).flat(),
+    ...buildEditKeyboard(NOTE_ID).flat(),
+    ...buildExportKeyboard(NOTE_ID).flat(),
+    ...buildFormatKeyboard({
+      noteId: NOTE_ID,
+      templateKey: "clean_note",
       templateLabels: LABELS,
+      page: 0,
     }).flat(),
     ...buildDeleteConfirmationKeyboard(NOTE_ID).flat(),
   ];
@@ -494,17 +520,18 @@ Deno.test("every button decodes back to the note it was built for", () => {
   }
 });
 
-Deno.test("an empty available-template list produces no format buttons", () => {
-  const keyboard = buildNoteKeyboard({
+Deno.test("an empty available-template list produces only a way back", () => {
+  const keyboard = buildFormatKeyboard({
     noteId: NOTE_ID,
     templateKey: "clean_note",
-    isSaved: false,
     templateLabels: new Map(),
+    page: 0,
   });
 
   const formats = keyboard.flat().filter((button) => button.callback_data.includes("format."));
 
   assertEquals(formats.length, 0);
+  assertEquals(keyboard.map((row) => row.map((item) => item.text)), [["Back"]]);
 });
 
 Deno.test("every button payload fits Telegram's byte limit", () => {
@@ -512,11 +539,11 @@ Deno.test("every button payload fits Telegram's byte limit", () => {
   // actually reaches the Bot API, so it is checked on the real output — against
   // every template, since the longest name is the one that would break it.
   for (const templateKey of SYSTEM_TEMPLATE_KEYS) {
-    const keyboard = buildNoteKeyboard({
+    const keyboard = buildFormatKeyboard({
       noteId: NOTE_ID,
       templateKey,
-      isSaved: false,
       templateLabels: LABELS,
+      page: 999,
     });
 
     for (const item of keyboard.flat()) {

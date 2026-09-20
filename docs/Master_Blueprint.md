@@ -189,7 +189,7 @@ privacy, or platform rules.
 | Screenshot/photo  | Extract & Summarize                                 |
 | PDF/DOCX          | Detailed Summary                                    |
 
-The result always includes alternative-format inline buttons so the user can change the output without re-uploading.
+The result always includes a compact Edit action so the user can reach alternative formats without re-uploading. Format choices are revealed only after Edit and are paginated when needed.
 
 ---
 
@@ -228,9 +228,12 @@ Action items
 • Revise the process map — Friday
 • Provide invoice samples — Thursday
 
-[Save] [Full transcript]
-[Shorter] [Detailed] [Meeting notes]
-[Delete]
+[Save] [Edit] [Delete]
+
+After Edit:
+[Shorter] [More detailed]
+[Change format] [Export]
+[Back]
 ```
 
 ### 7.3 Example: messy text
@@ -269,6 +272,10 @@ Commands are shortcuts, not the primary UX:
 - `/delete_account` — initiate account deletion with confirmation.
 
 ### 7.5 Required inline actions
+
+The completed-note surface initially shows only Save/Unsave, Edit, and Delete.
+The remaining non-destructive actions are progressively disclosed by Edit so the
+note remains the visual focus.
 
 - Save / Unsave.
 - Shorter.

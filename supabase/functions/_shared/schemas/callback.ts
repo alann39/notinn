@@ -61,11 +61,12 @@ const SEPARATOR = ":";
 const SEGMENT_COUNT = 4;
 
 /**
- * The inline actions Phase 1 can decode.
+ * The inline actions the completed-note surface can decode.
  *
  * This is a subset of the inline actions blueprint 7.5 requires, on purpose and on
- * the record. Phase 1 delivers Save/Unsave, Shorter, More detailed, Change format
- * and Delete. The rest are deferred with the phase that takes them:
+ * the record. The compact surface delivers Save/Unsave, Edit and Delete first;
+ * Edit progressively reveals Shorter, More detailed, Change format and exports.
+ * The rest are deferred with the phase that takes them:
  *
  *   * Show transcript/extracted text — Phase 2, where "Transcript review" is a
  *     named deliverable. For a text note the "extracted text" is the message the
@@ -78,17 +79,21 @@ const SEGMENT_COUNT = 4;
  * to be more than a list of titles. It re-renders the note's current output and
  * changes nothing.
  *
- * Save/Unsave, Shorter, More detailed and Change format are all button-only
- * additions: each reuses the generation path that `regenerate` already needs, so
- * the marginal cost is a button and a prompt variant rather than a second
- * pipeline. That is why they are here despite Phase 1's deliverable list naming
- * only "Save, regenerate, recent, and delete" — a deliverable list is a floor.
+ * Save/Unsave, Shorter, More detailed and Change format reuse the generation path
+ * that `regenerate` already needs. The `edit_*` and `format_*` actions only replace
+ * reply markup; they do not generate content or write note data.
  *
  * See docs/ADR/0007-phase-1-scope.md.
  */
 export const CALLBACK_ACTIONS = [
   "save",
   "unsave",
+  "edit",
+  "edit_format",
+  "edit_export",
+  "edit_back",
+  "format_prev",
+  "format_next",
   "shorter",
   "detailed",
   "delete",
@@ -122,13 +127,10 @@ export interface CallbackPayload {
   /**
    * Blueprint 17.4's `revision`.
    *
-   * Phase 1 always writes 0, and the decoder requires the field but does not act
-   * on its value. That is a statement about Phase 1, not a placeholder: every
-   * action above is either note-scoped or idempotent, so no click can be harmful
-   * merely for being old. Clicking Save on a message from last week saves the note
-   * it belongs to, which is what the user meant. Revision gains meaning in Phase 2,
-   * where Retry targets a job and a stale click would re-run something that has
-   * since completed.
+   * Most note actions write 0. The paginated format picker uses the field as its
+   * zero-based target page, which is harmless display state rather than a database
+   * revision. Every current action remains note-scoped or idempotent, so an old
+   * click cannot target a different resource.
    */
   readonly revision: number;
 }

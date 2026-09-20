@@ -3,6 +3,7 @@ import { createCapturingLogger } from "../../supabase/functions/_shared/observab
 import { encodeCallbackPayload } from "../../supabase/functions/_shared/schemas/callback.ts";
 import { handleCallback } from "../../supabase/functions/_shared/services/callback.service.ts";
 import type { CallbackActionRequest } from "../../supabase/functions/_shared/telegram/parse-update.ts";
+import type { InlineKeyboardMarkup } from "../../supabase/functions/_shared/telegram/client.ts";
 import { structuredNoteFixture } from "../fixtures/notes/builders.ts";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -23,7 +24,16 @@ function callback(data: string): CallbackActionRequest {
 }
 
 function payload(
-  kind: "save" | "shorter" | "export_md" | "export_txt" | "export_pdf",
+  kind:
+    | "save"
+    | "edit"
+    | "edit_format"
+    | "edit_export"
+    | "edit_back"
+    | "shorter"
+    | "export_md"
+    | "export_txt"
+    | "export_pdf",
 ): string {
   return encodeCallbackPayload({ action: { kind }, resourceId: NOTE_ID, revision: 0 });
 }
@@ -31,6 +41,7 @@ function payload(
 function harness(options: { sourceExists?: boolean; displayExists?: boolean } = {}) {
   const events: string[] = [];
   const documents: { filename: string; mimeType: string; content: string }[] = [];
+  const keyboards: string[][][] = [];
   let providerCalls = 0;
   const { logger } = createCapturingLogger({ level: "debug" });
   const note = structuredNoteFixture();
@@ -96,7 +107,13 @@ function harness(options: { sourceExists?: boolean; displayExists?: boolean } = 
           schemaVersion: 1,
           responseJsonSchema: {},
         }),
-      listLabels: () => Promise.resolve(new Map([["clean_note", "Clean Note"]])),
+      listLabels: () =>
+        Promise.resolve(
+          new Map([
+            ["clean_note", "Clean Note"],
+            ["short_summary", "Short Summary"],
+          ]),
+        ),
     },
     usage: { recordGeneration: () => Promise.resolve() },
     provider: {
@@ -135,8 +152,13 @@ function harness(options: { sourceExists?: boolean; displayExists?: boolean } = 
         });
         return Promise.resolve({ messageId: 19 });
       },
-      editMessageReplyMarkup: () => {
+      editMessageReplyMarkup: (
+        _chatId: number,
+        _messageId: number,
+        markup: InlineKeyboardMarkup,
+      ) => {
         events.push("edit_keyboard");
+        keyboards.push(markup.inline_keyboard.map((row) => row.map((item) => item.text)));
         return Promise.resolve(true);
       },
       editMessageText: () => Promise.resolve(true),
@@ -144,7 +166,7 @@ function harness(options: { sourceExists?: boolean; displayExists?: boolean } = 
     logger,
   };
 
-  return { deps, events, documents, providerCalls: () => providerCalls };
+  return { deps, events, documents, keyboards, providerCalls: () => providerCalls };
 }
 
 Deno.test("a save callback is answered before the owner-scoped write", async () => {
@@ -184,6 +206,27 @@ Deno.test("malformed callback data is acknowledged without resolving a user", as
   assertEquals(test.events, ["answer"]);
 });
 
+Deno.test("Edit reveals each submenu only when requested", async () => {
+  const test = harness();
+
+  await handleCallback(callback(payload("edit")), test.deps);
+  assertEquals(test.keyboards.at(-1), [
+    ["Shorter", "More detailed"],
+    ["Change format", "Export"],
+    ["Back"],
+  ]);
+
+  await handleCallback(callback(payload("edit_export")), test.deps);
+  assertEquals(test.keyboards.at(-1), [["Markdown", "Text", "PDF"], ["Back"]]);
+
+  await handleCallback(callback(payload("edit_format")), test.deps);
+  assertEquals(test.keyboards.at(-1), [["Short Summary"], ["Back"]]);
+
+  await handleCallback(callback(payload("edit_back")), test.deps);
+  assertEquals(test.keyboards.at(-1), [["Unsave", "Edit", "Delete"]]);
+  assertEquals(test.providerCalls(), 0);
+});
+
 Deno.test("export callbacks send the owned current note without another model call", async () => {
   const markdown = harness();
   await handleCallback(callback(payload("export_md")), markdown.deps);
@@ -196,7 +239,7 @@ Deno.test("export callbacks send the owned current note without another model ca
   const text = harness();
   await handleCallback(callback(payload("export_txt")), text.deps);
   assertEquals(text.documents[0]?.filename, "synthetic-weekly-sync.txt");
-  assertEquals(text.documents[0]?.content.includes("ACTION ITEMS"), true);
+  assertEquals(text.documents[0]?.content.includes("Action items\n------------"), true);
 
   const pdf = harness();
   await handleCallback(callback(payload("export_pdf")), pdf.deps);

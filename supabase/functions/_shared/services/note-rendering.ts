@@ -120,15 +120,12 @@ function trimSpacers(blocks: readonly Block[]): Block[] {
  * The labels the application owns.
  *
  * Blueprint 6.1's templates vary the note's content, not the message's shape, so
- * these five strings are the same for every template and live in one place. The
- * title and section headings are not here: those come from the note.
- *
- * The summary deliberately has no label. It is the one field that is always
- * present and always first, so a heading above it would add a line without adding
- * information — and blueprint 16.2 asks for one concise primary result, not a
- * stack of headings.
+ * these labels are the same for every template and live in one place. The title
+ * and custom section headings are not here: those come from the note. Summary is
+ * labeled too, giving the output one predictable title → section → body hierarchy.
  */
 export const NOTE_LABELS = {
+  summary: "Summary",
   keyPoints: "Key points",
   actionItems: "Action items",
   decisions: "Decisions",
@@ -171,7 +168,7 @@ export function formatActionItem(item: StructuredNote["action_items"][number]): 
     (part): part is string => part !== null,
   );
 
-  return attribution.length === 0 ? item.task : `${item.task} — ${attribution.join(", ")}`;
+  return attribution.length === 0 ? item.task : `${item.task} — ${attribution.join(" · ")}`;
 }
 
 /** One source reference, in the form a reader can act on: "page 4". */
@@ -195,6 +192,7 @@ function noteToBlocks(note: StructuredNote): Block[] {
 
   if (note.summary.trim() !== "") {
     blocks.push(spacer());
+    blocks.push({ style: "bold", text: NOTE_LABELS.summary });
     pushParagraphs(blocks, note.summary);
   }
 
@@ -403,17 +401,25 @@ export function renderTranscriptPages(
  * and says so in its own heading, and what it imports is a type, not a call.
  */
 
-export const BUTTONS_PER_ROW = 3;
+/** A compact format picker: three short rows before navigation. */
+export const FORMAT_PAGE_SIZE = 6;
 
 export interface NoteKeyboardOptions {
   /** The note the buttons act on. Encoded, never sent raw. */
   readonly noteId: string;
-  /** The format the note is currently in, so it is not offered as an alternative. */
-  readonly templateKey: TemplateKey;
   /** Selects between the Save and Unsave labels. */
   readonly isSaved: boolean;
+}
+
+export interface FormatKeyboardOptions {
+  /** The note the buttons act on. Encoded, never sent raw. */
+  readonly noteId: string;
+  /** The format the note is currently in, so it is not offered as an alternative. */
+  readonly templateKey: TemplateKey;
   /** Template display names, keyed by template key. See `labelFor`. */
   readonly templateLabels: ReadonlyMap<string, string>;
+  /** Zero-based picker page. Out-of-range values are clamped safely. */
+  readonly page: number;
 }
 
 /**
@@ -432,64 +438,97 @@ function button(
   text: string,
   action: Parameters<typeof encodeCallbackPayload>[0]["action"],
   noteId: string,
+  revision = 0,
 ): InlineKeyboardButton {
   return {
     text,
-    callback_data: encodeCallbackPayload({ action, resourceId: noteId, revision: 0 }),
+    callback_data: encodeCallbackPayload({ action, resourceId: noteId, revision }),
   };
 }
 
 /**
- * The inline keyboard attached to a note (blueprint 7.5, 6.3).
+ * The compact keyboard attached to every delivered note.
  *
- * Blueprint 6.3 requires that "the result always includes alternative-format
- * inline buttons so the user can change the output without re-uploading", and
- * blueprint 7.5 lists the actions that must exist. The current surface also adds
- * the two Phase 5 export actions recorded in `_shared/schemas/callback.ts`.
- *
- * Every remaining format is offered rather than a curated shortlist. Blueprint 3's
- * twelfth product principle prefers inline actions to "long command menus and
- * multi-step wizards", and a picker would be exactly that: a button that replaces
- * the keyboard with a second keyboard. The cost is a taller keyboard, and the
- * reason it is acceptable is that the catalogue is bounded at eleven system
- * templates plus at most five active custom templates per user. The repository
- * supplies only formats owned by that user and applicable to the note source.
+ * The three primary intents stay visible; regeneration, format selection and
+ * export live behind Edit. Progressive disclosure keeps the result itself in
+ * focus and prevents eleven system templates plus custom templates from taking
+ * over the conversation.
  *
  * Save and Unsave are one button whose label and payload always agree. The payload
  * is chosen from the state at render time, so a stale button on an old message
  * carries `save` and is idempotent, which is why Phase 1 does not need the
  * revision field to protect it.
  *
- * Delete is alone on the last row, following blueprint 7.2's own layout, because
- * the one action here that destroys something should not sit beside a button
- * pressed casually.
+ * Delete still requires a confirmation click, so the compact row cannot execute
+ * a destructive action accidentally.
  */
 export function buildNoteKeyboard(options: NoteKeyboardOptions): InlineKeyboard {
-  const { noteId, templateKey, isSaved, templateLabels } = options;
-
-  const rows: InlineKeyboardButton[][] = [[
+  const { noteId, isSaved } = options;
+  return [[
     button(isSaved ? "Unsave" : "Save", isSaved ? { kind: "unsave" } : { kind: "save" }, noteId),
-    button("Shorter", { kind: "shorter" }, noteId),
-    button("More detailed", { kind: "detailed" }, noteId),
+    button("Edit", { kind: "edit" }, noteId),
+    button("Delete", { kind: "delete" }, noteId),
   ]];
+}
 
-  const alternatives = [...templateLabels.keys()].filter((key) => key !== templateKey);
+/** The first level revealed after Edit. */
+export function buildEditKeyboard(noteId: string): InlineKeyboard {
+  return [
+    [
+      button("Shorter", { kind: "shorter" }, noteId),
+      button("More detailed", { kind: "detailed" }, noteId),
+    ],
+    [
+      button("Change format", { kind: "edit_format" }, noteId),
+      button("Export", { kind: "edit_export" }, noteId),
+    ],
+    [button("Back", { kind: "edit_back" }, noteId)],
+  ];
+}
 
-  for (let index = 0; index < alternatives.length; index += BUTTONS_PER_ROW) {
+/** Export choices stay out of sight until the user asks for them. */
+export function buildExportKeyboard(noteId: string): InlineKeyboard {
+  return [
+    [
+      button("Markdown", { kind: "export_md" }, noteId),
+      button("Text", { kind: "export_txt" }, noteId),
+      button("PDF", { kind: "export_pdf" }, noteId),
+    ],
+    [button("Back", { kind: "edit" }, noteId)],
+  ];
+}
+
+/** Paginated format choices, two per row, followed by navigation and Back. */
+export function buildFormatKeyboard(options: FormatKeyboardOptions): InlineKeyboard {
+  const alternatives = [...options.templateLabels.keys()].filter((key) =>
+    key !== options.templateKey
+  );
+  const pageCount = Math.max(1, Math.ceil(alternatives.length / FORMAT_PAGE_SIZE));
+  const page = Math.min(Math.max(0, options.page), pageCount - 1);
+  const visible = alternatives.slice(page * FORMAT_PAGE_SIZE, (page + 1) * FORMAT_PAGE_SIZE);
+  const rows: InlineKeyboardButton[][] = [];
+
+  for (let index = 0; index < visible.length; index += 2) {
     rows.push(
-      alternatives.slice(index, index + BUTTONS_PER_ROW).map((key) =>
-        button(labelFor(templateLabels, key), { kind: "format", templateKey: key }, noteId)
+      visible.slice(index, index + 2).map((key) =>
+        button(
+          labelFor(options.templateLabels, key),
+          { kind: "format", templateKey: key },
+          options.noteId,
+        )
       ),
     );
   }
 
-  rows.push([
-    button("Export .md", { kind: "export_md" }, noteId),
-    button("Export .txt", { kind: "export_txt" }, noteId),
-    button("Export .pdf", { kind: "export_pdf" }, noteId),
-  ]);
-  rows.push([button("Delete", { kind: "delete" }, noteId)]);
-
+  const navigation: InlineKeyboardButton[] = [];
+  if (page > 0) {
+    navigation.push(button("‹ Previous", { kind: "format_prev" }, options.noteId, page - 1));
+  }
+  if (page < pageCount - 1) {
+    navigation.push(button("Next ›", { kind: "format_next" }, options.noteId, page + 1));
+  }
+  if (navigation.length > 0) rows.push(navigation);
+  rows.push([button("Back", { kind: "edit" }, options.noteId)]);
   return rows;
 }
 

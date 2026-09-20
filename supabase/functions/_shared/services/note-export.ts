@@ -17,7 +17,7 @@ export interface NoteExport {
 const MAX_EXPORT_BYTES = 2 * 1024 * 1024;
 const PDF_WIDTH = 595.28;
 const PDF_HEIGHT = 841.89;
-const PDF_MARGIN = 54;
+const PDF_MARGIN = 72;
 const PDF_FOOTER_Y = 28;
 const PDF_CONTENT_BOTTOM = 48;
 
@@ -61,6 +61,48 @@ function markdownAction(item: StructuredNote["action_items"][number]): string[] 
   return [`- [ ] ${markdown(item.task)}`, ...details];
 }
 
+const TEXT_MEASURE = 72;
+
+function wrapPlainLine(value: string, width = TEXT_MEASURE): string[] {
+  const words = value.trim().split(/\s+/).filter((word) => word !== "");
+  const lines: string[] = [];
+  let current = "";
+  for (const original of words) {
+    let word = original;
+    while (word.length > width) {
+      if (current !== "") {
+        lines.push(current);
+        current = "";
+      }
+      lines.push(word.slice(0, width));
+      word = word.slice(width);
+    }
+    const candidate = current === "" ? word : `${current} ${word}`;
+    if (current !== "" && candidate.length > width) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current !== "") lines.push(current);
+  return lines.length === 0 ? [""] : lines;
+}
+
+function wrapPlainText(value: string): string {
+  return value.split("\n").flatMap((paragraph) => wrapPlainLine(paragraph)).join("\n");
+}
+
+function textHeading(value: string, marker = "-"): string {
+  const length = Math.min(Math.max([...value].length, 3), TEXT_MEASURE);
+  return `${value}\n${marker.repeat(length)}`;
+}
+
+function textBullet(value: string): string {
+  const lines = wrapPlainLine(value, TEXT_MEASURE - 2);
+  return lines.map((line, index) => `${index === 0 ? "• " : "  "}${line}`).join("\n");
+}
+
 function textAction(item: StructuredNote["action_items"][number]): string {
   const details = [
     item.owner === null ? null : `Owner: ${item.owner}`,
@@ -68,7 +110,12 @@ function textAction(item: StructuredNote["action_items"][number]): string {
     item.due_date_iso === null ? null : `Due date: ${item.due_date_iso}`,
     `Confidence: ${Math.round(item.confidence * 100)}%`,
   ].filter((value): value is string => value !== null);
-  return `- ${item.task}${details.length === 0 ? "" : `\n  ${details.join(" | ")}`}`;
+  const task = wrapPlainLine(item.task, TEXT_MEASURE - 4)
+    .map((line, index) => `${index === 0 ? "[ ] " : "    "}${line}`)
+    .join("\n");
+  return `${task}${
+    details.length === 0 ? "" : `\n${details.map((detail) => `    ${detail}`).join("\n")}`
+  }`;
 }
 
 function markdownExport(note: StructuredNote): string {
@@ -111,40 +158,48 @@ function markdownExport(note: StructuredNote): string {
     blocks.push(`## Tags\n\n${note.tags.map((tag) => `- ${markdown(tag)}`).join("\n")}`);
   }
   blocks.push(
-    `---\nLanguage: ${markdown(note.language)}  \nTemplate: ${markdown(note.template_key)}`,
+    `---\n**Language:** ${markdown(note.language)} · **Template:** ${markdown(note.template_key)}`,
   );
   return `${blocks.join("\n\n")}\n`;
 }
 
 function textExport(note: StructuredNote): string {
-  const blocks: string[] = [note.title];
-  if (note.summary !== "") blocks.push(`SUMMARY\n${note.summary}`);
+  const blocks: string[] = [textHeading(note.title, "=")];
+  if (note.summary !== "") blocks.push(`${textHeading("Summary")}\n${wrapPlainText(note.summary)}`);
   for (const section of note.sections) {
     blocks.push(
-      `${section.heading.toUpperCase()}${section.content === "" ? "" : `\n${section.content}`}`,
-    );
-  }
-  if (note.key_points.length > 0) {
-    blocks.push(`KEY POINTS\n${note.key_points.map((item) => `- ${item}`).join("\n")}`);
-  }
-  if (note.action_items.length > 0) {
-    blocks.push(`ACTION ITEMS\n${note.action_items.map(textAction).join("\n")}`);
-  }
-  if (note.decisions.length > 0) {
-    blocks.push(`DECISIONS\n${note.decisions.map((item) => `- ${item}`).join("\n")}`);
-  }
-  if (note.uncertainties.length > 0) {
-    blocks.push(`UNCERTAINTIES\n${note.uncertainties.map((item) => `- ${item}`).join("\n")}`);
-  }
-  if (note.source_references.length > 0) {
-    blocks.push(
-      `SOURCE REFERENCES\n${
-        note.source_references.map((item) => `- ${item.type}: ${item.value}`).join("\n")
+      `${textHeading(section.heading)}${
+        section.content === "" ? "" : `\n${wrapPlainText(section.content)}`
       }`,
     );
   }
-  if (note.tags.length > 0) blocks.push(`TAGS\n${note.tags.join(", ")}`);
-  blocks.push(`Language: ${note.language}\nTemplate: ${note.template_key}`);
+  if (note.key_points.length > 0) {
+    blocks.push(`${textHeading("Key points")}\n${note.key_points.map(textBullet).join("\n")}`);
+  }
+  if (note.action_items.length > 0) {
+    blocks.push(
+      `${textHeading("Action items")}\n${note.action_items.map(textAction).join("\n\n")}`,
+    );
+  }
+  if (note.decisions.length > 0) {
+    blocks.push(`${textHeading("Decisions")}\n${note.decisions.map(textBullet).join("\n")}`);
+  }
+  if (note.uncertainties.length > 0) {
+    blocks.push(
+      `${textHeading("Uncertainties")}\n${note.uncertainties.map(textBullet).join("\n")}`,
+    );
+  }
+  if (note.source_references.length > 0) {
+    blocks.push(
+      `${textHeading("Source references")}\n${
+        note.source_references.map((item) => textBullet(`${item.type}: ${item.value}`)).join("\n")
+      }`,
+    );
+  }
+  if (note.tags.length > 0) blocks.push(`${textHeading("Tags")}\n${note.tags.join(" · ")}`);
+  blocks.push(
+    `${textHeading("Note details")}\nLanguage: ${note.language}\nTemplate: ${note.template_key}`,
+  );
   return `${blocks.join("\n\n")}\n`;
 }
 
@@ -162,7 +217,7 @@ function pdfItems(note: StructuredNote): PdfItem[] {
   }
   section(
     "Key Points",
-    note.key_points.map((text) => ({ text: `- ${text}`, style: "bullet" })),
+    note.key_points.map((text) => ({ text: `• ${text}`, style: "bullet" })),
   );
   section(
     "Action Items",
@@ -175,22 +230,22 @@ function pdfItems(note: StructuredNote): PdfItem[] {
       ].filter((value): value is string => value !== null);
       return [
         { text: `[ ] ${item.task}`, style: "bullet" as const },
-        { text: details.join(" | "), style: "detail" as const },
+        { text: details.join(" · "), style: "detail" as const },
       ];
     }),
   );
   section(
     "Decisions",
-    note.decisions.map((text) => ({ text: `- ${text}`, style: "bullet" })),
+    note.decisions.map((text) => ({ text: `• ${text}`, style: "bullet" })),
   );
   section(
     "Uncertainties",
-    note.uncertainties.map((text) => ({ text: `- ${text}`, style: "bullet" })),
+    note.uncertainties.map((text) => ({ text: `• ${text}`, style: "bullet" })),
   );
   section(
     "Source References",
     note.source_references.map((item) => ({
-      text: `- ${item.type}: ${item.value}`,
+      text: `• ${item.type}: ${item.value}`,
       style: "bullet",
     })),
   );
@@ -270,8 +325,8 @@ function pdfStyle(item: PdfItem, regular: PDFFont, bold: PDFFont): PdfTextStyle 
     case "title":
       return {
         font: bold,
-        size: 22,
-        lineHeight: 28,
+        size: 24,
+        lineHeight: 29,
         indent: 0,
         continuationIndent: 0,
         color: dark,
@@ -279,7 +334,7 @@ function pdfStyle(item: PdfItem, regular: PDFFont, bold: PDFFont): PdfTextStyle 
     case "heading":
       return {
         font: bold,
-        size: 14,
+        size: 16,
         lineHeight: 20,
         indent: 0,
         continuationIndent: 0,
@@ -288,8 +343,8 @@ function pdfStyle(item: PdfItem, regular: PDFFont, bold: PDFFont): PdfTextStyle 
     case "bullet":
       return {
         font: regular,
-        size: 10.5,
-        lineHeight: 15,
+        size: 11,
+        lineHeight: 17,
         indent: 0,
         continuationIndent: 12,
         color: dark,
@@ -306,8 +361,8 @@ function pdfStyle(item: PdfItem, regular: PDFFont, bold: PDFFont): PdfTextStyle 
     case "meta":
       return {
         font: regular,
-        size: 8.5,
-        lineHeight: 12,
+        size: 9,
+        lineHeight: 13,
         indent: 0,
         continuationIndent: 0,
         color: rgb(0.45, 0.47, 0.52),
@@ -316,8 +371,8 @@ function pdfStyle(item: PdfItem, regular: PDFFont, bold: PDFFont): PdfTextStyle 
     case "space":
       return {
         font: regular,
-        size: 10.5,
-        lineHeight: 15,
+        size: 11,
+        lineHeight: 17,
         indent: 0,
         continuationIndent: 0,
         color: dark,
@@ -333,8 +388,11 @@ async function pdfExport(note: StructuredNote, stem: string): Promise<Uint8Array
   document.setCreator("Notinn");
   document.setProducer("Notinn");
 
-  const regular = await document.embedFont(StandardFonts.Helvetica);
-  const bold = await document.embedFont(StandardFonts.HelveticaBold);
+  // The built-in Courier family is metrically stable across PDF viewers. Unlike
+  // unembedded Helvetica, its fixed advances do not depend on a viewer's local
+  // substitute font, which keeps wrapping and glyph placement deterministic.
+  const regular = await document.embedFont(StandardFonts.Courier);
+  const bold = await document.embedFont(StandardFonts.CourierBold);
   const characterSet = new Set(regular.getCharacterSet());
   const exactText = new TextEncoder().encode(textExport(note));
   await document.attach(exactText, `${stem}.txt`, {
@@ -378,7 +436,7 @@ async function pdfExport(note: StructuredNote, stem: string): Promise<Uint8Array
 
   const pages = document.getPages();
   for (let index = 0; index < pages.length; index += 1) {
-    const label = `Notinn  |  ${index + 1} / ${pages.length}`;
+    const label = `Notinn · ${index + 1} / ${pages.length}`;
     const width = regular.widthOfTextAtSize(label, 8);
     pages[index]?.drawText(label, {
       x: (PDF_WIDTH - width) / 2,
