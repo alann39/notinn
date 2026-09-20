@@ -213,6 +213,7 @@ export async function handleWebhookRequest(
           notes: deps.phase1.notes,
           templates: deps.phase1.templates,
           usage: deps.phase1.usage,
+          preferences: deps.phase1.preferences,
           provider: deps.phase1.provider,
           telegram: deps.phase1.telegram,
           logger: log,

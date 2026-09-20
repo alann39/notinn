@@ -1,4 +1,5 @@
 import { encodeCallbackPayload } from "../schemas/callback.ts";
+import { encodeNavigationCallback } from "../schemas/navigation-callback.ts";
 import type { IngestionRepository } from "../repositories/ingestion.repository.ts";
 import type { NotesRepository } from "../repositories/notes.repository.ts";
 import type { UsageRepository } from "../repositories/usage.repository.ts";
@@ -18,8 +19,8 @@ import {
 import type { EmbeddingProvider, LibraryAnswerProvider } from "../providers/library-ai.provider.ts";
 import type { TelegramGateway } from "../telegram/client.ts";
 import type { CommandMessage } from "../telegram/parse-update.ts";
+import { sendNavigationCommand } from "./navigation.service.ts";
 
-const RECENT_LIMIT = 10;
 const SEARCH_LIMIT = 10;
 const SEARCH_QUERY_MAX_CHARS = 200;
 const ASK_QUERY_MAX_CHARS = 500;
@@ -344,6 +345,21 @@ async function handleAsk(
     await deps.telegram.sendMessage(
       command.telegramChatId,
       "I could not find enough evidence in your saved notes to answer that.",
+      {
+        inlineKeyboard: {
+          inline_keyboard: [[
+            {
+              text: "💬 Ask another question",
+              callback_data: encodeNavigationCallback({ action: "ask", value: null }),
+            },
+          ], [
+            {
+              text: "📚 Recent notes",
+              callback_data: encodeNavigationCallback({ action: "recent", value: null }),
+            },
+          ]],
+        },
+      },
     );
     return;
   }
@@ -370,6 +386,17 @@ async function handleAsk(
     await deps.telegram.sendMessage(
       command.telegramChatId,
       "I could not find enough evidence in your saved notes to answer that.",
+      {
+        inlineKeyboard: {
+          inline_keyboard: [[{
+            text: "💬 Ask another question",
+            callback_data: encodeNavigationCallback({ action: "ask", value: null }),
+          }], [{
+            text: "🏠 Main menu",
+            callback_data: encodeNavigationCallback({ action: "main", value: null }),
+          }]],
+        },
+      },
     );
     return;
   }
@@ -385,14 +412,23 @@ async function handleAsk(
     [answer.answer.slice(0, 3_000), "", "Sources:", ...sources].join("\n"),
     cited.length === 0 ? undefined : {
       inlineKeyboard: {
-        inline_keyboard: cited.map((item) => [{
-          text: `Open source ${item.index}`,
-          callback_data: encodeCallbackPayload({
-            action: { kind: "show" },
-            resourceId: item.note.noteId,
-            revision: 0,
-          }),
-        }]),
+        inline_keyboard: [
+          ...cited.map((item) => [{
+            text: `📄 Source ${item.index} · ${item.note.title.slice(0, 34)}`,
+            callback_data: encodeCallbackPayload({
+              action: { kind: "show" },
+              resourceId: item.note.noteId,
+              revision: 0,
+            }),
+          }]),
+          [{
+            text: "💬 Ask again",
+            callback_data: encodeNavigationCallback({ action: "ask", value: null }),
+          }, {
+            text: "🏠 Main menu",
+            callback_data: encodeNavigationCallback({ action: "main", value: null }),
+          }],
+        ],
       },
     },
   );
@@ -403,19 +439,35 @@ export async function handleCommand(
   deps: CommandDependencies,
 ): Promise<void> {
   if (
-    command.command !== "recent" && command.command !== "search" && command.command !== "ask" &&
+    command.command !== "start" && command.command !== "menu" && command.command !== "new" &&
+    command.command !== "help" && command.command !== "recent" &&
+    command.command !== "search" && command.command !== "ask" &&
     command.command !== "settings" && command.command !== "template" &&
     command.command !== "templates"
   ) {
     await deps.telegram.sendMessage(
       command.telegramChatId,
-      "Send me content to create a note, or use /recent, /search, /ask, /settings, or /templates.",
+      "I do not recognise that command. Use /menu to see everything Notinn can do.",
     );
     return;
   }
 
   const userId = await deps.users.ensureUser(command);
-  if (command.command === "template" || command.command === "templates") {
+  if (
+    command.command === "start" || command.command === "menu" || command.command === "new" ||
+    command.command === "help" || command.command === "recent" ||
+    command.command === "templates" ||
+    (command.command === "settings" && command.argumentsText === null)
+  ) {
+    await sendNavigationCommand(command, userId, {
+      notes: deps.notes,
+      telegram: deps.telegram,
+      preferences: deps.preferences,
+      templates: deps.templates,
+    });
+    return;
+  }
+  if (command.command === "template") {
     await handleTemplates(command, userId, deps);
     return;
   }
@@ -425,7 +477,16 @@ export async function handleCommand(
   }
   if (command.command === "ask") {
     const question = command.argumentsText;
-    if (question === null || question.length < 2 || question.length > ASK_QUERY_MAX_CHARS) {
+    if (question === null) {
+      await sendNavigationCommand(command, userId, {
+        notes: deps.notes,
+        telegram: deps.telegram,
+        preferences: deps.preferences,
+        templates: deps.templates,
+      });
+      return;
+    }
+    if (question.length < 2 || question.length > ASK_QUERY_MAX_CHARS) {
       await deps.telegram.sendMessage(
         command.telegramChatId,
         "Use /ask followed by a 2–500 character question about your saved notes.",
@@ -437,7 +498,16 @@ export async function handleCommand(
   }
   if (command.command === "search") {
     const query = command.argumentsText;
-    if (query === null || query.length < 2 || query.length > SEARCH_QUERY_MAX_CHARS) {
+    if (query === null) {
+      await sendNavigationCommand(command, userId, {
+        notes: deps.notes,
+        telegram: deps.telegram,
+        preferences: deps.preferences,
+        templates: deps.templates,
+      });
+      return;
+    }
+    if (query.length < 2 || query.length > SEARCH_QUERY_MAX_CHARS) {
       await deps.telegram.sendMessage(
         command.telegramChatId,
         "Use /search followed by 2–200 characters, for example: /search quarterly risk.",
@@ -449,7 +519,18 @@ export async function handleCommand(
     if (matches.length === 0) {
       await deps.telegram.sendMessage(
         command.telegramChatId,
-        "I could not find that in your saved notes. Try fewer or different keywords.",
+        "🔎 No results\n\nI could not find that in your saved notes. Try fewer or different keywords.",
+        {
+          inlineKeyboard: {
+            inline_keyboard: [[{
+              text: "🔄 Search again",
+              callback_data: encodeNavigationCallback({ action: "search", value: null }),
+            }, {
+              text: "📚 Recent notes",
+              callback_data: encodeNavigationCallback({ action: "recent", value: null }),
+            }]],
+          },
+        },
       );
       return;
     }
@@ -461,48 +542,29 @@ export async function handleCommand(
     });
     await deps.telegram.sendMessage(
       command.telegramChatId,
-      ["Search results:", "", ...lines].join("\n"),
+      ["🔎 Search results", "", ...lines].join("\n"),
       {
         inlineKeyboard: {
-          inline_keyboard: matches.map((note, index) => [{
-            text: `Open ${index + 1}`,
-            callback_data: encodeCallbackPayload({
-              action: { kind: "show" },
-              resourceId: note.noteId,
-              revision: 0,
-            }),
-          }]),
+          inline_keyboard: [
+            ...matches.map((note, index) => [{
+              text: `${index + 1} · ${note.title.slice(0, 42)}`,
+              callback_data: encodeCallbackPayload({
+                action: { kind: "show" },
+                resourceId: note.noteId,
+                revision: 0,
+              }),
+            }]),
+            [{
+              text: "🔄 New search",
+              callback_data: encodeNavigationCallback({ action: "search", value: null }),
+            }, {
+              text: "🏠 Main menu",
+              callback_data: encodeNavigationCallback({ action: "main", value: null }),
+            }],
+          ],
         },
       },
     );
     return;
   }
-
-  const notes = await deps.notes.listRecentSavedNotes(userId, RECENT_LIMIT);
-
-  if (notes.length === 0) {
-    await deps.telegram.sendMessage(
-      command.telegramChatId,
-      "You do not have any saved notes yet. Tap Save below a generated note first.",
-    );
-    return;
-  }
-
-  const lines = notes.map((note, index) => `${index + 1}. ${note.title}`);
-  await deps.telegram.sendMessage(
-    command.telegramChatId,
-    ["Your recent saved notes:", "", ...lines].join("\n"),
-    {
-      inlineKeyboard: {
-        inline_keyboard: notes.map((note, index) => [{
-          text: `Open ${index + 1}`,
-          callback_data: encodeCallbackPayload({
-            action: { kind: "show" },
-            resourceId: note.noteId,
-            revision: 0,
-          }),
-        }]),
-      },
-    },
-  );
 }

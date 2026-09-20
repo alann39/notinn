@@ -1,11 +1,41 @@
 # Implementation status
 
-**Phase:** 5 — Personalization, templates, and export (implemented; UI polish deployed)
+**Phase:** 5.5 — Navigation and commercial UX (deployed to development)
 **Date:** 2026-09-20
 **Last verified:** the commands in [Verification](#verification) were run and their
 output is recorded below.
 
 ## Phase 5 current snapshot
+
+### Phase 5.5 navigation layer
+
+The pre-Phase-6 navigation and commercial UX layer is implemented, verified, and
+deployed to the development environment.
+
+- `/start` now provides compact onboarding, while `/menu` opens a two-column home
+  dashboard for New Note, My Notes, Search, Ask Notes, Templates, Settings, and Help.
+- `/help` is a category wizard with separate Create, Find, Templates, Settings,
+  and Privacy guidance instead of a long command wall.
+- `/settings` is now an inline wizard. Output language, privacy mode, and default
+  text/voice/document formats are selectable with buttons; the active value carries
+  a checkmark and successful changes return to a refreshed settings summary.
+- `/recent` uses five-note pages, bounded titles, opaque Open callbacks, Previous/
+  Next navigation, and useful empty-state actions.
+- Search and Ask results use descriptive source/note buttons and always expose a
+  follow-up action, recent notes, or the main menu. Queries remain command-based
+  until a durable conversation-draft state is introduced.
+- `/templates` now has a visual overview and entry points for defaults, creation,
+  and management. The existing bounded command syntax remains the write path, so
+  no partial template draft can be lost with an Edge Function isolate.
+- Resource-independent UI callbacks use a separate validated `v2` codec. Note
+  callbacks retain their owner-checked UUID-bearing `v1` contract; navigation does
+  not use a fake note identifier.
+- A guarded `bot-menu:set` operator command configures and reads back Telegram's
+  private-chat native command menu. It is not run as part of ordinary deployment.
+- No database migration, new secret, or worker deployment is required.
+- Formatting, linting, full type-checking, and the hermetic suite pass:
+  **519 passed, 0 failed**. The credentialed integration/e2e invocation reports
+  **1 passed, 0 failed, 32 ignored** because no test target is configured.
 
 The preference, custom-template, and export slices of Phase 5 are implemented and
 deployed to development. The completed-note UI and export typography have also
@@ -65,7 +95,15 @@ received their pre-Phase-6 polish pass:
 - Migrations `phase5_user_preference_contract`,
   `phase5_scrub_staged_job_payload`, and `phase5_custom_templates` are applied.
   `telegram-webhook` version 28 and `process-job` version 29 are active.
-- Type-check passes and the hermetic suite reports **515 passed, 0 failed**.
+- The deployed Phase 5 baseline passed **515 tests**; the Phase 5.5 layer raises
+  the suite to **519 passed, 0 failed**.
+- Phase 5.5 is active on `telegram-webhook` version 31. The function was restored
+  to the repository source after the one-time operator action, remains configured
+  with `verify_jwt=false`, and rejects an unsigned POST with HTTP 401 and an empty
+  body.
+- Telegram's private-chat native command menu contains eight verified commands:
+  `/start`, `/menu`, `/recent`, `/search`, `/ask`, `/templates`, `/settings`, and
+  `/help`. The default chat menu button opens that command list.
 - The bullet normalization and icon-labelled Options UI are live on
   `telegram-webhook` v28 and `process-job` v29. Both functions report ACTIVE, and
   an unsigned webhook probe remains fail-closed with HTTP 401 and an empty body.
@@ -625,11 +663,19 @@ the user approved continuing to the deployment stage.
 10. **Pending:** set `NOTINN_TEST_*` and run the automated integration and
     deployed e2e suites. Live user-path verification is complete; the credentialed
     automated suite remains a separate release gate.
+11. **Done:** deploy the verified Phase 5.5 `telegram-webhook` bundle, configure
+    and read back the eight-command private-chat native menu, confirm version 31
+    is ACTIVE, and verify that an unsigned request still receives an empty HTTP
+    401 response.
+12. **Pending manual acceptance:** perform one live `/start` → Settings → Main
+    Menu walkthrough in Telegram and confirm the final labels on the target
+    mobile client.
 
 ---
 
 ## Recommended next step
 
-Verify the compact Save/Options/Delete row and each nested Options path on one newly
-generated note. Before promoting beyond development, configure `NOTINN_TEST_*`
-and run the automated integration/e2e release gate.
+Perform the short Telegram acceptance walkthrough for `/start`, `/menu`, Settings,
+Recent pagination, and Search/Ask recovery actions. Before promoting beyond
+development, configure `NOTINN_TEST_*` and run the automated integration/e2e
+release gate.

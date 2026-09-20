@@ -109,7 +109,7 @@ Deno.test("search returns ranked saved notes with opaque open buttons", async ()
   assertEquals(
     test.sent[0]?.text,
     [
-      "Search results:",
+      "🔎 Search results",
       "",
       "1. Quarterly Risk Review — 2026-09-18\n   #risk #quarterly #controls",
     ].join("\n"),
@@ -131,9 +131,9 @@ Deno.test("search reports an empty result without creating buttons", async () =>
   assertEquals(test.searchCalls().length, 1);
   assertEquals(
     test.sent[0]?.text,
-    "I could not find that in your saved notes. Try fewer or different keywords.",
+    "🔎 No results\n\nI could not find that in your saved notes. Try fewer or different keywords.",
   );
-  assertEquals(test.sent[0]?.options, undefined);
+  assertEquals(test.sent[0]?.options === undefined, false);
 });
 
 Deno.test("ask lazily indexes saved notes, answers from matches, and cites an openable source", async () => {
@@ -272,9 +272,31 @@ Deno.test("settings displays the current preference snapshot", async () => {
     },
   });
 
-  assertEquals(sent[0]?.includes("Language: id"), true);
-  assertEquals(sent[0]?.includes("Privacy: balanced"), true);
-  assertEquals(sent[0]?.includes("Voice template: Automatic default"), true);
+  assertEquals(sent[0]?.includes("Output language: Indonesian"), true);
+  assertEquals(sent[0]?.includes("Privacy mode: Balanced"), true);
+  assertEquals(sent[0]?.includes("Voice format: Automatic"), true);
+});
+
+Deno.test("start opens a compact onboarding menu", async () => {
+  const test = harness();
+
+  await handleCommand(command("start", null), test.deps);
+
+  assertEquals(test.ensured(), 1);
+  assertEquals(test.sent[0]?.text.startsWith("👋 Welcome to Notinn"), true);
+  const options = test.sent[0]?.options as {
+    inlineKeyboard: { inline_keyboard: { text: string; callback_data: string }[][] };
+  };
+  assertEquals(options.inlineKeyboard.inline_keyboard[0]?.map((button) => button.text), [
+    "📝 New note",
+    "📚 My notes",
+  ]);
+  assertEquals(
+    options.inlineKeyboard.inline_keyboard.flat().every((button) =>
+      button.callback_data.startsWith("v2:")
+    ),
+    true,
+  );
 });
 
 Deno.test("settings validates and saves a future-job privacy preference", async () => {

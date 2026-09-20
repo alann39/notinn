@@ -1,6 +1,7 @@
 import { assertEquals } from "@std/assert";
 import { createCapturingLogger } from "../../supabase/functions/_shared/observability/logger.ts";
 import { encodeCallbackPayload } from "../../supabase/functions/_shared/schemas/callback.ts";
+import { encodeNavigationCallback } from "../../supabase/functions/_shared/schemas/navigation-callback.ts";
 import { handleCallback } from "../../supabase/functions/_shared/services/callback.service.ts";
 import type { CallbackActionRequest } from "../../supabase/functions/_shared/telegram/parse-update.ts";
 import type { InlineKeyboardMarkup } from "../../supabase/functions/_shared/telegram/client.ts";
@@ -42,6 +43,7 @@ function harness(options: { sourceExists?: boolean; displayExists?: boolean } = 
   const events: string[] = [];
   const documents: { filename: string; mimeType: string; content: string }[] = [];
   const keyboards: string[][][] = [];
+  const editedTexts: string[] = [];
   let providerCalls = 0;
   const { logger } = createCapturingLogger({ level: "debug" });
   const note = structuredNoteFixture();
@@ -54,6 +56,7 @@ function harness(options: { sourceExists?: boolean; displayExists?: boolean } = 
       },
     },
     notes: {
+      listRecentSavedNotes: () => Promise.resolve([]),
       setNoteSaved: () => {
         events.push("save");
         return Promise.resolve({ outcome: "updated" as const, noteId: NOTE_ID, isSaved: true });
@@ -115,6 +118,24 @@ function harness(options: { sourceExists?: boolean; displayExists?: boolean } = 
           ]),
         ),
     },
+    preferences: {
+      get: () =>
+        Promise.resolve({
+          outputLanguage: "mirror" as const,
+          defaultTextTemplate: null,
+          defaultVoiceTemplate: null,
+          defaultDocumentTemplate: null,
+          privacyMode: "balanced" as const,
+        }),
+      update: () =>
+        Promise.resolve({
+          outputLanguage: "id" as const,
+          defaultTextTemplate: null,
+          defaultVoiceTemplate: null,
+          defaultDocumentTemplate: null,
+          privacyMode: "balanced" as const,
+        }),
+    },
     usage: { recordGeneration: () => Promise.resolve() },
     provider: {
       generateText: () => {
@@ -161,12 +182,16 @@ function harness(options: { sourceExists?: boolean; displayExists?: boolean } = 
         keyboards.push(markup.inline_keyboard.map((row) => row.map((item) => item.text)));
         return Promise.resolve(true);
       },
-      editMessageText: () => Promise.resolve(true),
+      editMessageText: (_chatId: number, _messageId: number, text: string) => {
+        events.push("edit_text");
+        editedTexts.push(text);
+        return Promise.resolve(true);
+      },
     },
     logger,
   };
 
-  return { deps, events, documents, keyboards, providerCalls: () => providerCalls };
+  return { deps, events, documents, keyboards, editedTexts, providerCalls: () => providerCalls };
 }
 
 Deno.test("a save callback is answered before the owner-scoped write", async () => {
@@ -204,6 +229,17 @@ Deno.test("malformed callback data is acknowledged without resolving a user", as
   await handleCallback(callback("not-a-callback"), test.deps);
 
   assertEquals(test.events, ["answer"]);
+});
+
+Deno.test("navigation callbacks open settings without resolving a fake note", async () => {
+  const test = harness();
+  const data = encodeNavigationCallback({ action: "settings", value: null });
+
+  await handleCallback(callback(data), test.deps);
+
+  assertEquals(test.events.slice(0, 3), ["answer", "ensure_user", "edit_text"]);
+  assertEquals(test.editedTexts[0]?.startsWith("⚙️ Settings"), true);
+  assertEquals(test.editedTexts[0]?.includes("Output language: Mirror input"), true);
 });
 
 Deno.test("Options reveals each submenu only when requested", async () => {

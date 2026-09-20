@@ -10,6 +10,12 @@ media is downloaded into bounded memory, never stored, and zero-filled after
 processing. DOCX/TXT/Markdown are extracted locally before model generation. See
 [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
 
+The Phase 5.5 navigation layer adds `/start` onboarding, a `/menu` dashboard,
+category-based Help, button-driven Settings, paginated Recent notes, and recovery
+actions for Search and Ask. It is deployed to development, including the verified
+eight-command private-chat native Telegram menu. Future environments can configure
+and verify the same menu with the guarded `bot-menu:set` operator task.
+
 Saved notes can be listed with `/recent`, searched by title, tags, retained source,
 or current note content with `/search <keywords>`, and queried with evidence-only
 answers through `/ask <question>` after the embedding model is enabled.
@@ -107,6 +113,7 @@ terminal unless `--yes` is passed.
 npx deno task webhook:info      # what is registered now — read-only
 npx deno task webhook:set       # register
 npx deno task webhook:delete    # remove
+npx deno task bot-menu:set      # configure native private-chat commands
 npx deno task smoke             # one real round trip
 ```
 

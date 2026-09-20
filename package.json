@@ -24,6 +24,7 @@
     "webhook:set": "deno task webhook:set",
     "webhook:delete": "deno task webhook:delete",
     "webhook:info": "deno task webhook:info",
+    "bot-menu:set": "deno task bot-menu:set",
     "smoke": "deno task smoke"
   },
   "devDependencies": {

@@ -10,7 +10,9 @@ import type { IngestionRepository } from "../repositories/ingestion.repository.t
 import type { NotesRepository } from "../repositories/notes.repository.ts";
 import type { TemplatesRepository } from "../repositories/templates.repository.ts";
 import type { UsageRepository } from "../repositories/usage.repository.ts";
+import type { UserPreferencesRepository } from "../repositories/user-preferences.repository.ts";
 import { actionToken, decodeCallbackPayload } from "../schemas/callback.ts";
+import { decodeNavigationCallback, isNavigationCallback } from "../schemas/navigation-callback.ts";
 import { parseStructuredNote, STRUCTURED_NOTE_VERSION } from "../schemas/structured-note.ts";
 import type { TelegramGateway } from "../telegram/client.ts";
 import type { CallbackActionRequest } from "../telegram/parse-update.ts";
@@ -23,6 +25,7 @@ import {
   renderNoteOutput,
 } from "./note-rendering.ts";
 import { type NoteExportFormat, renderNoteExport } from "./note-export.ts";
+import { handleNavigationCallback } from "./navigation.service.ts";
 
 const NOTE_GONE = "That note is no longer available.";
 
@@ -36,8 +39,12 @@ export interface CallbackDependencies {
     | "setCurrentOutput"
     | "setNoteSaved"
     | "deleteNote"
+    | "listRecentSavedNotes"
   >;
-  readonly templates: Pick<TemplatesRepository, "findForGeneration" | "listLabels">;
+  readonly templates:
+    & Pick<TemplatesRepository, "findForGeneration" | "listLabels">
+    & Partial<Pick<TemplatesRepository, "listAvailable">>;
+  readonly preferences?: Pick<UserPreferencesRepository, "get" | "update">;
   readonly usage: Pick<UsageRepository, "recordGeneration">;
   readonly provider: Pick<NoteAIProvider, "generateText">;
   readonly telegram: Pick<
@@ -204,6 +211,46 @@ export async function handleCallback(
   callback: CallbackActionRequest,
   deps: CallbackDependencies,
 ): Promise<void> {
+  if (isNavigationCallback(callback.data)) {
+    let navigation;
+    try {
+      navigation = decodeNavigationCallback(callback.data);
+    } catch {
+      await deps.telegram.answerCallbackQuery(callback.callbackQueryId, {
+        text: "That menu is no longer available.",
+      });
+      return;
+    }
+
+    await deps.telegram.answerCallbackQuery(callback.callbackQueryId);
+    const userId = await deps.users.ensureUser(callback);
+    const log = deps.logger.child({
+      update_id: callback.updateId,
+      user_id: userId,
+    });
+    try {
+      await handleNavigationCallback(callback, navigation, userId, {
+        notes: deps.notes,
+        telegram: deps.telegram,
+        preferences: deps.preferences,
+        templates: deps.templates,
+      });
+      log.info("callback.completed", {
+        callback_action: navigation.action,
+        outcome: "completed",
+      });
+    } catch (thrown) {
+      const error = toAppError(thrown);
+      log[error.logLevel]("callback.failed", {
+        callback_action: navigation.action,
+        error_code: error.code,
+        error_detail: error.internalDetail,
+      });
+      await deps.telegram.sendMessage(callback.telegramChatId, error.publicMessage);
+    }
+    return;
+  }
+
   let payload;
   try {
     payload = decodeCallbackPayload(callback.data);

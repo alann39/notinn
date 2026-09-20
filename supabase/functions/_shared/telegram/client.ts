@@ -71,6 +71,11 @@ export interface TelegramBotIdentity {
   readonly username?: string;
 }
 
+export interface TelegramBotCommand {
+  readonly command: string;
+  readonly description: string;
+}
+
 /**
  * Call a Bot API method.
  *
@@ -130,6 +135,30 @@ export function getMe(botToken: Secret): Promise<TelegramBotIdentity> {
 /** Read the currently registered webhook, if any. */
 export function getWebhookInfo(botToken: Secret): Promise<TelegramWebhookInfo> {
   return callTelegram<TelegramWebhookInfo>(botToken, "getWebhookInfo");
+}
+
+/** Configure Telegram's native slash-command menu for private chats. */
+export function setMyCommands(
+  botToken: Secret,
+  commands: readonly TelegramBotCommand[],
+): Promise<boolean> {
+  return callTelegram<boolean>(botToken, "setMyCommands", {
+    commands,
+    scope: { type: "all_private_chats" },
+  });
+}
+
+export function getMyCommands(botToken: Secret): Promise<readonly TelegramBotCommand[]> {
+  return callTelegram<readonly TelegramBotCommand[]>(botToken, "getMyCommands", {
+    scope: { type: "all_private_chats" },
+  });
+}
+
+/** Keep the composer menu button connected to the command list rather than a Mini App. */
+export function setDefaultCommandMenuButton(botToken: Secret): Promise<boolean> {
+  return callTelegram<boolean>(botToken, "setChatMenuButton", {
+    menu_button: { type: "commands" },
+  });
 }
 
 export interface SetWebhookOptions {

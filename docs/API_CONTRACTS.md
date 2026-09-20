@@ -69,8 +69,11 @@ actions. `export_md`, `export_txt`, and `export_pdf` owner-read the current
 validated output and send a bounded in-memory document; they do not call Gemini
 or create a Storage object. `/recent` lists saved notes, `/search <keywords>` performs owner-scoped
 full-text search, and `/ask <question>` answers only from owner-scoped saved-note
-evidence; other slash commands receive the current one-sentence help response and
-are not stored as notes.
+evidence. `/start`, `/menu`, `/new`, `/help`, `/recent`, `/templates`, and
+argument-free `/settings` open stateless inline navigation views. Their `v2`
+callbacks carry only a closed action/value vocabulary; note actions retain the
+opaque owner-checked `v1` callback contract. Unknown slash commands receive a
+fixed `/menu` recovery message and are not stored as notes.
 
 Non-private `message` and actionable `callback_query` updates are rejected. The
 first one per chat atomically claims the fixed reply; later updates are silent.
