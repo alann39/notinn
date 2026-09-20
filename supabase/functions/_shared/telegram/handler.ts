@@ -10,6 +10,7 @@ import { assertWebhookSecret } from "../security/webhook-secret.ts";
 import type { IngestionRepository } from "../repositories/ingestion.repository.ts";
 import type { NotesRepository } from "../repositories/notes.repository.ts";
 import type { ProcessingJobsRepository } from "../repositories/processing-jobs.repository.ts";
+import type { QuotaRepository } from "../repositories/quota.repository.ts";
 import type { RejectedChatsRepository } from "../repositories/rejected-chats.repository.ts";
 import type { TemplatesRepository } from "../repositories/templates.repository.ts";
 import type { UsageRepository } from "../repositories/usage.repository.ts";
@@ -59,6 +60,7 @@ export interface WebhookDependencies {
     readonly rejectedChats: RejectedChatsRepository;
     readonly templates: TemplatesRepository;
     readonly usage: UsageRepository;
+    readonly quota: QuotaRepository;
     readonly preferences: UserPreferencesRepository;
     readonly provider: Pick<NoteAIProvider, "generateText">;
     readonly embeddings?: EmbeddingProvider;
@@ -195,6 +197,7 @@ export async function handleWebhookRequest(
           embeddings: deps.phase1.embeddings,
           answers: deps.phase1.answers,
           usage: deps.phase1.usage,
+          quota: deps.phase1.quota,
           preferences: deps.phase1.preferences,
           templates: deps.phase1.templates,
         });
@@ -213,6 +216,7 @@ export async function handleWebhookRequest(
           notes: deps.phase1.notes,
           templates: deps.phase1.templates,
           usage: deps.phase1.usage,
+          quota: deps.phase1.quota,
           preferences: deps.phase1.preferences,
           provider: deps.phase1.provider,
           telegram: deps.phase1.telegram,

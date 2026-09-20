@@ -1,4 +1,5 @@
 import { assertEquals } from "@std/assert";
+import { AppError } from "../../supabase/functions/_shared/errors/app-error.ts";
 import { handleCommand } from "../../supabase/functions/_shared/services/command.service.ts";
 import type { CommandMessage } from "../../supabase/functions/_shared/telegram/parse-update.ts";
 
@@ -203,6 +204,16 @@ Deno.test("ask lazily indexes saved notes, answers from matches, and cites an op
       recordEmbedding: () => Promise.resolve(),
       recordGeneration: () => Promise.resolve(),
     },
+    quota: {
+      reserve: () =>
+        Promise.resolve({
+          reservationId: "44444444-4444-4444-8444-444444444444",
+          outcome: "reserved" as const,
+        }),
+      consume: () => Promise.resolve(),
+      release: () => Promise.resolve(),
+      getSummary: () => Promise.resolve([]),
+    },
     telegram: {
       sendMessage: (_chatId, text, options) => {
         sent.push({ text, options });
@@ -236,6 +247,97 @@ Deno.test("ask remains safely unavailable until the embedding model is configure
     },
   });
   assertEquals(sent[0]?.includes("not enabled"), true);
+});
+
+Deno.test("ask stops before every provider when the monthly quota is exhausted", async () => {
+  const test = harness();
+  let providerCalls = 0;
+  await handleCommand(command("ask", "What changed?"), {
+    ...test.deps,
+    embeddings: {
+      model: "gemini-embedding-001",
+      embedDocuments: () => {
+        providerCalls += 1;
+        return Promise.resolve({ vectors: [], provider: "gemini", model: "unused" });
+      },
+      embedQuestion: () => {
+        providerCalls += 1;
+        return Promise.resolve({ vectors: [], provider: "gemini", model: "unused" });
+      },
+    },
+    answers: {
+      answerFromEvidence: () => {
+        providerCalls += 1;
+        throw new Error("answer provider must not run");
+      },
+    },
+    usage: {
+      recordEmbedding: () => Promise.resolve(),
+      recordGeneration: () => Promise.resolve(),
+    },
+    quota: {
+      reserve: () => Promise.reject(AppError.quotaExceeded("synthetic")),
+      consume: () => Promise.resolve(),
+      release: () => Promise.resolve(),
+      getSummary: () => Promise.resolve([]),
+    },
+  });
+
+  assertEquals(providerCalls, 0);
+  assertEquals(test.sent[0]?.text, "You've reached your plan's limit for this month.");
+});
+
+Deno.test("usage shows the active plan and each monthly allowance", async () => {
+  const test = harness();
+  await handleCommand(command("usage", null), {
+    ...test.deps,
+    quota: {
+      reserve: () => Promise.reject(new Error("reserve must not run")),
+      consume: () => Promise.reject(new Error("consume must not run")),
+      release: () => Promise.reject(new Error("release must not run")),
+      getSummary: () =>
+        Promise.resolve([
+          {
+            planKey: "free",
+            planName: "Free",
+            metric: "note_generation" as const,
+            monthlyLimit: 50,
+            usedUnits: 7,
+            reservedUnits: 1,
+            remainingUnits: 22,
+            periodStart: "2026-09-01",
+            periodEnd: "2026-10-01",
+          },
+          {
+            planKey: "free",
+            planName: "Free",
+            metric: "regeneration" as const,
+            monthlyLimit: 50,
+            usedUnits: 2,
+            reservedUnits: 0,
+            remainingUnits: 8,
+            periodStart: "2026-09-01",
+            periodEnd: "2026-10-01",
+          },
+          {
+            planKey: "free",
+            planName: "Free",
+            metric: "semantic_answer" as const,
+            monthlyLimit: 50,
+            usedUnits: 3,
+            reservedUnits: 0,
+            remainingUnits: 7,
+            periodStart: "2026-09-01",
+            periodEnd: "2026-10-01",
+          },
+        ]),
+    },
+  });
+
+  assertEquals(test.sent[0]?.text.includes("Plan: Free"), true);
+  assertEquals(test.sent[0]?.text.includes("New notes: 7 (+1 processing) / 50"), true);
+  assertEquals(test.sent[0]?.text.includes("Regenerations: 2 / 50"), true);
+  assertEquals(test.sent[0]?.text.includes("Ask Notes: 3 / 50"), true);
 });
 
 Deno.test("settings displays the current preference snapshot", async () => {

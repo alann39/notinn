@@ -10,6 +10,7 @@ export const NAVIGATION_ACTIONS = [
   "recent",
   "search",
   "ask",
+  "usage",
   "templates",
   "template_create",
   "template_manage",

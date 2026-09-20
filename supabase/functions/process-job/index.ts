@@ -6,6 +6,7 @@ import { createLogger } from "../_shared/observability/logger.ts";
 import { GeminiNoteProvider } from "../_shared/providers/gemini-note.provider.ts";
 import { NotesRepository } from "../_shared/repositories/notes.repository.ts";
 import { ProcessingJobsRepository } from "../_shared/repositories/processing-jobs.repository.ts";
+import { QuotaRepository } from "../_shared/repositories/quota.repository.ts";
 import { TemplatesRepository } from "../_shared/repositories/templates.repository.ts";
 import { UsageRepository } from "../_shared/repositories/usage.repository.ts";
 import { createTelegramGateway } from "../_shared/telegram/client.ts";
@@ -50,6 +51,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
       notes: new NotesRepository(client),
       templates: new TemplatesRepository(client),
       usage: new UsageRepository(client),
+      quota: new QuotaRepository(client),
       provider: new GeminiNoteProvider(config.ai),
       telegram: createTelegramGateway(config.botToken),
       logger,

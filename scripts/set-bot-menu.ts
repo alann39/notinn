@@ -15,6 +15,7 @@ export const NOTINN_BOT_COMMANDS: readonly TelegramBotCommand[] = [
   { command: "recent", description: "View recent saved notes" },
   { command: "search", description: "Search your saved notes" },
   { command: "ask", description: "Ask a question about your notes" },
+  { command: "usage", description: "View your plan and monthly usage" },
   { command: "templates", description: "View and manage note templates" },
   { command: "settings", description: "Change your Notinn preferences" },
   { command: "help", description: "Open help and privacy guidance" },

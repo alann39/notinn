@@ -44,6 +44,7 @@ const REJECTED_CHATS_REPOSITORY = new URL("rejected-chats.repository.ts", REPOSI
 const TEMPLATES_REPOSITORY = new URL("templates.repository.ts", REPOSITORY_DIR);
 const PROCESSING_JOBS_REPOSITORY = new URL("processing-jobs.repository.ts", REPOSITORY_DIR);
 const USER_PREFERENCES_REPOSITORY = new URL("user-preferences.repository.ts", REPOSITORY_DIR);
+const QUOTA_REPOSITORY = new URL("quota.repository.ts", REPOSITORY_DIR);
 
 /** Read every migration, concatenated, with its filename attached for messages. */
 async function loadMigrations(): Promise<{ name: string; sql: string }[]> {
@@ -85,6 +86,8 @@ const FILE_SUFFIXES = [
   "phase5_user_preference_contract.sql",
   "phase5_scrub_staged_job_payload.sql",
   "phase5_custom_templates.sql",
+  "phase6a_plan_entitlements_and_quota.sql",
+  "phase6a_plan_fk_index.sql",
 ] as const;
 
 /** Read the one migration whose filename ends with `suffix`. */
@@ -110,6 +113,7 @@ const PHASE4_LIBRARY_SQL = await loadMigration("phase4_full_text_library.sql");
 const PHASE4_SEMANTIC_SQL = await loadMigration("phase4_semantic_library.sql");
 const PHASE5_PREFERENCES_SQL = await loadMigration("phase5_user_preference_contract.sql");
 const PHASE5_CUSTOM_TEMPLATES_SQL = await loadMigration("phase5_custom_templates.sql");
+const PHASE6_QUOTA_SQL = await loadMigration("phase6a_plan_entitlements_and_quota.sql");
 const ALL_MIGRATIONS = await loadMigrations();
 const ALL_SQL = ALL_MIGRATIONS.map((migration) => migration.sql).join("\n");
 
@@ -132,6 +136,43 @@ Deno.test("an early retry read is made visible again at its due time", () => {
     sql.includes("perform pgmq.set_vt('notinn_jobs', v_queue_message_id, v_retry_delay_seconds)"),
     "claim_processing_job leaves an early retry hidden for the full processing timeout",
   );
+});
+
+Deno.test("quota reservations serialize on a bucket and are idempotent per operation", () => {
+  const sql = normalise(PHASE6_QUOTA_SQL);
+
+  assert(
+    sql.includes("unique (user_id, metric, reservation_key)"),
+    "quota operations have no idempotency constraint",
+  );
+  assert(
+    sql.includes("from public.quota_buckets as bucket where bucket.user_id = p_user_id") &&
+      sql.includes("for update"),
+    "quota reservation does not lock the monthly bucket",
+  );
+  assert(
+    sql.includes("status = 'reserved' and reservation.expires_at <= now()"),
+    "stale quota reservations are never reclaimed",
+  );
+});
+
+Deno.test("quota metadata contains no note or Telegram content", () => {
+  const declarations = ["plans", "plan_entitlements", "quota_buckets", "quota_reservations"]
+    .map((table) => {
+      const match = PHASE6_QUOTA_SQL.match(
+        new RegExp(`create table public\\.${table} \\(([\\s\\S]*?)\\n\\);`),
+      );
+      assert(match !== null, `cannot find ${table}`);
+      return match[1] ?? "";
+    })
+    .join("\n")
+    .toLowerCase();
+
+  for (
+    const forbidden of ["source_text", "content_json", "rendered_text", "telegram_file"] as const
+  ) {
+    assert(!declarations.includes(forbidden), `quota metadata contains ${forbidden}`);
+  }
 });
 
 // --- Extracting values from SQL --------------------------------------------
@@ -653,6 +694,10 @@ const RPC_CONTRACTS = [
   [PROCESSING_JOBS_REPOSITORY, "claim_processing_job", PHASE5_PREFERENCES_SQL],
   [USER_PREFERENCES_REPOSITORY, "get_user_preferences", PHASE5_PREFERENCES_SQL],
   [USER_PREFERENCES_REPOSITORY, "update_user_preference", PHASE5_CUSTOM_TEMPLATES_SQL],
+  [QUOTA_REPOSITORY, "reserve_plan_quota", PHASE6_QUOTA_SQL],
+  [QUOTA_REPOSITORY, "consume_plan_quota", PHASE6_QUOTA_SQL],
+  [QUOTA_REPOSITORY, "release_plan_quota", PHASE6_QUOTA_SQL],
+  [QUOTA_REPOSITORY, "get_user_usage_summary", PHASE6_QUOTA_SQL],
 ] as const;
 
 for (const [repository, name, sql] of RPC_CONTRACTS) {

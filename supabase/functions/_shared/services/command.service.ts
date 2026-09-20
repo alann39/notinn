@@ -2,6 +2,7 @@ import { encodeCallbackPayload } from "../schemas/callback.ts";
 import { encodeNavigationCallback } from "../schemas/navigation-callback.ts";
 import type { IngestionRepository } from "../repositories/ingestion.repository.ts";
 import type { NotesRepository } from "../repositories/notes.repository.ts";
+import type { QuotaRepository } from "../repositories/quota.repository.ts";
 import type { UsageRepository } from "../repositories/usage.repository.ts";
 import type { TemplatesRepository } from "../repositories/templates.repository.ts";
 import {
@@ -17,6 +18,7 @@ import {
   TEMPLATE_KEY_PATTERN,
 } from "../config/constants.ts";
 import type { EmbeddingProvider, LibraryAnswerProvider } from "../providers/library-ai.provider.ts";
+import { AppError, isAppError } from "../errors/app-error.ts";
 import type { TelegramGateway } from "../telegram/client.ts";
 import type { CommandMessage } from "../telegram/parse-update.ts";
 import { sendNavigationCommand } from "./navigation.service.ts";
@@ -42,6 +44,7 @@ export interface CommandDependencies {
   readonly embeddings?: EmbeddingProvider;
   readonly answers?: LibraryAnswerProvider;
   readonly usage?: Pick<UsageRepository, "recordGeneration" | "recordEmbedding">;
+  readonly quota?: Pick<QuotaRepository, "reserve" | "consume" | "release" | "getSummary">;
   readonly preferences?: Pick<UserPreferencesRepository, "get" | "update">;
   readonly templates?:
     & Pick<TemplatesRepository, "listLabels">
@@ -285,7 +288,10 @@ async function handleAsk(
   question: string,
   deps: CommandDependencies,
 ): Promise<void> {
-  if (deps.embeddings === undefined || deps.answers === undefined || deps.usage === undefined) {
+  if (
+    deps.embeddings === undefined || deps.answers === undefined || deps.usage === undefined ||
+    deps.quota === undefined
+  ) {
     await deps.telegram.sendMessage(
       command.telegramChatId,
       "Semantic answers are not enabled yet. You can still use /search with keywords.",
@@ -293,145 +299,178 @@ async function handleAsk(
     return;
   }
 
-  const embeddingModel = deps.embeddings.model;
-  const pending = await deps.notes.listSavedNotesForEmbedding(
-    userId,
-    embeddingModel,
-    EMBEDDING_BATCH_LIMIT,
-  );
-  if (pending.length > 0) {
-    const indexed = await deps.embeddings.embedDocuments(
-      pending.map((note) => ({
-        title: note.title,
-        text: embeddingText(note.title, note.contentJson),
-      })),
+  let reservation;
+  try {
+    reservation = await deps.quota.reserve({
+      userId,
+      metric: "semantic_answer",
+      reservationKey: `command:${command.updateId}:semantic_answer`,
+    });
+    if (reservation.outcome === "existing_reserved") {
+      await deps.telegram.sendMessage(
+        command.telegramChatId,
+        AppError.rateLimited("duplicate semantic answer reservation").publicMessage,
+      );
+      return;
+    }
+  } catch (thrown) {
+    if (isAppError(thrown) && thrown.code === "quota_exceeded") {
+      await deps.telegram.sendMessage(command.telegramChatId, thrown.publicMessage);
+      return;
+    }
+    throw thrown;
+  }
+
+  let providerStarted = false;
+  try {
+    const embeddingModel = deps.embeddings.model;
+    const pending = await deps.notes.listSavedNotesForEmbedding(
+      userId,
+      embeddingModel,
+      EMBEDDING_BATCH_LIMIT,
     );
+    if (pending.length > 0) {
+      providerStarted = true;
+      const indexed = await deps.embeddings.embedDocuments(
+        pending.map((note) => ({
+          title: note.title,
+          text: embeddingText(note.title, note.contentJson),
+        })),
+      );
+      await deps.usage.recordEmbedding({
+        userId,
+        provider: indexed.provider,
+        model: indexed.model,
+      });
+      for (let index = 0; index < pending.length; index += 1) {
+        const note = pending[index];
+        const vector = indexed.vectors[index];
+        if (note === undefined || vector === undefined) continue;
+        await deps.notes.upsertNoteEmbedding({
+          userId,
+          noteId: note.noteId,
+          outputId: note.outputId,
+          embeddingModel: indexed.model,
+          contentSha256: note.contentSha256,
+          embedding: vector,
+        });
+      }
+    }
+
+    providerStarted = true;
+    const query = await deps.embeddings.embedQuestion(question);
+    const queryVector = query.vectors[0];
+    if (queryVector === undefined) return;
     await deps.usage.recordEmbedding({
       userId,
-      provider: indexed.provider,
-      model: indexed.model,
+      provider: query.provider,
+      model: query.model,
     });
-    for (let index = 0; index < pending.length; index += 1) {
-      const note = pending[index];
-      const vector = indexed.vectors[index];
-      if (note === undefined || vector === undefined) continue;
-      await deps.notes.upsertNoteEmbedding({
-        userId,
-        noteId: note.noteId,
-        outputId: note.outputId,
-        embeddingModel: indexed.model,
-        contentSha256: note.contentSha256,
-        embedding: vector,
-      });
+    const matches = await deps.notes.matchSavedNoteEmbeddings(
+      userId,
+      query.model,
+      queryVector,
+      SEMANTIC_MATCH_LIMIT,
+      MIN_SEMANTIC_SIMILARITY,
+    );
+    if (matches.length === 0) {
+      await deps.telegram.sendMessage(
+        command.telegramChatId,
+        "I could not find enough evidence in your saved notes to answer that.",
+        {
+          inlineKeyboard: {
+            inline_keyboard: [[
+              {
+                text: "💬 Ask another question",
+                callback_data: encodeNavigationCallback({ action: "ask", value: null }),
+              },
+            ], [
+              {
+                text: "📚 Recent notes",
+                callback_data: encodeNavigationCallback({ action: "recent", value: null }),
+              },
+            ]],
+          },
+        },
+      );
+      return;
     }
-  }
 
-  const query = await deps.embeddings.embedQuestion(question);
-  const queryVector = query.vectors[0];
-  if (queryVector === undefined) return;
-  await deps.usage.recordEmbedding({
-    userId,
-    provider: query.provider,
-    model: query.model,
-  });
-  const matches = await deps.notes.matchSavedNoteEmbeddings(
-    userId,
-    query.model,
-    queryVector,
-    SEMANTIC_MATCH_LIMIT,
-    MIN_SEMANTIC_SIMILARITY,
-  );
-  if (matches.length === 0) {
-    await deps.telegram.sendMessage(
-      command.telegramChatId,
-      "I could not find enough evidence in your saved notes to answer that.",
-      {
-        inlineKeyboard: {
-          inline_keyboard: [[
-            {
+    const answer = await deps.answers.answerFromEvidence(
+      question,
+      matches.map((note, index) => ({
+        index: index + 1,
+        title: note.title,
+        updatedAt: note.updatedAt,
+        content: embeddingText(note.title, note.contentJson),
+      })),
+    );
+    await deps.usage.recordGeneration({
+      userId,
+      jobId: null,
+      provider: answer.provider,
+      model: answer.model,
+      inputTokens: answer.inputTokens,
+      outputTokens: answer.outputTokens,
+      providerRequestId: answer.providerRequestId,
+    });
+    if (!answer.sufficient) {
+      await deps.telegram.sendMessage(
+        command.telegramChatId,
+        "I could not find enough evidence in your saved notes to answer that.",
+        {
+          inlineKeyboard: {
+            inline_keyboard: [[{
               text: "💬 Ask another question",
               callback_data: encodeNavigationCallback({ action: "ask", value: null }),
-            },
-          ], [
-            {
-              text: "📚 Recent notes",
-              callback_data: encodeNavigationCallback({ action: "recent", value: null }),
-            },
-          ]],
+            }], [{
+              text: "🏠 Main menu",
+              callback_data: encodeNavigationCallback({ action: "main", value: null }),
+            }]],
+          },
         },
-      },
-    );
-    return;
-  }
+      );
+      return;
+    }
 
-  const answer = await deps.answers.answerFromEvidence(
-    question,
-    matches.map((note, index) => ({
-      index: index + 1,
-      title: note.title,
-      updatedAt: note.updatedAt,
-      content: embeddingText(note.title, note.contentJson),
-    })),
-  );
-  await deps.usage.recordGeneration({
-    userId,
-    jobId: null,
-    provider: answer.provider,
-    model: answer.model,
-    inputTokens: answer.inputTokens,
-    outputTokens: answer.outputTokens,
-    providerRequestId: answer.providerRequestId,
-  });
-  if (!answer.sufficient) {
+    const cited = answer.citationIndexes
+      .map((index) => ({ index, note: matches[index - 1] }))
+      .filter((item): item is { index: number; note: NonNullable<typeof item.note> } =>
+        item.note !== undefined
+      );
+    const sources = cited.map((item) => `[${item.index}] ${item.note.title}`);
     await deps.telegram.sendMessage(
       command.telegramChatId,
-      "I could not find enough evidence in your saved notes to answer that.",
-      {
+      [answer.answer.slice(0, 3_000), "", "Sources:", ...sources].join("\n"),
+      cited.length === 0 ? undefined : {
         inlineKeyboard: {
-          inline_keyboard: [[{
-            text: "💬 Ask another question",
-            callback_data: encodeNavigationCallback({ action: "ask", value: null }),
-          }], [{
-            text: "🏠 Main menu",
-            callback_data: encodeNavigationCallback({ action: "main", value: null }),
-          }]],
+          inline_keyboard: [
+            ...cited.map((item) => [{
+              text: `📄 Source ${item.index} · ${item.note.title.slice(0, 34)}`,
+              callback_data: encodeCallbackPayload({
+                action: { kind: "show" },
+                resourceId: item.note.noteId,
+                revision: 0,
+              }),
+            }]),
+            [{
+              text: "💬 Ask again",
+              callback_data: encodeNavigationCallback({ action: "ask", value: null }),
+            }, {
+              text: "🏠 Main menu",
+              callback_data: encodeNavigationCallback({ action: "main", value: null }),
+            }],
+          ],
         },
       },
     );
-    return;
+  } finally {
+    if (providerStarted) {
+      await deps.quota.consume(userId, reservation.reservationId, 1);
+    } else {
+      await deps.quota.release(userId, reservation.reservationId);
+    }
   }
-
-  const cited = answer.citationIndexes
-    .map((index) => ({ index, note: matches[index - 1] }))
-    .filter((item): item is { index: number; note: NonNullable<typeof item.note> } =>
-      item.note !== undefined
-    );
-  const sources = cited.map((item) => `[${item.index}] ${item.note.title}`);
-  await deps.telegram.sendMessage(
-    command.telegramChatId,
-    [answer.answer.slice(0, 3_000), "", "Sources:", ...sources].join("\n"),
-    cited.length === 0 ? undefined : {
-      inlineKeyboard: {
-        inline_keyboard: [
-          ...cited.map((item) => [{
-            text: `📄 Source ${item.index} · ${item.note.title.slice(0, 34)}`,
-            callback_data: encodeCallbackPayload({
-              action: { kind: "show" },
-              resourceId: item.note.noteId,
-              revision: 0,
-            }),
-          }]),
-          [{
-            text: "💬 Ask again",
-            callback_data: encodeNavigationCallback({ action: "ask", value: null }),
-          }, {
-            text: "🏠 Main menu",
-            callback_data: encodeNavigationCallback({ action: "main", value: null }),
-          }],
-        ],
-      },
-    },
-  );
 }
 
 export async function handleCommand(
@@ -441,7 +480,7 @@ export async function handleCommand(
   if (
     command.command !== "start" && command.command !== "menu" && command.command !== "new" &&
     command.command !== "help" && command.command !== "recent" &&
-    command.command !== "search" && command.command !== "ask" &&
+    command.command !== "search" && command.command !== "ask" && command.command !== "usage" &&
     command.command !== "settings" && command.command !== "template" &&
     command.command !== "templates"
   ) {
@@ -456,7 +495,7 @@ export async function handleCommand(
   if (
     command.command === "start" || command.command === "menu" || command.command === "new" ||
     command.command === "help" || command.command === "recent" ||
-    command.command === "templates" ||
+    command.command === "templates" || command.command === "usage" ||
     (command.command === "settings" && command.argumentsText === null)
   ) {
     await sendNavigationCommand(command, userId, {
@@ -464,6 +503,7 @@ export async function handleCommand(
       telegram: deps.telegram,
       preferences: deps.preferences,
       templates: deps.templates,
+      quota: deps.quota,
     });
     return;
   }

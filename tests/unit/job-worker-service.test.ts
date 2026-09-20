@@ -41,6 +41,7 @@ function harness(
   job: ClaimedProcessingJob,
   options: {
     providerError?: AppError;
+    quotaError?: AppError;
     fileError?: AppError;
     deliveryError?: AppError;
     fileBytes?: Uint8Array;
@@ -55,6 +56,7 @@ function harness(
   const edits: string[] = [];
   const sends: string[] = [];
   const usage: unknown[] = [];
+  const quotaEvents: string[] = [];
   const audio = options.fileBytes ?? new Uint8Array([1, 2, 3, 4]);
   let sourceType = job.inputType ?? "text";
   let sourceText = job.sourceText;
@@ -206,6 +208,20 @@ function harness(
         return Promise.resolve();
       },
     },
+    quota: {
+      reserve: () => {
+        quotaEvents.push("reserve");
+        if (options.quotaError !== undefined) return Promise.reject(options.quotaError);
+        return Promise.resolve({
+          reservationId: "55555555-5555-4555-8555-555555555555",
+          outcome: "reserved" as const,
+        });
+      },
+      consume: () => {
+        quotaEvents.push("consume");
+        return Promise.resolve();
+      },
+    },
     provider,
     telegram: {
       sendMessage: (_chatId: number, text: string) => {
@@ -241,6 +257,7 @@ function harness(
     edits,
     sends,
     usage,
+    quotaEvents,
     audio,
     providerCalls: () => ({
       text: providerTextCalls,
@@ -340,6 +357,27 @@ Deno.test("a transient provider failure remains queued for retry", async () => {
     "I'm a little busy right now. I'll retry automatically in about 5 minutes—no need to send it again.",
   ]);
   assertEquals(test.sends, []);
+});
+
+Deno.test("an exhausted note quota fails before the provider and is not retried", async () => {
+  const test = harness(claimed(), {
+    quotaError: AppError.quotaExceeded("synthetic allowance exhausted"),
+  });
+
+  const outcome = await processQueueMessage(
+    { queueMessageId: 7, readCount: 1, jobId: JOB_ID },
+    test.deps,
+  );
+
+  assertEquals(outcome, "discarded");
+  assertEquals(test.providerCalls(), { text: 0, audio: 0, image: 0, pdf: 0 });
+  assertEquals(test.quotaEvents, ["reserve"]);
+  assertEquals(test.failed, ["GENERATING"]);
+  assertEquals(test.retryable, []);
+  assertEquals(
+    [...test.edits, ...test.sends].some((text) => text.includes("plan's limit")),
+    true,
+  );
 });
 
 Deno.test("a provider HTTP status is retained without its response body", async () => {

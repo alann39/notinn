@@ -1,9 +1,43 @@
 # Implementation status
 
-**Phase:** 5.5 — Navigation and commercial UX (deployed to development)
+**Phase:** 6A — Plan entitlements and atomic quota control (deployed to development)
 **Date:** 2026-09-20
 **Last verified:** the commands in [Verification](#verification) were run and their
 output is recorded below.
+
+## Phase 6A deployed snapshot
+
+Phase 6A is implemented, verified, and deployed to the development project.
+
+- Alpha, Free, and Pro plan allowances are database configuration rather than
+  application constants. The approved Free allowance is 50 per month for new
+  notes, regenerations, and semantic answers; Alpha remains 500/200/200 and Pro
+  remains 1,000/300/300.
+- New-note generation, regeneration, and semantic answers reserve one logical
+  monthly unit before provider work. The database serializes concurrent checks on
+  the user/metric/month bucket and uses an idempotent reservation key.
+- Reservations are consumed after provider work begins, including provider
+  failures; pre-provider failures release them. Unreconciled reservations expire
+  after twenty minutes and are reclaimed on the next bucket reservation.
+- `/usage` and its main-menu action display the active plan, UTC monthly period,
+  consumed units, and in-flight reservations. The native menu definition now has
+  nine commands; the Telegram-side menu update remains an operator action because
+  the bot token is deliberately unavailable in this workspace.
+- The four quota tables contain identifiers and counters only. RLS is enabled,
+  direct table access is revoked, and the four quota RPCs are available only to
+  `service_role`.
+- `users.plan_key` has a covering index for its new plan-catalogue foreign key.
+- Formatting, linting, full type-checking, and the hermetic suite pass:
+  **537 passed, 0 failed**.
+- Migrations `phase6a_plan_entitlements_and_quota` and
+  `phase6a_plan_fk_index` are recorded remotely. `telegram-webhook` version 32
+  and `process-job` version 30 are ACTIVE with `verify_jwt=false`.
+- Remote verification confirmed Free `50/50/50`, Alpha `500/200/200`, Pro
+  `1,000/300/300`, a zero-use Closed Alpha `/usage` summary, deny-by-default
+  table privileges, service-role-only quota RPCs, and an empty-body HTTP 401 for
+  an unsigned webhook request.
+- The decision and retry semantics are recorded in
+  [ADR 0014](ADR/0014-atomic-plan-quota-reservations.md).
 
 ## Phase 5 current snapshot
 

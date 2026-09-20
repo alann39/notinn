@@ -62,6 +62,14 @@ function harness() {
       listLabels: () => Promise.resolve(new Map()),
     },
     usage: { recordGeneration: () => Promise.resolve() },
+    quota: {
+      reserve: () => {
+        throw new Error("quota must not run in an empty batch");
+      },
+      consume: () => {
+        throw new Error("quota must not run in an empty batch");
+      },
+    },
     provider: {
       generateText: () => {
         throw new Error("provider must not run in an empty batch");

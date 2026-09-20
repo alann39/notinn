@@ -1,5 +1,6 @@
 import type { InputType } from "../config/constants.ts";
 import type { NotesRepository } from "../repositories/notes.repository.ts";
+import type { QuotaRepository, UsageSummary } from "../repositories/quota.repository.ts";
 import type { TemplatesRepository } from "../repositories/templates.repository.ts";
 import type {
   PreferenceSetting,
@@ -28,6 +29,7 @@ interface NavigationDataDependencies {
   readonly templates?:
     & Pick<TemplatesRepository, "listLabels">
     & Partial<Pick<TemplatesRepository, "listAvailable">>;
+  readonly quota?: Pick<QuotaRepository, "getSummary">;
 }
 
 export type NavigationCommandDependencies = NavigationDataDependencies & {
@@ -73,7 +75,7 @@ function mainMenuView(): NavigationView {
       [navButton("📝 New note", "new"), navButton("📚 My notes", "recent")],
       [navButton("🔎 Search", "search"), navButton("💬 Ask notes", "ask")],
       [navButton("🎨 Templates", "templates"), navButton("⚙️ Settings", "settings")],
-      [navButton("❓ Help", "help", null, "primary")],
+      [navButton("📊 Usage", "usage"), navButton("❓ Help", "help", null, "primary")],
     ]),
   };
 }
@@ -474,6 +476,48 @@ function unavailableView(title: string, message: string): NavigationView {
   };
 }
 
+function usageLabel(item: UsageSummary): string {
+  return item.metric === "note_generation"
+    ? "📝 New notes"
+    : item.metric === "regeneration"
+    ? "🔄 Regenerations"
+    : "💬 Ask Notes";
+}
+
+async function usageView(
+  userId: string,
+  deps: NavigationDataDependencies,
+): Promise<NavigationView> {
+  if (deps.quota === undefined) {
+    return unavailableView("📊 Plan & usage", "Usage information is not enabled yet.");
+  }
+  const rows = await deps.quota.getSummary(userId);
+  const first = rows[0];
+  if (first === undefined) {
+    return unavailableView("📊 Plan & usage", "Your plan is not configured yet.");
+  }
+  const lines = rows.map((item) => {
+    const pending = item.reservedUnits === 0 ? "" : ` (+${item.reservedUnits} processing)`;
+    return `${usageLabel(item)}: ${item.usedUnits}${pending} / ${item.monthlyLimit}`;
+  });
+  return {
+    text: [
+      "📊 Plan & usage",
+      "",
+      `Plan: ${first.planName}`,
+      `Period: ${first.periodStart} to ${first.periodEnd} (UTC)`,
+      "",
+      ...lines,
+      "",
+      "Usage resets at the start of the next UTC month.",
+    ].join("\n"),
+    keyboard: keyboard([
+      [navButton("🔄 Refresh", "usage")],
+      [navButton("🏠 Main menu", "main", null, "primary")],
+    ]),
+  };
+}
+
 async function viewFor(
   action: NavigationAction,
   value: string | null,
@@ -485,6 +529,7 @@ async function viewFor(
   if (action === "help") return helpView();
   if (action.startsWith("help_")) return helpTopicView(action);
   if (action === "search" || action === "ask") return commandPromptView(action);
+  if (action === "usage") return await usageView(userId, deps);
   if (action === "recent") {
     return await recentView(userId, Number.parseInt(value ?? "0", 10), deps);
   }
@@ -515,6 +560,8 @@ export async function sendNavigationCommand(
     ? "search"
     : command.command === "ask"
     ? "ask"
+    : command.command === "usage"
+    ? "usage"
     : command.command === "templates"
     ? "templates"
     : "settings";

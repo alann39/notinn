@@ -2,31 +2,31 @@
 
 Five suites, layered by what they need to run. The layering is not decoration: it
 is what lets a developer without Docker (see
-[ADR 0006](ADR/0006-pinned-dependencies.md)) still prove the hermetic Phase 5
+[ADR 0006](ADR/0006-pinned-dependencies.md)) still prove the hermetic Phase 6A
 surface.
 
 | Suite                       | Files | Tests | Needs               | Command                      |
 | --------------------------- | ----- | ----: | ------------------- | ---------------------------- |
-| [unit](#unit)               | 23    |   353 | nothing             | `deno task test:unit`        |
-| [contract](#contract)       | 2     |   104 | nothing             | `deno task test:contract`    |
+| [unit](#unit)               | 24    |   367 | nothing             | `deno task test:unit`        |
+| [contract](#contract)       | 2     |   114 | nothing             | `deno task test:contract`    |
 | [security](#security)       | 3     |    56 | nothing             | `deno task test:security`    |
 | [integration](#integration) | 4     |    25 | a Supabase project  | `deno task test:integration` |
 | [e2e](#e2e)                 | 1     |     8 | a deployed function | `deno task test:integration` |
 
-`deno task test` runs unit + contract + security: **513 tests, no database and no
+`deno task test` runs unit + contract + security: **537 tests, no database and no
 outbound network.**
 
 The integration and e2e suites are _ignored_, not failed, when no target is
 configured, so the number of ignored tests is the count of checks that need
 infrastructure rather than checks that were skipped to make a run go green.
 
-Latest hermetic run (unit + contract + security, 2026-09-20): **513 passed, 0
-failed.** Integration and e2e were not run because Docker/Podman and a deployed
-test target are unavailable.
+Latest hermetic run (unit + contract + security, 2026-09-20): **537 passed, 0
+failed.** The integration/e2e invocation passed its environment guard and reported
+**1 passed, 0 failed, 32 ignored** because no deployed test target is configured.
 
 ---
 
-## Unit — 353 tests
+## Unit — 367 tests
 
 Pure functions, no I/O, no doubles where a real call is possible.
 
@@ -38,12 +38,13 @@ Pure functions, no I/O, no doubles where a real call is possible.
 | `job-state.test.ts`                 | The transition table's shape: every terminal state has no outgoing edges, every non-terminal state can reach a terminal one, `CANCELLED` is reachable from every non-terminal state, creation states are `RECEIVED` and `QUEUED` |
 | `logger.test.ts`                    | The allowlist: unknown fields dropped, objects and arrays dropped, denied fields dropped even when explicitly passed, level filtering, child context                                                                             |
 | `parse-update.test.ts`              | Classification: private vs group vs channel, bots, service messages, one-content-kind rule, unsupported kinds, forwarded detection                                                                                               |
-| `command-service.test.ts`           | `/search`, `/ask`, `/settings`, and custom-template command validation; lazy indexing, grounded answers, preference display/update, empty results, and opaque Open callbacks                                                     |
+| `command-service.test.ts`           | `/search`, quota-controlled `/ask`, `/usage`, `/settings`, and custom-template command validation; lazy indexing, grounded answers, preference display/update, empty results, and opaque Open callbacks                           |
 | `callback.test.ts`                  | Versioned callback payload encoding, UUID opacity, system/custom format actions, action vocabulary, and Telegram's 64-byte limit                                                                                                 |
 | `gemini-note-provider.test.ts`      | Gemini text/audio/image/PDF inline requests, response schemas, extracted-source validation, usage metadata, wrong-template rejection, invalid JSON, and rate-limit mapping                                                       |
 | `gemini-embedding-provider.test.ts` | Batched document and question embeddings, 768-dimensional normalization, model guard, and rate-limit mapping                                                                                                                     |
 | `document-extraction.test.ts`       | UTF-8 text decoding, image magic bytes, PDF encryption rejection, DOCX extraction, and macro rejection                                                                                                                           |
-| `job-worker-service.test.ts`        | Text/audio/image/PDF/document state paths, in-memory buffer scrubbing, note staging, usage metering, delivery retry idempotency, transient retry, and file limits                                                                |
+| `job-worker-service.test.ts`        | Text/audio/image/PDF/document state paths, in-memory buffer scrubbing, quota admission, note staging, usage metering, delivery retry idempotency, transient retry, and file limits                                               |
+| `quota-service.test.ts`             | Reserve-before-provider ordering, reconciliation after success/failure, quota refusal, and duplicate in-flight suppression                                                                                                      |
 | `note-rendering.test.ts`            | Telegram-safe HTML, semantic splitting, inline keyboards, and callback round-trips                                                                                                                                               |
 | `note-export.test.ts`               | Deterministic Markdown/text rendering plus valid multipage PDF generation, metadata, safe filename fallback, markup escaping, and omission of empty groups                                                                       |
 | `structured-note.test.ts`           | Application-authoritative structured-note validation and non-fabrication bounds                                                                                                                                                  |
@@ -55,7 +56,7 @@ Pure functions, no I/O, no doubles where a real call is possible.
 
 ---
 
-## Contract — 104 tests
+## Contract — 114 tests
 
 `contract/migration-constants.test.ts` is the drift guard. It reads the migration
 SQL from disk and asserts the TypeScript mirrors in `config/constants.ts` agree
@@ -81,7 +82,8 @@ What it asserts:
 | Enums         | 6 mirrored enums match member-for-member, including a reverse set-equality check so a member added to the DB and not the mirror is caught too                                                                                                                                                              |
 | Templates     | The 11-key catalogue matches, in both directions                                                                                                                                                                                                                                                           |
 | State machine | The transition mirror matches the trigger's `case` arms; the terminal list matches; creation states match; a state the trigger omits is treated as terminal                                                                                                                                                |
-| Access model  | RLS enabled and no policy on all 8 tables; no table granted to a client role; `search_path` pinned on **every** function; every function is `SECURITY DEFINER` or a trigger function; no client-role `EXECUTE` on any function; definer functions granted to `service_role`; the revoke precedes the grant |
+| Access model  | RLS enabled with client table access revoked; no table granted to a client role; `search_path` pinned on **every** function; every function is `SECURITY DEFINER` or a trigger function; no client-role `EXECUTE` on any function; definer functions granted to `service_role`; the revoke precedes the grant |
+| Quota         | Bucket locking, idempotent operation keys, stale-reservation reclamation, content-free metadata, and all four repository/RPC argument contracts                                                                                                                                                |
 | RPC surface   | Repository RPC argument names ⊇ the declared parameters; every required parameter supplied; the outcome vocabulary matches on both sides                                                                                                                                                                   |
 | Hygiene       | One definition per object; no `DROP TABLE`, `TRUNCATE` or `DISABLE ROW LEVEL SECURITY`; the migration file set matches the expected list; timestamps in order                                                                                                                                              |
 

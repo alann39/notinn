@@ -102,6 +102,8 @@ fields are **present**, so a logger that wrote nothing cannot pass.
 | `note_outputs`     | Validated structured content and its rendered text                       | Provider output only after application validation                                      |
 | `note_embeddings`  | Vector, model, content hash, and owned note/output references            | **No duplicate note text and no raw media.** Deleted or invalidated with library state |
 | `usage_events`     | Counters and an internal cost estimate                                   | **No user content.** Counts, provider identifiers only                                 |
+| `plans` / `plan_entitlements` | Plan labels and monthly logical-operation limits              | Product configuration only                                                             |
+| `quota_buckets` / `quota_reservations` | Monthly counters, generated ids, status, and expiry | **No user content.** Reservation keys contain generated operation identifiers only     |
 
 `processing_jobs.telegram_file_id` is marked **secret-adjacent** in the schema
 comment: the Telegram download URL derived from it embeds the bot token. It is

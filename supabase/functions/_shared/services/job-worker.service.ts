@@ -22,6 +22,7 @@ import type {
   ProcessingJobsRepository,
   ProcessingQueueMessage,
 } from "../repositories/processing-jobs.repository.ts";
+import type { QuotaRepository } from "../repositories/quota.repository.ts";
 import type { TemplatesRepository } from "../repositories/templates.repository.ts";
 import type { UsageRepository } from "../repositories/usage.repository.ts";
 import { parseStructuredNote, STRUCTURED_NOTE_VERSION } from "../schemas/structured-note.ts";
@@ -34,6 +35,7 @@ import {
   validatedImageMime,
   validatePdf,
 } from "./document-extraction.ts";
+import { withConsumedQuota } from "./quota.service.ts";
 
 const AUDIO_MIME_TYPES = new Set([
   "audio/aac",
@@ -78,6 +80,7 @@ export interface JobWorkerDependencies {
   >;
   readonly templates: Pick<TemplatesRepository, "findForGeneration" | "listLabels">;
   readonly usage: Pick<UsageRepository, "recordGeneration">;
+  readonly quota: Pick<QuotaRepository, "reserve" | "consume">;
   readonly provider: NoteAIProvider;
   readonly telegram: Pick<TelegramGateway, "downloadFile" | "editMessageText" | "sendMessage">;
   readonly logger: Logger;
@@ -253,21 +256,35 @@ async function generateNewNote(
   documentPages: number | null;
 }> {
   const template = await deps.templates.findForGeneration(job.userId, templateKey, job.inputType);
+  const generate = <T>(providerCall: () => Promise<T>) =>
+    withConsumedQuota(
+      deps.quota,
+      {
+        userId: job.userId,
+        metric: "note_generation",
+        reservationKey: `job:${job.jobId}:attempt:${job.attemptCount}`,
+        jobId: job.jobId,
+      },
+      providerCall,
+    );
 
   if (job.inputType === "text") {
     if (job.sourceText === null) throw AppError.internal("text job had no source text");
+    const sourceText = job.sourceText;
     await advance(deps, job, "ACQUIRING", "EXTRACTING");
     state.value = "EXTRACTING";
     await advance(deps, job, "EXTRACTING", "GENERATING");
     state.value = "GENERATING";
-    const generation = await deps.provider.generateText({
-      sourceText: job.sourceText,
-      template,
-      templateKey,
-      reason: "initial",
-      outputLanguage: job.outputLanguage === "mirror" ? null : job.outputLanguage,
-    });
-    return { generation, sourceText: job.sourceText, operation: "generation", documentPages: null };
+    const generation = await generate(() =>
+      deps.provider.generateText({
+        sourceText,
+        template,
+        templateKey,
+        reason: "initial",
+        outputLanguage: job.outputLanguage === "mirror" ? null : job.outputLanguage,
+      })
+    );
+    return { generation, sourceText, operation: "generation", documentPages: null };
   }
 
   if (job.telegramFileId === null) {
@@ -286,13 +303,15 @@ async function generateNewNote(
       state.value = "EXTRACTING";
       await advance(deps, job, "EXTRACTING", "GENERATING");
       state.value = "GENERATING";
-      const generation: ImageGenerationResult = await deps.provider.generateImage({
-        image,
-        mimeType,
-        template,
-        templateKey,
-        outputLanguage: job.outputLanguage === "mirror" ? null : job.outputLanguage,
-      });
+      const generation: ImageGenerationResult = await generate(() =>
+        deps.provider.generateImage({
+          image,
+          mimeType,
+          template,
+          templateKey,
+          outputLanguage: job.outputLanguage === "mirror" ? null : job.outputLanguage,
+        })
+      );
       return {
         generation,
         sourceText: generation.extractedText,
@@ -316,12 +335,14 @@ async function generateNewNote(
       state.value = "EXTRACTING";
       await advance(deps, job, "EXTRACTING", "GENERATING");
       state.value = "GENERATING";
-      const generation = await deps.provider.generatePdf({
-        pdf,
-        template,
-        templateKey,
-        outputLanguage: job.outputLanguage === "mirror" ? null : job.outputLanguage,
-      });
+      const generation = await generate(() =>
+        deps.provider.generatePdf({
+          pdf,
+          template,
+          templateKey,
+          outputLanguage: job.outputLanguage === "mirror" ? null : job.outputLanguage,
+        })
+      );
       return {
         generation,
         sourceText: generation.extractedText,
@@ -348,13 +369,15 @@ async function generateNewNote(
         : extractPlainText(document);
       await advance(deps, job, "EXTRACTING", "GENERATING");
       state.value = "GENERATING";
-      const generation = await deps.provider.generateText({
-        sourceText,
-        template,
-        templateKey,
-        reason: "initial",
-        outputLanguage: job.outputLanguage === "mirror" ? null : job.outputLanguage,
-      });
+      const generation = await generate(() =>
+        deps.provider.generateText({
+          sourceText,
+          template,
+          templateKey,
+          reason: "initial",
+          outputLanguage: job.outputLanguage === "mirror" ? null : job.outputLanguage,
+        })
+      );
       return { generation, sourceText, operation: "generation", documentPages: null };
     } finally {
       document.fill(0);
@@ -385,13 +408,15 @@ async function generateNewNote(
     state.value = "EXTRACTING";
     await advance(deps, job, "EXTRACTING", "GENERATING");
     state.value = "GENERATING";
-    const generation: AudioGenerationResult = await deps.provider.generateAudio({
-      audio,
-      mimeType,
-      template,
-      templateKey,
-      outputLanguage: job.outputLanguage === "mirror" ? null : job.outputLanguage,
-    });
+    const generation: AudioGenerationResult = await generate(() =>
+      deps.provider.generateAudio({
+        audio,
+        mimeType,
+        template,
+        templateKey,
+        outputLanguage: job.outputLanguage === "mirror" ? null : job.outputLanguage,
+      })
+    );
     return {
       generation,
       sourceText: generation.transcript,

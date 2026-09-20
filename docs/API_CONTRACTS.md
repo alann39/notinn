@@ -336,3 +336,22 @@ page numbers, metadata, and an attached exact UTF-8 text representation. A missi
 or foreign note produces no document. Successful output is capped at 2 MiB and uploaded to Telegram with
 `sendDocument`; its byte buffer is zero-filled in `finally`. The callback does not
 perform model generation, mutate the note, or persist a temporary file.
+
+## 11. Phase 6A plan quota surface
+
+| Function                                  | Contract                                                                 |
+| ----------------------------------------- | ------------------------------------------------------------------------ |
+| `reserve_plan_quota(...)`                 | Atomically reserves logical monthly capacity or returns a closed outcome |
+| `consume_plan_quota(uuid, uuid, bigint)`  | Moves a reservation into used units after provider work starts           |
+| `release_plan_quota(uuid, uuid)`          | Releases capacity when failure occurs before provider work               |
+| `get_user_usage_summary(uuid)`            | Returns the active plan and all current UTC-month metric counters         |
+
+Reservation keys are idempotent per user and metric. New-note jobs use the job
+id plus attempt count; regeneration and semantic-answer commands use the Telegram
+update id. A bucket row is locked for the short reserve/finalize transaction, but
+no lock is held across a provider or Telegram request. Reservations expire after
+twenty minutes and are reclaimed on the next reservation for that bucket.
+
+The `/usage` command and Usage menu action read the same summary RPC. Direct table
+access is revoked from client roles and `service_role`; only the four
+`SECURITY DEFINER` RPCs are granted to `service_role`.

@@ -8,6 +8,7 @@ import type { Logger } from "../observability/logger.ts";
 import type { NoteAIProvider } from "../providers/note-ai.provider.ts";
 import type { IngestionRepository } from "../repositories/ingestion.repository.ts";
 import type { NotesRepository } from "../repositories/notes.repository.ts";
+import type { QuotaRepository } from "../repositories/quota.repository.ts";
 import type { TemplatesRepository } from "../repositories/templates.repository.ts";
 import type { UsageRepository } from "../repositories/usage.repository.ts";
 import type { UserPreferencesRepository } from "../repositories/user-preferences.repository.ts";
@@ -25,6 +26,7 @@ import {
   renderNoteOutput,
 } from "./note-rendering.ts";
 import { type NoteExportFormat, renderNoteExport } from "./note-export.ts";
+import { withConsumedQuota } from "./quota.service.ts";
 import { handleNavigationCallback } from "./navigation.service.ts";
 
 const NOTE_GONE = "That note is no longer available.";
@@ -46,6 +48,7 @@ export interface CallbackDependencies {
     & Partial<Pick<TemplatesRepository, "listAvailable">>;
   readonly preferences?: Pick<UserPreferencesRepository, "get" | "update">;
   readonly usage: Pick<UsageRepository, "recordGeneration">;
+  readonly quota: Pick<QuotaRepository, "reserve" | "consume" | "getSummary">;
   readonly provider: Pick<NoteAIProvider, "generateText">;
   readonly telegram: Pick<
     TelegramGateway,
@@ -142,6 +145,7 @@ async function regenerate(
     );
     return true;
   }
+  const sourceText = source.sourceText;
 
   const selectedTemplateKey = targetTemplate ?? templateKey(source.templateKey);
   const template = await deps.templates.findForGeneration(
@@ -149,13 +153,22 @@ async function regenerate(
     selectedTemplateKey,
     source.sourceType,
   );
-  const generation = await deps.provider.generateText({
-    sourceText: source.sourceText,
-    template,
-    templateKey: selectedTemplateKey,
-    reason,
-    outputLanguage: source.language,
-  });
+  const generation = await withConsumedQuota(
+    deps.quota,
+    {
+      userId,
+      metric: "regeneration",
+      reservationKey: `callback:${callback.updateId}:regeneration`,
+    },
+    () =>
+      deps.provider.generateText({
+        sourceText,
+        template,
+        templateKey: selectedTemplateKey,
+        reason,
+        outputLanguage: source.language,
+      }),
+  );
   const rendered = renderNoteOutput(generation.note);
 
   await deps.usage.recordGeneration({
@@ -234,6 +247,7 @@ export async function handleCallback(
         telegram: deps.telegram,
         preferences: deps.preferences,
         templates: deps.templates,
+        quota: deps.quota,
       });
       log.info("callback.completed", {
         callback_action: navigation.action,

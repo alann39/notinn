@@ -1,4 +1,5 @@
 import { assertEquals } from "@std/assert";
+import { AppError } from "../../supabase/functions/_shared/errors/app-error.ts";
 import { createCapturingLogger } from "../../supabase/functions/_shared/observability/logger.ts";
 import { encodeCallbackPayload } from "../../supabase/functions/_shared/schemas/callback.ts";
 import { encodeNavigationCallback } from "../../supabase/functions/_shared/schemas/navigation-callback.ts";
@@ -39,7 +40,9 @@ function payload(
   return encodeCallbackPayload({ action: { kind }, resourceId: NOTE_ID, revision: 0 });
 }
 
-function harness(options: { sourceExists?: boolean; displayExists?: boolean } = {}) {
+function harness(
+  options: { sourceExists?: boolean; displayExists?: boolean; quotaError?: AppError } = {},
+) {
   const events: string[] = [];
   const documents: { filename: string; mimeType: string; content: string }[] = [];
   const keyboards: string[][][] = [];
@@ -137,6 +140,21 @@ function harness(options: { sourceExists?: boolean; displayExists?: boolean } = 
         }),
     },
     usage: { recordGeneration: () => Promise.resolve() },
+    quota: {
+      reserve: () => {
+        events.push("quota_reserve");
+        if (options.quotaError !== undefined) return Promise.reject(options.quotaError);
+        return Promise.resolve({
+          reservationId: "44444444-4444-4444-8444-444444444444",
+          outcome: "reserved" as const,
+        });
+      },
+      consume: () => {
+        events.push("quota_consume");
+        return Promise.resolve();
+      },
+      getSummary: () => Promise.resolve([]),
+    },
     provider: {
       generateText: () => {
         providerCalls += 1;
@@ -221,6 +239,16 @@ Deno.test("a foreign or missing note is refused before a provider call", async (
   assertEquals(test.providerCalls(), 0);
   assertEquals(test.events.includes("send"), true);
   assertEquals(test.events.includes("insert_output"), false);
+});
+
+Deno.test("regeneration quota exhaustion is reported before a provider call", async () => {
+  const test = harness({ quotaError: AppError.quotaExceeded("synthetic") });
+
+  await handleCallback(callback(payload("shorter")), test.deps);
+
+  assertEquals(test.providerCalls(), 0);
+  assertEquals(test.events.includes("quota_consume"), false);
+  assertEquals(test.events.at(-1), "send");
 });
 
 Deno.test("malformed callback data is acknowledged without resolving a user", async () => {

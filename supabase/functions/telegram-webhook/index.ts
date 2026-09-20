@@ -6,6 +6,7 @@ import { createLogger } from "../_shared/observability/logger.ts";
 import { IngestionRepository } from "../_shared/repositories/ingestion.repository.ts";
 import { NotesRepository } from "../_shared/repositories/notes.repository.ts";
 import { ProcessingJobsRepository } from "../_shared/repositories/processing-jobs.repository.ts";
+import { QuotaRepository } from "../_shared/repositories/quota.repository.ts";
 import { RejectedChatsRepository } from "../_shared/repositories/rejected-chats.repository.ts";
 import { TemplatesRepository } from "../_shared/repositories/templates.repository.ts";
 import { UsageRepository } from "../_shared/repositories/usage.repository.ts";
@@ -94,6 +95,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
       rejectedChats: new RejectedChatsRepository(client),
       templates: new TemplatesRepository(client),
       usage: new UsageRepository(client),
+      quota: new QuotaRepository(client),
       preferences: new UserPreferencesRepository(client),
       provider: noteProvider,
       embeddings: config.ai.embeddingModel === null

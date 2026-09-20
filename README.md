@@ -3,7 +3,7 @@
 Telegram-first note capture. Send Notinn a message, a voice note, a screenshot, a
 PDF or a document, and get back a structured, searchable note.
 
-**Status: Phase 5 personalization and export are implemented.** Text, voice/audio, screenshots,
+**Status: Phase 6A plan quota control is deployed to development.** Text, voice/audio, screenshots,
 PDF, DOCX, TXT, and Markdown are processed by the durable PGMQ worker using one
 Gemini API key with a configured primary and transient-error fallback model. Raw
 media is downloaded into bounded memory, never stored, and zero-filled after
@@ -19,6 +19,11 @@ and verify the same menu with the guarded `bot-menu:set` operator task.
 Saved notes can be listed with `/recent`, searched by title, tags, retained source,
 or current note content with `/search <keywords>`, and queried with evidence-only
 answers through `/ask <question>` after the embedding model is enabled.
+
+Phase 6A adds database-configurable Alpha, Free, and Pro monthly allowances for
+new notes, regenerations, and semantic answers. Quota is reserved atomically
+before provider work, reconciled after it starts, and exposed through `/usage`.
+The schema and both Edge Functions are active in the development project.
 
 `/settings` now controls output language (`mirror`, Indonesian, or English),
 balanced/minimal privacy, and default templates for text, voice, and document
@@ -80,7 +85,7 @@ npx supabase link --project-ref <ref>   # confirm the target first
 npx supabase db push                    # apply migrations
 ```
 
-Twenty-three migrations in `supabase/migrations/`. They are the schema's source of truth;
+Twenty-five migrations in `supabase/migrations/`. They are the schema's source of truth;
 migrations are never edited after being applied to a shared project (one
 pre-release exception is recorded in
 [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md)).

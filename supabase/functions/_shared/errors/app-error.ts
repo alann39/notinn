@@ -113,6 +113,16 @@ export class AppError extends Error {
     return new AppError(ERROR_CODES.USER_NOT_ACTIVE, { internalDetail });
   }
 
+  /** Another equivalent operation is already consuming the current capacity. */
+  static rateLimited(internalDetail?: string): AppError {
+    return new AppError(ERROR_CODES.RATE_LIMITED, { internalDetail });
+  }
+
+  /** The active plan has no remaining allowance for this operation. */
+  static quotaExceeded(internalDetail?: string): AppError {
+    return new AppError(ERROR_CODES.QUOTA_EXCEEDED, { internalDetail });
+  }
+
   /** The durable worker has used every configured attempt. */
   static retriesExhausted(internalDetail?: string): AppError {
     return new AppError(ERROR_CODES.RETRIES_EXHAUSTED, { internalDetail });
