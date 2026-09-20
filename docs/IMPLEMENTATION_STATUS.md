@@ -64,11 +64,11 @@ received their pre-Phase-6 polish pass:
   and no client-role execute privilege.
 - Migrations `phase5_user_preference_contract`,
   `phase5_scrub_staged_job_payload`, and `phase5_custom_templates` are applied.
-  `telegram-webhook` version 27 and `process-job` version 28 are active.
+  `telegram-webhook` version 28 and `process-job` version 29 are active.
 - Type-check passes and the hermetic suite reports **515 passed, 0 failed**.
-- The bullet normalization and icon-labelled Options UI are source-verified but
-  not yet live. Production deployment requires explicit approval; the active
-  versions remain `telegram-webhook` v27 and `process-job` v28 until that approval.
+- The bullet normalization and icon-labelled Options UI are live on
+  `telegram-webhook` v28 and `process-job` v29. Both functions report ACTIVE, and
+  an unsigned webhook probe remains fail-closed with HTTP 401 and an empty body.
 
 The consistency and retention decision is recorded in
 [ADR 0013](ADR/0013-future-job-preference-snapshots.md).
