@@ -28,9 +28,9 @@ Phase 6A is implemented, verified, and deployed to the development project.
   `service_role`.
 - `users.plan_key` has a covering index for its new plan-catalogue foreign key.
 - Formatting, linting, full type-checking, and the hermetic suite pass:
-  **537 passed, 0 failed**.
+  **539 passed, 0 failed**.
 - Migrations `phase6a_plan_entitlements_and_quota` and
-  `phase6a_plan_fk_index` are recorded remotely. `telegram-webhook` version 32
+  `phase6a_plan_fk_index` are recorded remotely. `telegram-webhook` version 33
   and `process-job` version 30 are ACTIVE with `verify_jwt=false`.
 - Remote verification confirmed Free `50/50/50`, Alpha `500/200/200`, Pro
   `1,000/300/300`, a zero-use Closed Alpha `/usage` summary, deny-by-default
