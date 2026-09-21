@@ -87,7 +87,13 @@ export async function callTelegram<T>(
   botToken: Secret,
   method: string,
   payload: Record<string, unknown> = {},
-  options: { timeoutMs?: number; fileUnavailableOn400?: boolean; fetch?: typeof fetch } = {},
+  options: {
+    timeoutMs?: number;
+    fileUnavailableOn400?: boolean;
+    /** Telegram reports an idempotent message edit as HTTP 400 instead of success. */
+    acceptUnchangedMessage?: boolean;
+    fetch?: typeof fetch;
+  } = {},
 ): Promise<T> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
@@ -114,6 +120,12 @@ export async function callTelegram<T>(
   }
 
   if (!envelope.ok) {
+    if (
+      options.acceptUnchangedMessage === true && envelope.error_code === 400 &&
+      envelope.description?.toLowerCase().includes("message is not modified") === true
+    ) {
+      return true as T;
+    }
     if (options.fileUnavailableOn400 === true && envelope.error_code === 400) {
       throw AppError.fileUnavailable("telegram getFile no longer recognises the file id");
     }
@@ -501,12 +513,22 @@ export function editMessageReplyMarkup(
   chatId: number,
   messageId: number,
   inlineKeyboard: InlineKeyboardMarkup,
+  options: { fetch?: typeof fetch } = {},
 ): Promise<unknown> {
-  return callTelegram<unknown>(botToken, "editMessageReplyMarkup", {
-    chat_id: chatId,
-    message_id: messageId,
-    reply_markup: inlineKeyboard,
-  });
+  return callTelegram<unknown>(
+    botToken,
+    "editMessageReplyMarkup",
+    {
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: inlineKeyboard,
+    },
+    { acceptUnchangedMessage: true, fetch: options.fetch },
+  );
+}
+
+interface EditMessageTextOptions extends SendMessageOptions {
+  readonly fetch?: typeof fetch;
 }
 
 /** Replace a bot message and, optionally, its keyboard. */
@@ -515,16 +537,21 @@ export function editMessageText(
   chatId: number,
   messageId: number,
   text: string,
-  options: SendMessageOptions = {},
+  options: EditMessageTextOptions = {},
 ): Promise<unknown> {
-  return callTelegram<unknown>(botToken, "editMessageText", {
-    chat_id: chatId,
-    message_id: messageId,
-    text,
-    link_preview_options: { is_disabled: options.allowLinkPreview !== true },
-    ...(options.parseMode === undefined ? {} : { parse_mode: options.parseMode }),
-    ...(options.inlineKeyboard === undefined ? {} : { reply_markup: options.inlineKeyboard }),
-  });
+  return callTelegram<unknown>(
+    botToken,
+    "editMessageText",
+    {
+      chat_id: chatId,
+      message_id: messageId,
+      text,
+      link_preview_options: { is_disabled: options.allowLinkPreview !== true },
+      ...(options.parseMode === undefined ? {} : { parse_mode: options.parseMode }),
+      ...(options.inlineKeyboard === undefined ? {} : { reply_markup: options.inlineKeyboard }),
+    },
+    { acceptUnchangedMessage: true, fetch: options.fetch },
+  );
 }
 
 /** Injectable transport used by services and backed by the Bot API in production. */
