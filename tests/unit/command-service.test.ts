@@ -607,3 +607,81 @@ Deno.test("template archive explains a pending-job refusal", async () => {
 
   assertEquals(sent[0]?.includes("pending note"), true);
 });
+
+Deno.test("privacy and terms remain available before alpha activation", async () => {
+  for (const name of ["privacy", "terms"] as const) {
+    const test = harness();
+    await handleCommand(command(name, null), {
+      ...test.deps,
+      access: {
+        getAccess: () =>
+          Promise.resolve({ status: "pending" as const, activatedAt: null, suspendedAt: null }),
+        redeemInvite: () => Promise.reject(new Error("invite redemption must not run")),
+      },
+    });
+    assertEquals(test.sent.length, 1);
+    assertEquals(
+      test.sent[0]?.text.includes(name === "privacy" ? "Notinn Privacy" : "Terms"),
+      true,
+    );
+    assertEquals(test.sent[0]?.text.includes("invite-only"), false);
+  }
+});
+
+Deno.test("account deletion requires exact confirmation before scheduling", async () => {
+  const test = harness();
+  let requests = 0;
+  const lifecycle = {
+    get: () =>
+      Promise.resolve({
+        status: "active" as const,
+        deletionRequestedAt: null,
+        deletionScheduledAt: null,
+        deletedAt: null,
+      }),
+    requestDeletion: () => {
+      requests += 1;
+      return Promise.resolve({ outcome: "scheduled" as const, deletionScheduledAt: null });
+    },
+    cancelDeletion: () => Promise.resolve("not_pending" as const),
+  };
+
+  await handleCommand(command("delete_account", null), { ...test.deps, lifecycle });
+  assertEquals(requests, 0);
+  assertEquals(test.sent[0]?.text.includes("/delete_account confirm"), true);
+
+  await handleCommand(command("delete_account", "confirm"), { ...test.deps, lifecycle });
+  assertEquals(requests, 1);
+  assertEquals(test.sent[1]?.text.includes("Account deletion pending"), true);
+});
+
+Deno.test("pending deletion blocks features but can still be cancelled", async () => {
+  const test = harness();
+  let cancellations = 0;
+  const lifecycle = {
+    get: () =>
+      Promise.resolve({
+        status: "deletion_pending" as const,
+        deletionRequestedAt: "2026-09-21T12:00:00Z",
+        deletionScheduledAt: "2026-09-28T12:00:00Z",
+        deletedAt: null,
+      }),
+    requestDeletion: () =>
+      Promise.resolve({
+        outcome: "already_pending" as const,
+        deletionScheduledAt: "2026-09-28T12:00:00Z",
+      }),
+    cancelDeletion: () => {
+      cancellations += 1;
+      return Promise.resolve("cancelled" as const);
+    },
+  };
+
+  await handleCommand(command("search", "quarterly"), { ...test.deps, lifecycle });
+  assertEquals(test.searchCalls(), []);
+  assertEquals(test.sent[0]?.text.includes("2026-09-28T12:00:00.000Z"), true);
+
+  await handleCommand(command("cancel_deletion", null), { ...test.deps, lifecycle });
+  assertEquals(cancellations, 1);
+  assertEquals(test.sent[1]?.text.includes("deletion cancelled"), true);
+});

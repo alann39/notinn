@@ -333,6 +333,27 @@ Deno.test("a suspended user cannot reuse an old note callback", async () => {
   assertEquals(test.events.at(-1), "send");
 });
 
+Deno.test("an account pending deletion cannot reuse an old note callback", async () => {
+  const test = harness();
+
+  await handleCallback(callback(payload("shorter")), {
+    ...test.deps,
+    lifecycle: {
+      get: () =>
+        Promise.resolve({
+          status: "deletion_pending" as const,
+          deletionRequestedAt: "2026-09-21T12:00:00Z",
+          deletionScheduledAt: "2026-09-28T12:00:00Z",
+          deletedAt: null,
+        }),
+    },
+  });
+
+  assertEquals(test.providerCalls(), 0);
+  assertEquals(test.events.includes("quota_reserve"), false);
+  assertEquals(test.events.slice(0, 3), ["answer", "ensure_user", "send"]);
+});
+
 Deno.test("regeneration stages a preview without changing the current output", async () => {
   const test = harness();
 

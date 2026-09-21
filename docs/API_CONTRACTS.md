@@ -369,3 +369,19 @@ access is revoked from client roles and `service_role`; only the four
 `reserve_plan_quota` and `get_user_usage_summary` now return UTC-day counters in
 addition to their monthly counters. `daily_exceeded` is distinct from monthly
 `exceeded`, but neither path creates a reservation or starts provider work.
+
+## 13. Phase 6C account-lifecycle surface
+
+| Function                                  | Contract                                                                                 |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `get_account_lifecycle(uuid)`             | Returns status and deletion timestamps for the resolved internal owner                   |
+| `request_account_deletion(uuid)`          | Idempotently blocks the account, cancels active work, and returns the seven-day deadline |
+| `cancel_account_deletion(uuid)`           | Restores the pre-deletion active/blocked state only before the deadline                  |
+| `finalize_account_deletion(uuid)`         | Deletes owned content and anonymizes Telegram identity only when due                     |
+| `finalize_due_account_deletions(integer)` | Finalizes a bounded, locked batch for database cron                                      |
+
+`/privacy` and `/terms` bypass Closed Alpha and lifecycle access gates.
+`/delete_account` mutates state only with exact `confirm`; `/cancel_deletion` is
+available while pending. All other commands and both navigation/note callbacks
+are blocked during the grace period. Direct lifecycle-table access remains
+denied; application RPCs are executable only by `service_role`.

@@ -17,6 +17,7 @@ import type { TemplatesRepository } from "../repositories/templates.repository.t
 import type { UsageRepository } from "../repositories/usage.repository.ts";
 import type { UserPreferencesRepository } from "../repositories/user-preferences.repository.ts";
 import type { ClosedAlphaRepository } from "../repositories/closed-alpha.repository.ts";
+import type { AccountLifecycleRepository } from "../repositories/account-lifecycle.repository.ts";
 import type { NoteAIProvider } from "../providers/note-ai.provider.ts";
 import type { EmbeddingProvider, LibraryAnswerProvider } from "../providers/library-ai.provider.ts";
 import { handleCallback } from "../services/callback.service.ts";
@@ -66,6 +67,7 @@ export interface WebhookDependencies {
     readonly quota: QuotaRepository;
     readonly preferences: UserPreferencesRepository;
     readonly access: ClosedAlphaRepository;
+    readonly lifecycle: AccountLifecycleRepository;
     readonly provider: Pick<NoteAIProvider, "generateText">;
     readonly embeddings?: EmbeddingProvider;
     readonly answers?: LibraryAnswerProvider;
@@ -206,6 +208,7 @@ export async function handleWebhookRequest(
           preferences: deps.phase1.preferences,
           templates: deps.phase1.templates,
           access: deps.phase1.access,
+          lifecycle: deps.phase1.lifecycle,
         });
       }
       log.info("webhook.command", {
@@ -229,6 +232,7 @@ export async function handleWebhookRequest(
           telegram: deps.phase1.telegram,
           logger: log,
           access: deps.phase1.access,
+          lifecycle: deps.phase1.lifecycle,
         });
       }
       return acceptedResponse();

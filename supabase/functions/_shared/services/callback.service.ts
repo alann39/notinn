@@ -18,6 +18,7 @@ import type { TemplatesRepository } from "../repositories/templates.repository.t
 import type { UsageRepository } from "../repositories/usage.repository.ts";
 import type { UserPreferencesRepository } from "../repositories/user-preferences.repository.ts";
 import type { ClosedAlphaRepository } from "../repositories/closed-alpha.repository.ts";
+import type { AccountLifecycleRepository } from "../repositories/account-lifecycle.repository.ts";
 import { actionToken, decodeCallbackPayload } from "../schemas/callback.ts";
 import { decodeNavigationCallback, isNavigationCallback } from "../schemas/navigation-callback.ts";
 import { parseStructuredNote, STRUCTURED_NOTE_VERSION } from "../schemas/structured-note.ts";
@@ -36,7 +37,7 @@ import {
 import { type NoteExportFormat, renderNoteExport } from "./note-export.ts";
 import { withConsumedQuota } from "./quota.service.ts";
 import { handleNavigationCallback } from "./navigation.service.ts";
-import { closedAlphaAccessMessage } from "./command.service.ts";
+import { closedAlphaAccessMessage, pendingDeletionMessage } from "./command.service.ts";
 
 const NOTE_GONE = "That note is no longer available.";
 
@@ -72,6 +73,7 @@ export interface CallbackDependencies {
   readonly usage: Pick<UsageRepository, "recordGeneration">;
   readonly quota: Pick<QuotaRepository, "reserve" | "consume" | "getSummary">;
   readonly access?: Pick<ClosedAlphaRepository, "getAccess">;
+  readonly lifecycle?: Pick<AccountLifecycleRepository, "get">;
   readonly provider: Pick<NoteAIProvider, "generateText">;
   readonly telegram: Pick<
     TelegramGateway,
@@ -552,6 +554,16 @@ export async function handleCallback(
 
     await deps.telegram.answerCallbackQuery(callback.callbackQueryId);
     const userId = await deps.users.ensureUser(callback);
+    const lifecycle = await deps.lifecycle?.get(userId);
+    if (lifecycle?.status === "deletion_pending" || lifecycle?.status === "deleted") {
+      await deps.telegram.sendMessage(
+        callback.telegramChatId,
+        lifecycle.status === "deletion_pending"
+          ? pendingDeletionMessage(lifecycle.deletionScheduledAt)
+          : "This account has been deleted.",
+      );
+      return;
+    }
     const access = await deps.access?.getAccess(userId);
     if (access !== undefined && access?.status !== "active") {
       await deps.telegram.sendMessage(
@@ -620,6 +632,16 @@ export async function handleCallback(
   );
 
   const userId = await deps.users.ensureUser(callback);
+  const lifecycle = await deps.lifecycle?.get(userId);
+  if (lifecycle?.status === "deletion_pending" || lifecycle?.status === "deleted") {
+    await deps.telegram.sendMessage(
+      callback.telegramChatId,
+      lifecycle.status === "deletion_pending"
+        ? pendingDeletionMessage(lifecycle.deletionScheduledAt)
+        : "This account has been deleted.",
+    );
+    return;
+  }
   const access = await deps.access?.getAccess(userId);
   if (access !== undefined && access?.status !== "active") {
     await deps.telegram.sendMessage(

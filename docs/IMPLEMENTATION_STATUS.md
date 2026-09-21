@@ -1,9 +1,43 @@
 # Implementation status
 
-**Phase:** 6B — Closed Alpha Access & Onboarding (deployed to development)
+**Phase:** 6C — Privacy & Account Lifecycle (deployed to development)
 **Date:** 2026-09-21
 **Last verified:** the commands in [Verification](#verification) were run and their
 output is recorded below.
+
+## Phase 6C privacy and deletion snapshot
+
+The Phase 6C slice is implemented, verified, and deployed to development.
+
+- `/privacy` and `/terms` remain readable regardless of Closed Alpha or deletion
+  state and disclose the separate Notinn, Telegram, Gemini, and OpenRouter data
+  boundaries.
+- `/delete_account` requires exact confirmation, immediately blocks processing,
+  cancels active jobs, releases reserved quota, and starts the chosen seven-day
+  cancellation window. `/cancel_deletion` restores the previous access state
+  before the deadline without restarting cancelled work.
+- Database cron owns finalization. It deletes owned content and operational
+  state, anonymizes Telegram identity, and retains only immutable content-free
+  usage metadata plus lifecycle audit timestamps against an internal UUID.
+- Existing command/navigation/note callbacks are lifecycle-gated so old buttons
+  cannot restart provider or quota work during deletion.
+- Formatting, linting, full type-checking, and the hermetic unit/contract/security
+  suite pass: **603 passed, 0 failed**.
+- The complete migration executed successfully against the development schema
+  inside `BEGIN … ROLLBACK`; follow-up checks confirmed neither its table nor cron
+  job remained.
+- The formal privacy notice, Closed Alpha terms, deletion runbook, incident
+  response runbook, and [ADR 0016](ADR/0016-account-deletion-lifecycle.md) record
+  the user and operator contracts.
+- Migration `phase6c_privacy_account_lifecycle` is recorded remotely as version
+  `20260921135607`. `telegram-webhook` version 38 is ACTIVE with
+  `verify_jwt=false`; an unsigned POST receives an empty HTTP 401 response.
+- Gemini API is currently treated as unpaid tier: user-facing disclosure
+  prohibits sensitive/confidential submissions and explains provider handling.
+  Gemini AI Pro consumer access does not by itself establish Cloud API billing.
+- The native menu source includes Privacy, Terms, and Delete Account. Applying it
+  remains a local operator step because this workspace intentionally has no bot
+  token or `.env` file.
 
 ## Phase 6B closed-alpha snapshot
 
@@ -778,7 +812,8 @@ the user approved continuing to the deployment stage.
 
 ## Recommended next step
 
-Perform the short Telegram acceptance walkthrough for `/start`, `/menu`, Settings,
-Recent pagination, and Search/Ask recovery actions. Before promoting beyond
-development, configure `NOTINN_TEST_*` and run the automated integration/e2e
-release gate.
+Run `npx deno task bot-menu:set --yes` from the configured local repository, then
+exercise `/privacy`, request/cancel deletion with a synthetic alpha identity, and
+verify the seven-day deadline. Final deletion should be tested only with isolated
+synthetic data. Before promoting beyond development, configure `NOTINN_TEST_*`
+and run the automated integration/e2e release gate.

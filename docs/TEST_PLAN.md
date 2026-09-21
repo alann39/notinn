@@ -2,64 +2,65 @@
 
 Five suites, layered by what they need to run. The layering is not decoration: it
 is what lets a developer without Docker (see
-[ADR 0006](ADR/0006-pinned-dependencies.md)) still prove the hermetic Phase 6B
+[ADR 0006](ADR/0006-pinned-dependencies.md)) still prove the hermetic Phase 6C
 surface.
 
 | Suite                       | Files | Tests | Needs               | Command                      |
 | --------------------------- | ----- | ----: | ------------------- | ---------------------------- |
-| [unit](#unit)               | 27    |   391 | nothing             | `deno task test:unit`        |
-| [contract](#contract)       | 2     |   140 | nothing             | `deno task test:contract`    |
+| [unit](#unit)               | 28    |   398 | nothing             | `deno task test:unit`        |
+| [contract](#contract)       | 2     |   149 | nothing             | `deno task test:contract`    |
 | [security](#security)       | 3     |    56 | nothing             | `deno task test:security`    |
 | [integration](#integration) | 4     |    25 | a Supabase project  | `deno task test:integration` |
 | [e2e](#e2e)                 | 1     |     8 | a deployed function | `deno task test:integration` |
 
-`deno task test` runs unit + contract + security: **587 tests, no database and no
+`deno task test` runs unit + contract + security: **603 tests, no database and no
 outbound network.**
 
 The integration and e2e suites are _ignored_, not failed, when no target is
 configured, so the number of ignored tests is the count of checks that need
 infrastructure rather than checks that were skipped to make a run go green.
 
-Latest hermetic run (unit + contract + security, 2026-09-21): **587 passed, 0
+Latest hermetic run (unit + contract + security, 2026-09-21): **603 passed, 0
 failed.** The integration/e2e invocation passed its environment guard and reported
 **1 passed, 0 failed, 32 ignored** because no deployed test target is configured.
 
 ---
 
-## Unit — 391 tests
+## Unit — 398 tests
 
 Pure functions, no I/O, no doubles where a real call is possible.
 
-| File                                | Covers                                                                                                                                                                                                                           |
-| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `env.test.ts`                       | Webhook/worker config validation, secret strength, provider/model requirements, JWT role decoding, and safe environment reporting                                                                                                |
-| `errors.test.ts`                    | The taxonomy: every code has a retryable flag and a log level; `AppError` keeps the public message and the internal detail apart; `httpStatusForError` maps `401`/`500`/`200`                                                    |
-| `closed-alpha-repository.test.ts`   | Invite normalization, digest-only redemption, and validated access-state rows                                                                                                                                                    |
-| `quota-repository.test.ts`          | Daily-limit outcomes remain distinct from monthly quota exhaustion                                                                                                                                                               |
-| `input-routing.test.ts`             | Default template per input type, forwarded-text override, MIME and extension resolution, and that every template the router can produce exists in the catalogue                                                                  |
-| `job-state.test.ts`                 | The transition table's shape: every terminal state has no outgoing edges, every non-terminal state can reach a terminal one, `CANCELLED` is reachable from every non-terminal state, creation states are `RECEIVED` and `QUEUED` |
-| `logger.test.ts`                    | The allowlist: unknown fields dropped, objects and arrays dropped, denied fields dropped even when explicitly passed, level filtering, child context                                                                             |
-| `parse-update.test.ts`              | Classification: private vs group vs channel, bots, service messages, one-content-kind rule, unsupported kinds, forwarded detection                                                                                               |
-| `command-service.test.ts`           | `/search`, quota-controlled `/ask`, `/usage`, `/settings`, and custom-template command validation; lazy indexing, grounded answers, preference display/update, empty results, and opaque Open callbacks                          |
-| `callback.test.ts`                  | Versioned callback payload encoding, UUID opacity, system/custom format actions, action vocabulary, and Telegram's 64-byte limit                                                                                                 |
-| `gemini-note-provider.test.ts`      | Gemini text/audio/image/PDF inline requests, response schemas, extracted-source validation, usage metadata, wrong-template rejection, invalid JSON, and rate-limit mapping                                                       |
-| `gemini-embedding-provider.test.ts` | Batched document and question embeddings, 768-dimensional normalization, model guard, and rate-limit mapping                                                                                                                     |
-| `document-extraction.test.ts`       | UTF-8 text decoding, image magic bytes, PDF encryption rejection, DOCX extraction, and macro rejection                                                                                                                           |
-| `job-worker-service.test.ts`        | Text/audio/image/PDF/document state paths, in-memory buffer scrubbing, quota admission, note staging, usage metering, delivery retry idempotency, transient retry, and file limits                                               |
-| `quota-service.test.ts`             | Reserve-before-provider ordering, reconciliation after success/failure, quota refusal, and duplicate in-flight suppression                                                                                                       |
-| `note-rendering.test.ts`            | Telegram-safe HTML, semantic splitting, inline keyboards, and callback round-trips                                                                                                                                               |
-| `note-export.test.ts`               | Deterministic Markdown/text rendering plus valid multipage PDF generation, metadata, safe filename fallback, markup escaping, and omission of empty groups                                                                       |
-| `structured-note.test.ts`           | Application-authoritative structured-note validation and non-fabrication bounds                                                                                                                                                  |
-| `text-note-service.test.ts`         | The inline job path, persistence, usage metering, delivery, and retryable provider failure                                                                                                                                       |
-| `telegram-client.test.ts`           | Idempotent message edits accept Telegram's `message is not modified` response while unrelated edit failures remain visible                                                                                                       |
-| `telegram-download.test.ts`         | Private `getFile` flow, byte limits, expired file mapping, token-bearing URL containment, safe multipart document upload, and filename rejection                                                                                 |
-| `worker-invoker.test.ts`            | Background worker URL/header/body contract and non-2xx handling; only opaque `job_id` crosses the boundary                                                                                                                       |
-| `redaction.test.ts`                 | Redaction of values that reach a log line: bearer tokens, bot-token URLs, signed URLs, private key blocks, newline collapsing (so a value cannot forge a line), truncation                                                       |
-| `webhook-secret.test.ts`            | Constant-time comparison: prefix, suffix, length and case differences all refused; the mismatched value never appears in the thrown error                                                                                        |
+| File                                   | Covers                                                                                                                                                                                                                           |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `env.test.ts`                          | Webhook/worker config validation, secret strength, provider/model requirements, JWT role decoding, and safe environment reporting                                                                                                |
+| `errors.test.ts`                       | The taxonomy: every code has a retryable flag and a log level; `AppError` keeps the public message and the internal detail apart; `httpStatusForError` maps `401`/`500`/`200`                                                    |
+| `closed-alpha-repository.test.ts`      | Invite normalization, digest-only redemption, and validated access-state rows                                                                                                                                                    |
+| `account-lifecycle-repository.test.ts` | Lifecycle row validation plus owner-scoped request and cancellation RPC mapping                                                                                                                                                  |
+| `quota-repository.test.ts`             | Daily-limit outcomes remain distinct from monthly quota exhaustion                                                                                                                                                               |
+| `input-routing.test.ts`                | Default template per input type, forwarded-text override, MIME and extension resolution, and that every template the router can produce exists in the catalogue                                                                  |
+| `job-state.test.ts`                    | The transition table's shape: every terminal state has no outgoing edges, every non-terminal state can reach a terminal one, `CANCELLED` is reachable from every non-terminal state, creation states are `RECEIVED` and `QUEUED` |
+| `logger.test.ts`                       | The allowlist: unknown fields dropped, objects and arrays dropped, denied fields dropped even when explicitly passed, level filtering, child context                                                                             |
+| `parse-update.test.ts`                 | Classification: private vs group vs channel, bots, service messages, one-content-kind rule, unsupported kinds, forwarded detection                                                                                               |
+| `command-service.test.ts`              | `/search`, quota-controlled `/ask`, `/usage`, `/settings`, custom templates, privacy/terms availability, confirmed account deletion, pending-state blocking, and cancellation                                                    |
+| `callback.test.ts`                     | Versioned callback payload encoding, UUID opacity, system/custom format actions, action vocabulary, and Telegram's 64-byte limit                                                                                                 |
+| `gemini-note-provider.test.ts`         | Gemini text/audio/image/PDF inline requests, response schemas, extracted-source validation, usage metadata, wrong-template rejection, invalid JSON, and rate-limit mapping                                                       |
+| `gemini-embedding-provider.test.ts`    | Batched document and question embeddings, 768-dimensional normalization, model guard, and rate-limit mapping                                                                                                                     |
+| `document-extraction.test.ts`          | UTF-8 text decoding, image magic bytes, PDF encryption rejection, DOCX extraction, and macro rejection                                                                                                                           |
+| `job-worker-service.test.ts`           | Text/audio/image/PDF/document state paths, in-memory buffer scrubbing, quota admission, note staging, usage metering, delivery retry idempotency, transient retry, and file limits                                               |
+| `quota-service.test.ts`                | Reserve-before-provider ordering, reconciliation after success/failure, quota refusal, and duplicate in-flight suppression                                                                                                       |
+| `note-rendering.test.ts`               | Telegram-safe HTML, semantic splitting, inline keyboards, and callback round-trips                                                                                                                                               |
+| `note-export.test.ts`                  | Deterministic Markdown/text rendering plus valid multipage PDF generation, metadata, safe filename fallback, markup escaping, and omission of empty groups                                                                       |
+| `structured-note.test.ts`              | Application-authoritative structured-note validation and non-fabrication bounds                                                                                                                                                  |
+| `text-note-service.test.ts`            | The inline job path, persistence, usage metering, delivery, and retryable provider failure                                                                                                                                       |
+| `telegram-client.test.ts`              | Idempotent message edits accept Telegram's `message is not modified` response while unrelated edit failures remain visible                                                                                                       |
+| `telegram-download.test.ts`            | Private `getFile` flow, byte limits, expired file mapping, token-bearing URL containment, safe multipart document upload, and filename rejection                                                                                 |
+| `worker-invoker.test.ts`               | Background worker URL/header/body contract and non-2xx handling; only opaque `job_id` crosses the boundary                                                                                                                       |
+| `redaction.test.ts`                    | Redaction of values that reach a log line: bearer tokens, bot-token URLs, signed URLs, private key blocks, newline collapsing (so a value cannot forge a line), truncation                                                       |
+| `webhook-secret.test.ts`               | Constant-time comparison: prefix, suffix, length and case differences all refused; the mismatched value never appears in the thrown error                                                                                        |
 
 ---
 
-## Contract — 114 tests
+## Contract — 149 tests
 
 `contract/migration-constants.test.ts` is the drift guard. It reads the migration
 SQL from disk and asserts the TypeScript mirrors in `config/constants.ts` agree
@@ -80,15 +81,15 @@ correct are in the file:
 
 What it asserts:
 
-| Group         | Assertions                                                                                                                                                                                                                                                                                                    |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Enums         | 6 mirrored enums match member-for-member, including a reverse set-equality check so a member added to the DB and not the mirror is caught too                                                                                                                                                                 |
-| Templates     | The 11-key catalogue matches, in both directions                                                                                                                                                                                                                                                              |
-| State machine | The transition mirror matches the trigger's `case` arms; the terminal list matches; creation states match; a state the trigger omits is treated as terminal                                                                                                                                                   |
-| Access model  | RLS enabled with client table access revoked; no table granted to a client role; `search_path` pinned on **every** function; every function is `SECURITY DEFINER` or a trigger function; no client-role `EXECUTE` on any function; definer functions granted to `service_role`; the revoke precedes the grant |
-| Quota         | Bucket locking, idempotent operation keys, stale-reservation reclamation, content-free metadata, and all four repository/RPC argument contracts                                                                                                                                                               |
-| RPC surface   | Repository RPC argument names ⊇ the declared parameters; every required parameter supplied; the outcome vocabulary matches on both sides                                                                                                                                                                      |
-| Hygiene       | One definition per object; no `DROP TABLE`, `TRUNCATE` or `DISABLE ROW LEVEL SECURITY`; the migration file set matches the expected list; timestamps in order                                                                                                                                                 |
+| Group           | Assertions                                                                                                                                                                                                                                                                                                    |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Enums           | 6 mirrored enums match member-for-member, including a reverse set-equality check so a member added to the DB and not the mirror is caught too                                                                                                                                                                 |
+| Templates       | The 11-key catalogue matches, in both directions                                                                                                                                                                                                                                                              |
+| State machine   | The transition mirror matches the trigger's `case` arms; the terminal list matches; creation states match; a state the trigger omits is treated as terminal                                                                                                                                                   |
+| Access model    | RLS enabled with client table access revoked; no table granted to a client role; `search_path` pinned on **every** function; every function is `SECURITY DEFINER` or a trigger function; no client-role `EXECUTE` on any function; definer functions granted to `service_role`; the revoke precedes the grant |
+| Quota/lifecycle | Bucket locking, idempotent operation keys, stale-reservation reclamation, content-free metadata, seven-day deletion boundary, purge/anonymization contract, and repository/RPC argument contracts                                                                                                             |
+| RPC surface     | Repository RPC argument names ⊇ the declared parameters; every required parameter supplied; the outcome vocabulary matches on both sides                                                                                                                                                                      |
+| Hygiene         | One definition per object; no `DROP TABLE`, `TRUNCATE` or `DISABLE ROW LEVEL SECURITY`; the migration file set matches the expected list; timestamps in order                                                                                                                                                 |
 
 The access-model group is what caught three genuine gaps: three trigger functions
 carried PostgreSQL's default `EXECUTE` grant to `PUBLIC`. They were unreachable —

@@ -9,6 +9,13 @@ extractors handle DOCX/TXT/Markdown. See
 minimal-retention enforcement are defined in
 [ADR 0013](ADR/0013-future-job-preference-snapshots.md).
 
+Phase 6C makes account deletion database-owned. Exact confirmation cancels active
+work and sets a seven-day deadline; an hourly `pg_cron` task finalizes due rows
+independently of Edge Function lifetime. Finalization purges owned content,
+nulls Telegram identity, and leaves only the anonymized user anchor required by
+immutable content-free usage history. See
+[ADR 0016](ADR/0016-account-deletion-lifecycle.md).
+
 ## The shape
 
 ```

@@ -47,6 +47,10 @@ const USER_PREFERENCES_REPOSITORY = new URL("user-preferences.repository.ts", RE
 const QUOTA_REPOSITORY = new URL("quota.repository.ts", REPOSITORY_DIR);
 const NOTE_WORKFLOW_REPOSITORY = new URL("note-workflow.repository.ts", REPOSITORY_DIR);
 const CLOSED_ALPHA_REPOSITORY = new URL("closed-alpha.repository.ts", REPOSITORY_DIR);
+const ACCOUNT_LIFECYCLE_REPOSITORY = new URL(
+  "account-lifecycle.repository.ts",
+  REPOSITORY_DIR,
+);
 
 /** Read every migration, concatenated, with its filename attached for messages. */
 async function loadMigrations(): Promise<{ name: string; sql: string }[]> {
@@ -93,6 +97,7 @@ const FILE_SUFFIXES = [
   "phase6b_note_delivery_drafts.sql",
   "phase6b_draft_fk_indexes.sql",
   "phase6b_closed_alpha_access.sql",
+  "phase6c_privacy_account_lifecycle.sql",
 ] as const;
 
 /** Read the one migration whose filename ends with `suffix`. */
@@ -121,6 +126,9 @@ const PHASE5_CUSTOM_TEMPLATES_SQL = await loadMigration("phase5_custom_templates
 const PHASE6_QUOTA_SQL = await loadMigration("phase6a_plan_entitlements_and_quota.sql");
 const PHASE6_WORKFLOW_SQL = await loadMigration("phase6b_note_delivery_drafts.sql");
 const PHASE6_CLOSED_ALPHA_SQL = await loadMigration("phase6b_closed_alpha_access.sql");
+const PHASE6_ACCOUNT_LIFECYCLE_SQL = await loadMigration(
+  "phase6c_privacy_account_lifecycle.sql",
+);
 const ALL_MIGRATIONS = await loadMigrations();
 const ALL_SQL = ALL_MIGRATIONS.map((migration) => migration.sql).join("\n");
 
@@ -194,6 +202,50 @@ Deno.test("daily quota is serialized with the monthly reservation", () => {
   assert(sql.includes("create table public.quota_daily_buckets"));
   assert(sql.includes("and b.usage_date = v_usage_date for update"));
   assert(sql.includes("return query select 'daily_exceeded'::text"));
+});
+
+Deno.test("account deletion is reversible for exactly seven days", () => {
+  const sql = normalise(PHASE6_ACCOUNT_LIFECYCLE_SQL);
+  assert(sql.includes("v_scheduled_at := now() + interval '7 days'"));
+  assert(sql.includes("if v_user.deletion_scheduled_at <= now() then return 'expired'"));
+  assert(sql.includes("where u.status = 'deletion_pending' and u.deletion_scheduled_at <= now()"));
+});
+
+Deno.test("account finalization removes content and anonymises Telegram identity", () => {
+  const sql = normalise(PHASE6_ACCOUNT_LIFECYCLE_SQL);
+  for (
+    const deletion of [
+      "delete from public.notes where user_id = p_user_id",
+      "delete from public.user_preferences where user_id = p_user_id",
+      "delete from public.processing_jobs where user_id = p_user_id",
+      "delete from public.telegram_updates where user_id = p_user_id",
+      "delete from public.templates where owner_user_id = p_user_id",
+      "delete from public.quota_reservations where user_id = p_user_id",
+      "delete from public.quota_daily_buckets where user_id = p_user_id",
+      "delete from public.quota_buckets where user_id = p_user_id",
+      "delete from public.closed_alpha_invite_redemptions where user_id = p_user_id",
+    ] as const
+  ) {
+    assert(sql.includes(deletion), `account finalization is missing: ${deletion}`);
+  }
+  assert(sql.includes("telegram_user_id = null, telegram_chat_id = null"));
+  assert(!sql.includes("delete from public.usage_events"));
+});
+
+Deno.test("account lifecycle RPCs stay service-role only", () => {
+  const sql = normalise(PHASE6_ACCOUNT_LIFECYCLE_SQL);
+  assert(sql.includes("alter table public.account_lifecycle_events enable row level security"));
+  for (
+    const rpc of [
+      "get_account_lifecycle(uuid)",
+      "request_account_deletion(uuid)",
+      "cancel_account_deletion(uuid)",
+      "finalize_account_deletion(uuid)",
+      "finalize_due_account_deletions(integer)",
+    ] as const
+  ) {
+    assert(sql.includes(`grant execute on function public.${rpc} to service_role`));
+  }
 });
 
 // --- Extracting values from SQL --------------------------------------------
@@ -721,6 +773,9 @@ const RPC_CONTRACTS = [
   [QUOTA_REPOSITORY, "get_user_usage_summary", PHASE6_CLOSED_ALPHA_SQL],
   [CLOSED_ALPHA_REPOSITORY, "get_closed_alpha_access", PHASE6_CLOSED_ALPHA_SQL],
   [CLOSED_ALPHA_REPOSITORY, "redeem_closed_alpha_invite", PHASE6_CLOSED_ALPHA_SQL],
+  [ACCOUNT_LIFECYCLE_REPOSITORY, "get_account_lifecycle", PHASE6_ACCOUNT_LIFECYCLE_SQL],
+  [ACCOUNT_LIFECYCLE_REPOSITORY, "request_account_deletion", PHASE6_ACCOUNT_LIFECYCLE_SQL],
+  [ACCOUNT_LIFECYCLE_REPOSITORY, "cancel_account_deletion", PHASE6_ACCOUNT_LIFECYCLE_SQL],
   [NOTE_WORKFLOW_REPOSITORY, "register_note_delivery", PHASE6_WORKFLOW_SQL],
   [NOTE_WORKFLOW_REPOSITORY, "find_note_delivery", PHASE6_WORKFLOW_SQL],
   [NOTE_WORKFLOW_REPOSITORY, "list_note_deliveries", PHASE6_WORKFLOW_SQL],

@@ -19,6 +19,9 @@ export const NOTINN_BOT_COMMANDS: readonly TelegramBotCommand[] = [
   { command: "templates", description: "View and manage note templates" },
   { command: "settings", description: "Change your Notinn preferences" },
   { command: "help", description: "Open help and privacy guidance" },
+  { command: "privacy", description: "Read how Notinn handles your data" },
+  { command: "terms", description: "Read the Closed Alpha terms" },
+  { command: "delete_account", description: "Request account and data deletion" },
 ];
 
 async function main(): Promise<void> {

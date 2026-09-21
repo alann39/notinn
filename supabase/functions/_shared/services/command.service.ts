@@ -10,6 +10,7 @@ import type {
 } from "../repositories/closed-alpha.repository.ts";
 import type { UsageRepository } from "../repositories/usage.repository.ts";
 import type { TemplatesRepository } from "../repositories/templates.repository.ts";
+import type { AccountLifecycleRepository } from "../repositories/account-lifecycle.repository.ts";
 import {
   OUTPUT_LANGUAGES,
   type PreferenceSetting,
@@ -51,6 +52,10 @@ export interface CommandDependencies {
   readonly usage?: Pick<UsageRepository, "recordGeneration" | "recordEmbedding">;
   readonly quota?: Pick<QuotaRepository, "reserve" | "consume" | "release" | "getSummary">;
   readonly access?: Pick<ClosedAlphaRepository, "getAccess" | "redeemInvite">;
+  readonly lifecycle?: Pick<
+    AccountLifecycleRepository,
+    "get" | "requestDeletion" | "cancelDeletion"
+  >;
   readonly preferences?: Pick<UserPreferencesRepository, "get" | "update">;
   readonly templates?:
     & Pick<TemplatesRepository, "listLabels">
@@ -70,6 +75,126 @@ const CLOSED_ALPHA_SUSPENDED = [
   "Your Closed Alpha access is currently suspended.",
   "Contact the Notinn team if you believe this is a mistake.",
 ].join("\n");
+
+const PRIVACY_NOTICE = [
+  "🔐 Notinn Privacy",
+  "",
+  "Notinn",
+  "• Raw audio, images, and documents are processed in memory and are not stored as files.",
+  "• Balanced mode keeps source-derived text for later reformatting; Minimal removes it after processing.",
+  "• Generated notes remain until you delete the note or your account.",
+  "• Logs exclude note content, transcripts, files, credentials, and Telegram file URLs.",
+  "",
+  "Telegram",
+  "• Your original Telegram messages remain subject to Telegram's own storage and deletion controls.",
+  "• Deleting data in Notinn does not delete the original message from Telegram.",
+  "",
+  "AI providers",
+  "• Content needed for generation is sent to Google Gemini.",
+  "• OpenRouter may receive it only as a transient fallback after a retryable Gemini failure.",
+  "• Telegram IDs, usernames, and chat IDs are not sent to AI providers.",
+  "• On unpaid Gemini API tiers, Google says prompts/responses may improve its products and may be human-reviewed. Do not submit sensitive or confidential information.",
+  "• Paid Gemini handling and any OpenRouter-routed model remain subject to their current provider terms and retention policies.",
+  "",
+  "Deletion",
+  "• /delete_account starts a 7-day cancellation period and blocks new processing immediately.",
+  "• After 7 days, user content is deleted and Telegram identity is anonymised.",
+  "• Content-free usage counts and lifecycle audit timestamps may remain for security, billing, and operations.",
+  "• Use /cancel_deletion before the deadline to keep the account.",
+].join("\n");
+
+const TERMS_OF_SERVICE = [
+  "📜 Notinn Closed Alpha Terms",
+  "",
+  "• You must be at least 18 years old to use this Closed Alpha.",
+  "• Notinn is an experimental Closed Alpha service and may change, pause, or become unavailable.",
+  "• You remain responsible for the content you submit and must have the right to process it.",
+  "• Do not use Notinn for unlawful content, abuse, credential storage, or attempts to compromise the service.",
+  "• AI output can be incomplete or inaccurate. Review it before relying on it, especially for legal, medical, financial, or safety-critical decisions.",
+  "• Processing uses Telegram, Supabase, Google Gemini, and—only as configured fallback—OpenRouter.",
+  "• Quotas and access may be limited or suspended to protect the service and other users.",
+  "• You may stop using Notinn and request account deletion at any time with /delete_account.",
+  "",
+  "By continuing to use the Closed Alpha, you agree to these terms and the /privacy notice.",
+].join("\n");
+
+function deletionDeadline(value: string | null): string {
+  if (value === null) return "the recorded deadline";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "the recorded deadline" : date.toISOString();
+}
+
+export function pendingDeletionMessage(scheduledAt: string | null): string {
+  return [
+    "⏳ Account deletion pending",
+    "",
+    `Permanent deletion is scheduled after ${deletionDeadline(scheduledAt)}.`,
+    "New notes and account actions are blocked now.",
+    "Send /cancel_deletion before the deadline to keep your account.",
+  ].join("\n");
+}
+
+async function handleDeleteAccount(
+  command: CommandMessage,
+  userId: string,
+  deps: CommandDependencies,
+): Promise<void> {
+  if (deps.lifecycle === undefined) {
+    await deps.telegram.sendMessage(command.telegramChatId, "Account deletion is not enabled yet.");
+    return;
+  }
+  if (command.argumentsText?.trim().toLowerCase() !== "confirm") {
+    await deps.telegram.sendMessage(
+      command.telegramChatId,
+      [
+        "⚠️ Delete your Notinn account?",
+        "",
+        "Confirmation will immediately block new processing and cancel active jobs.",
+        "Your notes and account data will be permanently deleted after 7 days.",
+        "During those 7 days you can send /cancel_deletion.",
+        "Original Telegram messages and data already handled by an AI provider are outside Notinn's deletion controls.",
+        "",
+        "To confirm, send exactly:",
+        "/delete_account confirm",
+      ].join("\n"),
+    );
+    return;
+  }
+  const result = await deps.lifecycle.requestDeletion(userId);
+  if (result.outcome === "scheduled" || result.outcome === "already_pending") {
+    await deps.telegram.sendMessage(
+      command.telegramChatId,
+      pendingDeletionMessage(result.deletionScheduledAt),
+    );
+    return;
+  }
+  await deps.telegram.sendMessage(
+    command.telegramChatId,
+    result.outcome === "deleted"
+      ? "This account has already been deleted."
+      : "I could not find an account to delete.",
+  );
+}
+
+async function handleCancelDeletion(
+  command: CommandMessage,
+  userId: string,
+  deps: CommandDependencies,
+): Promise<void> {
+  if (deps.lifecycle === undefined) {
+    await deps.telegram.sendMessage(command.telegramChatId, "Account deletion is not enabled yet.");
+    return;
+  }
+  const outcome = await deps.lifecycle.cancelDeletion(userId);
+  const message = outcome === "cancelled"
+    ? "✅ Account deletion cancelled. Your account access has been restored. Cancelled jobs were not restarted; resend anything you still need processed."
+    : outcome === "not_pending"
+    ? "There is no pending account deletion to cancel."
+    : outcome === "expired"
+    ? "The cancellation deadline has passed and deletion can no longer be cancelled."
+    : "This account can no longer be restored.";
+  await deps.telegram.sendMessage(command.telegramChatId, message);
+}
 
 export function closedAlphaAccessMessage(status: ClosedAlphaAccessStatus | null): string {
   return status === "suspended" ? CLOSED_ALPHA_SUSPENDED : CLOSED_ALPHA_PENDING;
@@ -514,7 +639,9 @@ export async function handleCommand(
     command.command !== "help" && command.command !== "recent" &&
     command.command !== "search" && command.command !== "ask" && command.command !== "usage" &&
     command.command !== "settings" && command.command !== "template" &&
-    command.command !== "templates"
+    command.command !== "templates" && command.command !== "privacy" &&
+    command.command !== "terms" && command.command !== "delete_account" &&
+    command.command !== "cancel_deletion"
   ) {
     await deps.telegram.sendMessage(
       command.telegramChatId,
@@ -524,6 +651,34 @@ export async function handleCommand(
   }
 
   const userId = await deps.users.ensureUser(command);
+  if (command.command === "privacy" || command.command === "terms") {
+    await deps.telegram.sendMessage(
+      command.telegramChatId,
+      command.command === "privacy" ? PRIVACY_NOTICE : TERMS_OF_SERVICE,
+    );
+    return;
+  }
+
+  const lifecycle = await deps.lifecycle?.get(userId);
+  if (command.command === "cancel_deletion") {
+    await handleCancelDeletion(command, userId, deps);
+    return;
+  }
+  if (command.command === "delete_account") {
+    await handleDeleteAccount(command, userId, deps);
+    return;
+  }
+  if (lifecycle?.status === "deletion_pending") {
+    await deps.telegram.sendMessage(
+      command.telegramChatId,
+      pendingDeletionMessage(lifecycle.deletionScheduledAt),
+    );
+    return;
+  }
+  if (lifecycle?.status === "deleted") {
+    await deps.telegram.sendMessage(command.telegramChatId, "This account has been deleted.");
+    return;
+  }
   if (deps.access !== undefined) {
     let access = await deps.access.getAccess(userId);
     if (

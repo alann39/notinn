@@ -3,7 +3,7 @@
 Telegram-first note capture. Send Notinn a message, a voice note, a screenshot, a
 PDF or a document, and get back a structured, searchable note.
 
-**Status: Phase 6B closed-alpha access is deployed to development.** Text, voice/audio, screenshots,
+**Status: Phase 6C privacy and account lifecycle is deployed to development.** Text, voice/audio, screenshots,
 PDF, DOCX, TXT, and Markdown are processed by the durable PGMQ worker using one
 Gemini API key with a configured primary and transient-error fallback model. Raw
 media is downloaded into bounded memory, never stored, and zero-filled after
@@ -28,6 +28,12 @@ The schema and both Edge Functions are active in the development project.
 Phase 6B adds invite-only onboarding, pending/active/suspended access, expiring
 hashed invite codes, guarded operator controls, and daily UTC limits alongside
 the existing monthly quota. Existing development users remain active.
+
+Phase 6C adds `/privacy`, `/terms`, and a confirmed `/delete_account` flow with
+an immediate processing block, seven-day cancellation window, database-owned
+finalization, content deletion, and Telegram-identity anonymization. See the
+[privacy notice](docs/PRIVACY_NOTICE.md), [terms](docs/TERMS_OF_SERVICE.md), and
+[deletion runbook](docs/runbooks/ACCOUNT_DELETION.md).
 
 `/settings` now controls output language (`mirror`, Indonesian, or English),
 balanced/minimal privacy, and default templates for text, voice, and document

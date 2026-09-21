@@ -105,11 +105,32 @@ fields are **present**, so a logger that wrote nothing cannot pass.
 | `plans` / `plan_entitlements`                                  | Plan labels and daily/monthly logical-operation limits                   | Product configuration only                                                             |
 | `quota_buckets` / `quota_daily_buckets` / `quota_reservations` | Daily/monthly counters, generated ids, status, and expiry                | **No user content.** Reservation keys contain generated operation identifiers only     |
 | `closed_alpha_invites` / `closed_alpha_invite_redemptions`     | Invite digests, limits, expiry, and user/invite identifiers              | Raw invitation codes are never stored                                                  |
+| `account_lifecycle_events`                                     | Internal user UUID, lifecycle event, and timestamps                      | Content-free deletion audit; no Telegram identity                                      |
 
 Closed-alpha invite codes are bearer capabilities until redeemed or expired.
 The operator tool generates them locally and sends Postgres only a SHA-256 digest
 of the normalized code. Raw codes are never written to application logs, tables,
 usage metadata, or Git.
+
+## Account lifecycle and deletion
+
+`/delete_account` is warning-only until the user sends the exact confirmation
+`/delete_account confirm`. Confirmation blocks new work immediately, cancels
+non-terminal jobs, scrubs their active input fields, releases reserved quota, and
+sets a database-owned deadline seven days later. `/cancel_deletion` restores the
+prior active/blocked state before that deadline; cancelled jobs stay cancelled.
+
+An hourly database cron finalizes due accounts. It deletes notes and their
+outputs, embeddings, deliveries and drafts; preferences; custom templates;
+processing jobs; Telegram update metadata; quota state; and invite redemption.
+The user row is retained only because immutable `usage_events` require an
+internal owner. Every Telegram identity/profile field is nulled and the row is
+marked `deleted`. Content-free usage events and lifecycle timestamps remain.
+
+This deletion boundary does not include the user's original Telegram message or
+copies already processed by Gemini, OpenRouter, or a routed model provider. The
+user-facing notice is [PRIVACY_NOTICE.md](PRIVACY_NOTICE.md); the operator
+procedure is [ACCOUNT_DELETION.md](runbooks/ACCOUNT_DELETION.md).
 
 `processing_jobs.telegram_file_id` is marked **secret-adjacent** in the schema
 comment: the Telegram download URL derived from it embeds the bot token. It is
