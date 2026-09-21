@@ -52,6 +52,7 @@
     "webhook:delete": "deno run --env-file=.env --allow-read --allow-env --allow-net scripts/delete-webhook.ts",
     "webhook:info": "deno run --env-file=.env --allow-read --allow-env --allow-net scripts/webhook-info.ts",
     "bot-menu:set": "deno run --env-file=.env --allow-read --allow-env --allow-net scripts/set-bot-menu.ts",
+    "alpha-admin": "deno run --env-file=.env --allow-read --allow-env --allow-net scripts/closed-alpha-admin.ts",
     "smoke": "deno run --env-file=.env --allow-read --allow-env --allow-net scripts/smoke-test.ts"
   },
   "nodeModulesDir": "auto"

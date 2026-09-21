@@ -60,6 +60,8 @@ export const ERROR_CODES = {
   RATE_LIMITED: "rate_limited",
   /** The user's plan quota for this operation is exhausted. Not retryable. */
   QUOTA_EXCEEDED: "quota_exceeded",
+  /** The user's UTC-day allowance is exhausted. */
+  DAILY_QUOTA_EXCEEDED: "daily_quota_exceeded",
   /** A durable job reached its configured maximum attempts. */
   RETRIES_EXHAUSTED: "retries_exhausted",
 
@@ -193,6 +195,12 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = {
     httpStatus: 402,
     retryable: false,
     publicMessage: "You've reached your plan's limit for this month.",
+    logLevel: "info",
+  },
+  [ERROR_CODES.DAILY_QUOTA_EXCEEDED]: {
+    httpStatus: 402,
+    retryable: false,
+    publicMessage: "You've reached your plan's limit for today. It resets at 00:00 UTC.",
     logLevel: "info",
   },
   [ERROR_CODES.RETRIES_EXHAUSTED]: {

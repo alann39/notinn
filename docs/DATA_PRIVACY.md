@@ -93,17 +93,23 @@ fields are **present**, so a logger that wrote nothing cannot pass.
 
 ## What is stored
 
-| Table              | Content                                                                  | Notes                                                                                  |
-| ------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| `users`            | Telegram user id, chat id, username, display name, status, plan          | Identity, not content                                                                  |
-| `telegram_updates` | `update_id`, type, routing metadata, a SHA-256 of the raw body           | The digest is a tripwire, not a key — see [ADR 0003](ADR/0003-ingestion-contract.md)   |
-| `processing_jobs`  | Input type, preference snapshots, state, and bounded processing metadata | Direct text, file handles/identifiers, and filenames are cleared when output is staged |
-| `notes`            | Title, language, optional normalized source, optional source SHA-256     | `minimal` stores neither source text nor its digest; never raw binary                  |
-| `note_outputs`     | Validated structured content and its rendered text                       | Provider output only after application validation                                      |
-| `note_embeddings`  | Vector, model, content hash, and owned note/output references            | **No duplicate note text and no raw media.** Deleted or invalidated with library state |
-| `usage_events`     | Counters and an internal cost estimate                                   | **No user content.** Counts, provider identifiers only                                 |
-| `plans` / `plan_entitlements` | Plan labels and monthly logical-operation limits              | Product configuration only                                                             |
-| `quota_buckets` / `quota_reservations` | Monthly counters, generated ids, status, and expiry | **No user content.** Reservation keys contain generated operation identifiers only     |
+| Table                                                          | Content                                                                  | Notes                                                                                  |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `users`                                                        | Telegram user id, chat id, username, display name, status, plan          | Identity, not content                                                                  |
+| `telegram_updates`                                             | `update_id`, type, routing metadata, a SHA-256 of the raw body           | The digest is a tripwire, not a key — see [ADR 0003](ADR/0003-ingestion-contract.md)   |
+| `processing_jobs`                                              | Input type, preference snapshots, state, and bounded processing metadata | Direct text, file handles/identifiers, and filenames are cleared when output is staged |
+| `notes`                                                        | Title, language, optional normalized source, optional source SHA-256     | `minimal` stores neither source text nor its digest; never raw binary                  |
+| `note_outputs`                                                 | Validated structured content and its rendered text                       | Provider output only after application validation                                      |
+| `note_embeddings`                                              | Vector, model, content hash, and owned note/output references            | **No duplicate note text and no raw media.** Deleted or invalidated with library state |
+| `usage_events`                                                 | Counters and an internal cost estimate                                   | **No user content.** Counts, provider identifiers only                                 |
+| `plans` / `plan_entitlements`                                  | Plan labels and daily/monthly logical-operation limits                   | Product configuration only                                                             |
+| `quota_buckets` / `quota_daily_buckets` / `quota_reservations` | Daily/monthly counters, generated ids, status, and expiry                | **No user content.** Reservation keys contain generated operation identifiers only     |
+| `closed_alpha_invites` / `closed_alpha_invite_redemptions`     | Invite digests, limits, expiry, and user/invite identifiers              | Raw invitation codes are never stored                                                  |
+
+Closed-alpha invite codes are bearer capabilities until redeemed or expired.
+The operator tool generates them locally and sends Postgres only a SHA-256 digest
+of the normalized code. Raw codes are never written to application logs, tables,
+usage metadata, or Git.
 
 `processing_jobs.telegram_file_id` is marked **secret-adjacent** in the schema
 comment: the Telegram download URL derived from it embeds the bot token. It is

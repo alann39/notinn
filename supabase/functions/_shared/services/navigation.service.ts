@@ -498,7 +498,14 @@ async function usageView(
   }
   const lines = rows.map((item) => {
     const pending = item.reservedUnits === 0 ? "" : ` (+${item.reservedUnits} processing)`;
-    return `${usageLabel(item)}: ${item.usedUnits}${pending} / ${item.monthlyLimit}`;
+    const dailyPending = item.dailyReservedUnits === 0
+      ? ""
+      : ` (+${item.dailyReservedUnits} processing)`;
+    return [
+      usageLabel(item),
+      `  Today: ${item.dailyUsedUnits}${dailyPending} / ${item.dailyLimit}`,
+      `  This month: ${item.usedUnits}${pending} / ${item.monthlyLimit}`,
+    ].join("\n");
   });
   return {
     text: [
@@ -506,10 +513,11 @@ async function usageView(
       "",
       `Plan: ${first.planName}`,
       `Period: ${first.periodStart} to ${first.periodEnd} (UTC)`,
+      `Today: ${first.usageDate} (UTC)`,
       "",
       ...lines,
       "",
-      "Usage resets at the start of the next UTC month.",
+      "Daily usage resets at 00:00 UTC; monthly usage resets on the first day of the month.",
     ].join("\n"),
     keyboard: keyboard([
       [navButton("🔄 Refresh", "usage")],

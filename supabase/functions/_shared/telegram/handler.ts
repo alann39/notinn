@@ -16,10 +16,11 @@ import type { RejectedChatsRepository } from "../repositories/rejected-chats.rep
 import type { TemplatesRepository } from "../repositories/templates.repository.ts";
 import type { UsageRepository } from "../repositories/usage.repository.ts";
 import type { UserPreferencesRepository } from "../repositories/user-preferences.repository.ts";
+import type { ClosedAlphaRepository } from "../repositories/closed-alpha.repository.ts";
 import type { NoteAIProvider } from "../providers/note-ai.provider.ts";
 import type { EmbeddingProvider, LibraryAnswerProvider } from "../providers/library-ai.provider.ts";
 import { handleCallback } from "../services/callback.service.ts";
-import { handleCommand } from "../services/command.service.ts";
+import { closedAlphaAccessMessage, handleCommand } from "../services/command.service.ts";
 import { ingestMessage } from "../services/ingestion.service.ts";
 import { classifyUpdate } from "./parse-update.ts";
 import { TelegramUpdateSchema } from "./schema.ts";
@@ -64,6 +65,7 @@ export interface WebhookDependencies {
     readonly usage: UsageRepository;
     readonly quota: QuotaRepository;
     readonly preferences: UserPreferencesRepository;
+    readonly access: ClosedAlphaRepository;
     readonly provider: Pick<NoteAIProvider, "generateText">;
     readonly embeddings?: EmbeddingProvider;
     readonly answers?: LibraryAnswerProvider;
@@ -203,6 +205,7 @@ export async function handleWebhookRequest(
           quota: deps.phase1.quota,
           preferences: deps.phase1.preferences,
           templates: deps.phase1.templates,
+          access: deps.phase1.access,
         });
       }
       log.info("webhook.command", {
@@ -225,6 +228,7 @@ export async function handleWebhookRequest(
           provider: deps.phase1.provider,
           telegram: deps.phase1.telegram,
           logger: log,
+          access: deps.phase1.access,
         });
       }
       return acceptedResponse();
@@ -237,9 +241,12 @@ export async function handleWebhookRequest(
     });
 
     if (ingestion.outcome === "user_not_active" && deps.phase1 !== undefined) {
+      const access = await deps.phase1.access.getAccess(ingestion.userId);
       await deps.phase1.telegram.sendMessage(
         classification.message.telegramChatId,
-        AppError.userNotActive().publicMessage,
+        access?.status === "pending" || access?.status === "suspended"
+          ? closedAlphaAccessMessage(access.status)
+          : AppError.userNotActive().publicMessage,
       );
     }
 

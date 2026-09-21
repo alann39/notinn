@@ -178,6 +178,9 @@ export interface ScriptConfig {
 /** Full database access needed only by the synthetic end-to-end smoke test. */
 export type SmokeConfig = ScriptConfig & BaseConfig;
 
+/** Database-only credentials for guarded operator scripts. */
+export type OperatorConfig = BaseConfig;
+
 // --- Schema -----------------------------------------------------------------
 
 /** Telegram's own constraint on the secret token it will store and echo back. */
@@ -628,6 +631,28 @@ export async function loadSmokeConfig(
       serviceRoleKey: await serviceSecret.fingerprint(),
       ...script.fingerprints,
     },
+  };
+}
+
+export async function loadOperatorConfig(
+  source: Record<string, string | undefined> = Deno.env.toObject(),
+): Promise<OperatorConfig> {
+  const raw = parseRaw(source);
+  const environment = resolveEnvironment(raw);
+  const serviceRoleKey = resolveServiceRoleKey(raw);
+  if (serviceRoleKey === undefined) {
+    throw AppError.configuration(
+      "no server-side key found: set SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SECRET_KEYS).",
+    );
+  }
+  assertServiceRoleKey(serviceRoleKey);
+  const serviceSecret = new Secret(serviceRoleKey);
+  return {
+    environment,
+    supabaseUrl: requireSupabaseUrl(raw),
+    serviceRoleKey: serviceSecret,
+    logLevel: resolveLogLevel(raw, environment),
+    fingerprints: { serviceRoleKey: await serviceSecret.fingerprint() },
   };
 }
 

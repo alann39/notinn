@@ -174,6 +174,8 @@ Deno.test("each factory sets the code it is named for", () => {
   assertEquals(AppError.fileUnavailable().code, ERROR_CODES.FILE_UNAVAILABLE);
   assertEquals(AppError.unauthorized().code, ERROR_CODES.UNAUTHORIZED);
   assertEquals(AppError.userNotActive().code, ERROR_CODES.USER_NOT_ACTIVE);
+  assertEquals(AppError.quotaExceeded().code, ERROR_CODES.QUOTA_EXCEEDED);
+  assertEquals(AppError.dailyQuotaExceeded().code, ERROR_CODES.DAILY_QUOTA_EXCEEDED);
   assertEquals(AppError.retriesExhausted().code, ERROR_CODES.RETRIES_EXHAUSTED);
   assertEquals(AppError.providerError().code, ERROR_CODES.PROVIDER_ERROR);
   assertEquals(AppError.providerTimeout().code, ERROR_CODES.PROVIDER_TIMEOUT);

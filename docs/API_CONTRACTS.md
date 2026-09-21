@@ -339,12 +339,12 @@ perform model generation, mutate the note, or persist a temporary file.
 
 ## 11. Phase 6A plan quota surface
 
-| Function                                  | Contract                                                                 |
-| ----------------------------------------- | ------------------------------------------------------------------------ |
-| `reserve_plan_quota(...)`                 | Atomically reserves logical monthly capacity or returns a closed outcome |
-| `consume_plan_quota(uuid, uuid, bigint)`  | Moves a reservation into used units after provider work starts           |
-| `release_plan_quota(uuid, uuid)`          | Releases capacity when failure occurs before provider work               |
-| `get_user_usage_summary(uuid)`            | Returns the active plan and all current UTC-month metric counters         |
+| Function                                 | Contract                                                                 |
+| ---------------------------------------- | ------------------------------------------------------------------------ |
+| `reserve_plan_quota(...)`                | Atomically reserves logical monthly capacity or returns a closed outcome |
+| `consume_plan_quota(uuid, uuid, bigint)` | Moves a reservation into used units after provider work starts           |
+| `release_plan_quota(uuid, uuid)`         | Releases capacity when failure occurs before provider work               |
+| `get_user_usage_summary(uuid)`           | Returns the active plan and all current UTC-month metric counters        |
 
 Reservation keys are idempotent per user and metric. New-note jobs use the job
 id plus attempt count; regeneration and semantic-answer commands use the Telegram
@@ -355,3 +355,17 @@ twenty minutes and are reclaimed on the next reservation for that bucket.
 The `/usage` command and Usage menu action read the same summary RPC. Direct table
 access is revoked from client roles and `service_role`; only the four
 `SECURITY DEFINER` RPCs are granted to `service_role`.
+
+## 12. Phase 6B closed-alpha surface
+
+| Function                                                      | Contract                                                               |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `get_closed_alpha_access(uuid)`                               | Reads one user's admission state without exposing invitation data      |
+| `redeem_closed_alpha_invite(uuid, text)`                      | Atomically redeems a SHA-256 code digest and activates a pending user  |
+| `create_closed_alpha_invite(text, integer, timestamptz)`      | Operator-only creation of a bounded, expiring digest                   |
+| `revoke_closed_alpha_invite(text)`                            | Operator-only revocation by code digest                                |
+| `set_closed_alpha_access(bigint, closed_alpha_access_status)` | Operator-only pending/active/suspended transition by Telegram identity |
+
+`reserve_plan_quota` and `get_user_usage_summary` now return UTC-day counters in
+addition to their monthly counters. `daily_exceeded` is distinct from monthly
+`exceeded`, but neither path creates a reservation or starts provider work.

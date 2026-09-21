@@ -18,6 +18,7 @@ const ReservationRowSchema = z.object({
     "existing_consumed",
     "existing_released",
     "exceeded",
+    "daily_exceeded",
     "user_not_active",
     "plan_not_configured",
   ]),
@@ -29,6 +30,10 @@ const ReservationRowSchema = z.object({
   reserved_units: z.coerce.number().int().nonnegative(),
   period_start: z.iso.date(),
   period_end: z.iso.date(),
+  daily_limit: z.coerce.number().int().nonnegative().nullable(),
+  daily_used_units: z.coerce.number().int().nonnegative(),
+  daily_reserved_units: z.coerce.number().int().nonnegative(),
+  usage_date: z.iso.date(),
 });
 
 const SummaryRowSchema = z.object({
@@ -41,6 +46,11 @@ const SummaryRowSchema = z.object({
   remaining_units: z.coerce.number().int().nonnegative(),
   period_start: z.iso.date(),
   period_end: z.iso.date(),
+  daily_limit: z.coerce.number().int().positive(),
+  daily_used_units: z.coerce.number().int().nonnegative(),
+  daily_reserved_units: z.coerce.number().int().nonnegative(),
+  daily_remaining_units: z.coerce.number().int().nonnegative(),
+  usage_date: z.iso.date(),
 });
 
 export interface QuotaReservation {
@@ -58,6 +68,11 @@ export interface UsageSummary {
   readonly remainingUnits: number;
   readonly periodStart: string;
   readonly periodEnd: string;
+  readonly dailyLimit: number;
+  readonly dailyUsedUnits: number;
+  readonly dailyReservedUnits: number;
+  readonly dailyRemainingUnits: number;
+  readonly usageDate: string;
 }
 
 function oneRow(data: unknown, operation: string) {
@@ -94,9 +109,14 @@ export class QuotaRepository {
       if (error !== null) throw classifyPostgresError(error);
 
       const row = oneRow(data, "reserve_plan_quota");
+      if (row.outcome === "daily_exceeded") {
+        throw AppError.dailyQuotaExceeded(
+          `${row.metric} daily limit exhausted for ${row.plan_key ?? "unknown plan"}`,
+        );
+      }
       if (row.outcome === "exceeded") {
         throw AppError.quotaExceeded(
-          `${row.metric} exhausted for ${row.plan_key ?? "unknown plan"}`,
+          `${row.metric} monthly limit exhausted for ${row.plan_key ?? "unknown plan"}`,
         );
       }
       if (row.outcome === "user_not_active") {
@@ -173,6 +193,11 @@ export class QuotaRepository {
         remainingUnits: row.remaining_units,
         periodStart: row.period_start,
         periodEnd: row.period_end,
+        dailyLimit: row.daily_limit,
+        dailyUsedUnits: row.daily_used_units,
+        dailyReservedUnits: row.daily_reserved_units,
+        dailyRemainingUnits: row.daily_remaining_units,
+        usageDate: row.usage_date,
       }));
     } catch (thrown) {
       if (thrown instanceof AppError) throw thrown;

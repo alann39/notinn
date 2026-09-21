@@ -98,9 +98,22 @@ passed to `JSON.stringify` by accident — the type system objects.
 format validity and non-reversible fingerprints. It never returns a value, which
 is what makes the script safe to run in a shared terminal.
 
+## Closed-alpha access
+
+Closed-alpha admission is owner-scoped in `ClosedAlphaRepository` and enforced at
+two levels. Commands and callbacks read the access state to return an immediate
+pending or suspended message. Postgres keeps the authoritative gate by mapping
+pending/suspended admission to a non-active lifecycle status, which existing
+ingestion and quota RPCs already refuse. Existing users are backfilled active;
+new identities are created pending.
+
+The operator surface is a local confirmed task, never a webhook route. It creates
+only hashed, expiring invitations and can move a Telegram identity among
+pending/active/suspended states.
+
 ## Errors
 
-One taxonomy (`errors/taxonomy.ts`), 16 codes, each carrying `retryable` and a log
+One taxonomy (`errors/taxonomy.ts`), 17 codes, each carrying `retryable` and a log
 level. `AppError` splits a **public message** (safe to show a user) from an
 **internal detail** (safe to log, never returned).
 

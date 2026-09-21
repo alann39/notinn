@@ -1,9 +1,49 @@
 # Implementation status
 
-**Phase:** Post-6B — Cross-provider generation fallback (deployed, awaiting secret activation)
+**Phase:** 6B — Closed Alpha Access & Onboarding (deployed to development)
 **Date:** 2026-09-21
 **Last verified:** the commands in [Verification](#verification) were run and their
 output is recorded below.
+
+## Phase 6B closed-alpha snapshot
+
+The official Phase 6B slice is implemented, verified, and deployed to the
+development project.
+
+- Existing development users are grandfathered into active Closed Alpha access.
+  New Telegram identities are pending and cannot create jobs or consume provider
+  quota until an invitation is redeemed.
+- `/start <invite>` redeems one normalized invite atomically. Postgres stores only
+  a SHA-256 digest; raw invite codes exist only in the operator terminal and the
+  invitation delivered to the user.
+- Access states are `pending`, `active`, and `suspended`. Command, navigation, and
+  note callbacks enforce the state for immediate feedback, while the lifecycle and
+  quota database gates remain authoritative.
+- The guarded `alpha-admin` task creates bounded, expiring invites and changes a
+  Telegram user's access state. It refuses production and requires confirmation.
+- Daily UTC allowances complement monthly quotas. Initial values are Alpha
+  50/20/20, Free 50/50/50, and Pro 200/100/100 for new notes, regenerations, and
+  Ask Notes. `/usage` displays both periods.
+- RLS is enabled on all three new tables. Direct table access is revoked from
+  client and service roles; narrow definer RPCs are service-role only.
+- Migration `phase6b_closed_alpha_access` is recorded remotely as version
+  `20260921102903`. `telegram-webhook` version 37 and `process-job` version 35
+  are ACTIVE with `verify_jwt=false`; unsigned requests to both return an empty
+  HTTP 401 response.
+- Remote transactional smoke coverage proved invite activation, the exact daily
+  boundary, quota consumption, and rollback without retaining test data. Remote
+  configuration matches the approved daily and monthly limits, and the existing
+  development user remains active.
+- Formatting, linting, full type-checking, and the hermetic suite pass:
+  **587 passed, 0 failed**. The credentialed integration/e2e gate reports
+  **1 passed, 0 failed, 32 ignored** because no automated live-test identity is
+  configured.
+- Post-migration advisors reported no new actionable Closed Alpha defect. The
+  no-policy notices are the intentional service-role-only RLS model; the existing
+  `pg_net` placement warning and pre-existing `notes.current_output_id` index
+  advisory remain outside this release.
+- The decision is recorded in
+  [ADR 0015](ADR/0015-closed-alpha-access.md).
 
 ## Cross-provider fallback snapshot
 
@@ -29,8 +69,10 @@ The provider-resilience layer is implemented, verified, and deployed to developm
 - `telegram-webhook` version 35 and `process-job` version 33 are ACTIVE with
   `verify_jwt=false`. Unsigned live requests to both functions return an empty
   HTTP 401 response.
-- Activation is pending only the development secret `OPENROUTER_API_KEY`; no
-  database migration or further function deployment is required.
+- The operator reports that `OPENROUTER_API_KEY` is configured in development.
+  Both freshly deployed functions pass configuration bootstrap without revealing
+  the value; exercising the fallback still requires a genuine transient
+  primary-provider failure and will not be forced against user traffic.
 
 ## Phase 6A deployed snapshot
 

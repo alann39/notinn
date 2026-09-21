@@ -17,6 +17,7 @@ import type { QuotaRepository } from "../repositories/quota.repository.ts";
 import type { TemplatesRepository } from "../repositories/templates.repository.ts";
 import type { UsageRepository } from "../repositories/usage.repository.ts";
 import type { UserPreferencesRepository } from "../repositories/user-preferences.repository.ts";
+import type { ClosedAlphaRepository } from "../repositories/closed-alpha.repository.ts";
 import { actionToken, decodeCallbackPayload } from "../schemas/callback.ts";
 import { decodeNavigationCallback, isNavigationCallback } from "../schemas/navigation-callback.ts";
 import { parseStructuredNote, STRUCTURED_NOTE_VERSION } from "../schemas/structured-note.ts";
@@ -35,6 +36,7 @@ import {
 import { type NoteExportFormat, renderNoteExport } from "./note-export.ts";
 import { withConsumedQuota } from "./quota.service.ts";
 import { handleNavigationCallback } from "./navigation.service.ts";
+import { closedAlphaAccessMessage } from "./command.service.ts";
 
 const NOTE_GONE = "That note is no longer available.";
 
@@ -69,6 +71,7 @@ export interface CallbackDependencies {
   readonly preferences?: Pick<UserPreferencesRepository, "get" | "update">;
   readonly usage: Pick<UsageRepository, "recordGeneration">;
   readonly quota: Pick<QuotaRepository, "reserve" | "consume" | "getSummary">;
+  readonly access?: Pick<ClosedAlphaRepository, "getAccess">;
   readonly provider: Pick<NoteAIProvider, "generateText">;
   readonly telegram: Pick<
     TelegramGateway,
@@ -549,6 +552,14 @@ export async function handleCallback(
 
     await deps.telegram.answerCallbackQuery(callback.callbackQueryId);
     const userId = await deps.users.ensureUser(callback);
+    const access = await deps.access?.getAccess(userId);
+    if (access !== undefined && access?.status !== "active") {
+      await deps.telegram.sendMessage(
+        callback.telegramChatId,
+        closedAlphaAccessMessage(access?.status ?? null),
+      );
+      return;
+    }
     const log = deps.logger.child({
       update_id: callback.updateId,
       user_id: userId,
@@ -609,6 +620,15 @@ export async function handleCallback(
   );
 
   const userId = await deps.users.ensureUser(callback);
+  const access = await deps.access?.getAccess(userId);
+  if (access !== undefined && access?.status !== "active") {
+    await deps.telegram.sendMessage(
+      callback.telegramChatId,
+      closedAlphaAccessMessage(access?.status ?? null),
+    );
+    return;
+  }
+
   const log = deps.logger.child({
     update_id: callback.updateId,
     user_id: userId,

@@ -91,6 +91,60 @@ Deno.test("search without a query explains the command without reading the libra
   assertEquals(test.sent[0]?.text.includes("/search"), true);
 });
 
+Deno.test("pending closed-alpha user sees invite onboarding before any feature access", async () => {
+  const test = harness();
+
+  await handleCommand(command("start", null), {
+    ...test.deps,
+    access: {
+      getAccess: () =>
+        Promise.resolve({ status: "pending" as const, activatedAt: null, suspendedAt: null }),
+      redeemInvite: () => Promise.reject(new Error("invite redemption must not run")),
+    },
+  });
+
+  assertEquals(test.sent.length, 1);
+  assertEquals(test.sent[0]?.text.includes("invite-only"), true);
+  assertEquals(test.searchCalls(), []);
+});
+
+Deno.test("a valid start invite activates the user and opens onboarding", async () => {
+  const test = harness();
+  let redeemed = "";
+
+  await handleCommand(command("start", "ntn_example1"), {
+    ...test.deps,
+    access: {
+      getAccess: () =>
+        Promise.resolve({ status: "pending" as const, activatedAt: null, suspendedAt: null }),
+      redeemInvite: (_userId: string, code: string) => {
+        redeemed = code;
+        return Promise.resolve("activated" as const);
+      },
+    },
+  });
+
+  assertEquals(redeemed, "ntn_example1");
+  assertEquals(test.sent[0]?.text.includes("Invite accepted"), true);
+  assertEquals(test.sent[1]?.text.includes("Welcome to Notinn"), true);
+});
+
+Deno.test("suspended closed-alpha user cannot run a library command", async () => {
+  const test = harness();
+
+  await handleCommand(command("search", "quarterly"), {
+    ...test.deps,
+    access: {
+      getAccess: () =>
+        Promise.resolve({ status: "suspended" as const, activatedAt: null, suspendedAt: null }),
+      redeemInvite: () => Promise.reject(new Error("invite redemption must not run")),
+    },
+  });
+
+  assertEquals(test.searchCalls(), []);
+  assertEquals(test.sent[0]?.text.includes("Access paused"), true);
+});
+
 Deno.test("search returns ranked saved notes with opaque open buttons", async () => {
   const test = harness([{
     noteId: NOTE_ID,
@@ -307,6 +361,11 @@ Deno.test("usage shows the active plan and each monthly allowance", async () => 
             remainingUnits: 22,
             periodStart: "2026-09-01",
             periodEnd: "2026-10-01",
+            dailyLimit: 50,
+            dailyUsedUnits: 2,
+            dailyReservedUnits: 0,
+            dailyRemainingUnits: 48,
+            usageDate: "2026-09-21",
           },
           {
             planKey: "free",
@@ -318,6 +377,11 @@ Deno.test("usage shows the active plan and each monthly allowance", async () => 
             remainingUnits: 8,
             periodStart: "2026-09-01",
             periodEnd: "2026-10-01",
+            dailyLimit: 50,
+            dailyUsedUnits: 4,
+            dailyReservedUnits: 1,
+            dailyRemainingUnits: 45,
+            usageDate: "2026-09-21",
           },
           {
             planKey: "free",
@@ -329,15 +393,21 @@ Deno.test("usage shows the active plan and each monthly allowance", async () => 
             remainingUnits: 7,
             periodStart: "2026-09-01",
             periodEnd: "2026-10-01",
+            dailyLimit: 50,
+            dailyUsedUnits: 3,
+            dailyReservedUnits: 0,
+            dailyRemainingUnits: 47,
+            usageDate: "2026-09-21",
           },
         ]),
     },
   });
 
   assertEquals(test.sent[0]?.text.includes("Plan: Free"), true);
-  assertEquals(test.sent[0]?.text.includes("New notes: 7 (+1 processing) / 50"), true);
-  assertEquals(test.sent[0]?.text.includes("Regenerations: 2 / 50"), true);
-  assertEquals(test.sent[0]?.text.includes("Ask Notes: 3 / 50"), true);
+  assertEquals(test.sent[0]?.text.includes("Today: 2 / 50"), true);
+  assertEquals(test.sent[0]?.text.includes("This month: 7 (+1 processing) / 50"), true);
+  assertEquals(test.sent[0]?.text.includes("Today: 4 (+1 processing) / 50"), true);
+  assertEquals(test.sent[0]?.text.includes("This month: 3 / 50"), true);
 });
 
 Deno.test("settings displays the current preference snapshot", async () => {

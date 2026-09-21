@@ -123,6 +123,11 @@ export class AppError extends Error {
     return new AppError(ERROR_CODES.QUOTA_EXCEEDED, { internalDetail });
   }
 
+  /** The active plan has no remaining daily allowance for this operation. */
+  static dailyQuotaExceeded(internalDetail?: string): AppError {
+    return new AppError(ERROR_CODES.DAILY_QUOTA_EXCEEDED, { internalDetail });
+  }
+
   /** The durable worker has used every configured attempt. */
   static retriesExhausted(internalDetail?: string): AppError {
     return new AppError(ERROR_CODES.RETRIES_EXHAUSTED, { internalDetail });

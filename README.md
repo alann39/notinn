@@ -3,7 +3,7 @@
 Telegram-first note capture. Send Notinn a message, a voice note, a screenshot, a
 PDF or a document, and get back a structured, searchable note.
 
-**Status: Phase 6A plan quota control is deployed to development.** Text, voice/audio, screenshots,
+**Status: Phase 6B closed-alpha access is deployed to development.** Text, voice/audio, screenshots,
 PDF, DOCX, TXT, and Markdown are processed by the durable PGMQ worker using one
 Gemini API key with a configured primary and transient-error fallback model. Raw
 media is downloaded into bounded memory, never stored, and zero-filled after
@@ -24,6 +24,10 @@ Phase 6A adds database-configurable Alpha, Free, and Pro monthly allowances for
 new notes, regenerations, and semantic answers. Quota is reserved atomically
 before provider work, reconciled after it starts, and exposed through `/usage`.
 The schema and both Edge Functions are active in the development project.
+
+Phase 6B adds invite-only onboarding, pending/active/suspended access, expiring
+hashed invite codes, guarded operator controls, and daily UTC limits alongside
+the existing monthly quota. Existing development users remain active.
 
 `/settings` now controls output language (`mirror`, Indonesian, or English),
 balanced/minimal privacy, and default templates for text, voice, and document
@@ -85,7 +89,7 @@ npx supabase link --project-ref <ref>   # confirm the target first
 npx supabase db push                    # apply migrations
 ```
 
-Twenty-five migrations in `supabase/migrations/`. They are the schema's source of truth;
+Twenty-eight migrations in `supabase/migrations/`. They are the schema's source of truth;
 migrations are never edited after being applied to a shared project (one
 pre-release exception is recorded in
 [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md)).
@@ -121,6 +125,19 @@ npx deno task webhook:delete    # remove
 npx deno task bot-menu:set      # configure native private-chat commands
 npx deno task smoke             # one real round trip
 ```
+
+Closed-alpha administration is database-only and requires `SUPABASE_URL` plus a
+server-side key in `.env`:
+
+```bash
+npx deno task alpha-admin create-invite 10 7
+npx deno task alpha-admin revoke-invite NTN_EXAMPLE
+npx deno task alpha-admin suspend 123456789
+npx deno task alpha-admin activate 123456789
+```
+
+Every mutation requires confirmation. Invite creation prints the raw code once;
+only its digest is stored.
 
 `webhook:set` registers with a secret token. Without it the endpoint is
 unauthenticated and every delivery that does carry a secret is refused — the two

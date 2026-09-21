@@ -2,6 +2,7 @@ import { assert, assertEquals, assertRejects } from "@std/assert";
 import {
   describeEnvironment,
   jwtRole,
+  loadOperatorConfig,
   loadScriptConfig,
   loadSmokeConfig,
   loadWebhookConfig,
@@ -481,11 +482,16 @@ Deno.test("the scripts do not require the generation provider's key", async () =
   assertEquals(Object.keys(config).includes("serviceRoleKey"), false);
 });
 
-Deno.test("only the smoke test config carries database credentials", async () => {
+Deno.test("database operator configs carry only validated server credentials", async () => {
   const config = await loadSmokeConfig(validSource());
+  const operator = await loadOperatorConfig(validSource());
 
   assertEquals(config.supabaseUrl, SUPABASE_URL);
   assertEquals(config.serviceRoleKey.reveal(), SERVICE_ROLE_JWT);
+  assertEquals(operator.supabaseUrl, SUPABASE_URL);
+  assertEquals(operator.serviceRoleKey.reveal(), SERVICE_ROLE_JWT);
+  assertEquals(Object.keys(operator).includes("botToken"), false);
+  assertEquals(Object.keys(operator).includes("ai"), false);
 });
 
 Deno.test("the scripts tolerate a missing webhook secret, which only exists after registration", async () => {

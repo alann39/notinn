@@ -46,6 +46,7 @@ const PROCESSING_JOBS_REPOSITORY = new URL("processing-jobs.repository.ts", REPO
 const USER_PREFERENCES_REPOSITORY = new URL("user-preferences.repository.ts", REPOSITORY_DIR);
 const QUOTA_REPOSITORY = new URL("quota.repository.ts", REPOSITORY_DIR);
 const NOTE_WORKFLOW_REPOSITORY = new URL("note-workflow.repository.ts", REPOSITORY_DIR);
+const CLOSED_ALPHA_REPOSITORY = new URL("closed-alpha.repository.ts", REPOSITORY_DIR);
 
 /** Read every migration, concatenated, with its filename attached for messages. */
 async function loadMigrations(): Promise<{ name: string; sql: string }[]> {
@@ -91,6 +92,7 @@ const FILE_SUFFIXES = [
   "phase6a_plan_fk_index.sql",
   "phase6b_note_delivery_drafts.sql",
   "phase6b_draft_fk_indexes.sql",
+  "phase6b_closed_alpha_access.sql",
 ] as const;
 
 /** Read the one migration whose filename ends with `suffix`. */
@@ -118,6 +120,7 @@ const PHASE5_PREFERENCES_SQL = await loadMigration("phase5_user_preference_contr
 const PHASE5_CUSTOM_TEMPLATES_SQL = await loadMigration("phase5_custom_templates.sql");
 const PHASE6_QUOTA_SQL = await loadMigration("phase6a_plan_entitlements_and_quota.sql");
 const PHASE6_WORKFLOW_SQL = await loadMigration("phase6b_note_delivery_drafts.sql");
+const PHASE6_CLOSED_ALPHA_SQL = await loadMigration("phase6b_closed_alpha_access.sql");
 const ALL_MIGRATIONS = await loadMigrations();
 const ALL_SQL = ALL_MIGRATIONS.map((migration) => migration.sql).join("\n");
 
@@ -177,6 +180,20 @@ Deno.test("quota metadata contains no note or Telegram content", () => {
   ) {
     assert(!declarations.includes(forbidden), `quota metadata contains ${forbidden}`);
   }
+});
+
+Deno.test("closed alpha keeps raw invite codes out of Postgres", () => {
+  const sql = normalise(PHASE6_CLOSED_ALPHA_SQL);
+  assert(sql.includes("code_sha256 text not null unique"));
+  assert(!sql.includes(" raw_code "), "migration stores recoverable invite codes");
+  assert(sql.includes("p_code_sha256 !~ '^[0-9a-f]{64}$'"));
+});
+
+Deno.test("daily quota is serialized with the monthly reservation", () => {
+  const sql = normalise(PHASE6_CLOSED_ALPHA_SQL);
+  assert(sql.includes("create table public.quota_daily_buckets"));
+  assert(sql.includes("and b.usage_date = v_usage_date for update"));
+  assert(sql.includes("return query select 'daily_exceeded'::text"));
 });
 
 // --- Extracting values from SQL --------------------------------------------
@@ -698,10 +715,12 @@ const RPC_CONTRACTS = [
   [PROCESSING_JOBS_REPOSITORY, "claim_processing_job", PHASE5_PREFERENCES_SQL],
   [USER_PREFERENCES_REPOSITORY, "get_user_preferences", PHASE5_PREFERENCES_SQL],
   [USER_PREFERENCES_REPOSITORY, "update_user_preference", PHASE5_CUSTOM_TEMPLATES_SQL],
-  [QUOTA_REPOSITORY, "reserve_plan_quota", PHASE6_QUOTA_SQL],
-  [QUOTA_REPOSITORY, "consume_plan_quota", PHASE6_QUOTA_SQL],
+  [QUOTA_REPOSITORY, "reserve_plan_quota", PHASE6_CLOSED_ALPHA_SQL],
+  [QUOTA_REPOSITORY, "consume_plan_quota", PHASE6_CLOSED_ALPHA_SQL],
   [QUOTA_REPOSITORY, "release_plan_quota", PHASE6_QUOTA_SQL],
-  [QUOTA_REPOSITORY, "get_user_usage_summary", PHASE6_QUOTA_SQL],
+  [QUOTA_REPOSITORY, "get_user_usage_summary", PHASE6_CLOSED_ALPHA_SQL],
+  [CLOSED_ALPHA_REPOSITORY, "get_closed_alpha_access", PHASE6_CLOSED_ALPHA_SQL],
+  [CLOSED_ALPHA_REPOSITORY, "redeem_closed_alpha_invite", PHASE6_CLOSED_ALPHA_SQL],
   [NOTE_WORKFLOW_REPOSITORY, "register_note_delivery", PHASE6_WORKFLOW_SQL],
   [NOTE_WORKFLOW_REPOSITORY, "find_note_delivery", PHASE6_WORKFLOW_SQL],
   [NOTE_WORKFLOW_REPOSITORY, "list_note_deliveries", PHASE6_WORKFLOW_SQL],

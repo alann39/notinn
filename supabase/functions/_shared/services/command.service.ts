@@ -3,6 +3,11 @@ import { encodeNavigationCallback } from "../schemas/navigation-callback.ts";
 import type { IngestionRepository } from "../repositories/ingestion.repository.ts";
 import type { NotesRepository } from "../repositories/notes.repository.ts";
 import type { QuotaRepository } from "../repositories/quota.repository.ts";
+import type {
+  ClosedAlphaAccessStatus,
+  ClosedAlphaRepository,
+  InviteRedemptionOutcome,
+} from "../repositories/closed-alpha.repository.ts";
 import type { UsageRepository } from "../repositories/usage.repository.ts";
 import type { TemplatesRepository } from "../repositories/templates.repository.ts";
 import {
@@ -45,10 +50,37 @@ export interface CommandDependencies {
   readonly answers?: LibraryAnswerProvider;
   readonly usage?: Pick<UsageRepository, "recordGeneration" | "recordEmbedding">;
   readonly quota?: Pick<QuotaRepository, "reserve" | "consume" | "release" | "getSummary">;
+  readonly access?: Pick<ClosedAlphaRepository, "getAccess" | "redeemInvite">;
   readonly preferences?: Pick<UserPreferencesRepository, "get" | "update">;
   readonly templates?:
     & Pick<TemplatesRepository, "listLabels">
     & Partial<Pick<TemplatesRepository, "listAvailable" | "createCustom" | "archiveCustom">>;
+}
+
+const CLOSED_ALPHA_PENDING = [
+  "🔐 Notinn Closed Alpha",
+  "",
+  "Access is currently invite-only.",
+  "Open your invitation link, or send /start followed by your invite code.",
+].join("\n");
+
+const CLOSED_ALPHA_SUSPENDED = [
+  "⏸️ Access paused",
+  "",
+  "Your Closed Alpha access is currently suspended.",
+  "Contact the Notinn team if you believe this is a mistake.",
+].join("\n");
+
+export function closedAlphaAccessMessage(status: ClosedAlphaAccessStatus | null): string {
+  return status === "suspended" ? CLOSED_ALPHA_SUSPENDED : CLOSED_ALPHA_PENDING;
+}
+
+function inviteOutcomeMessage(outcome: InviteRedemptionOutcome): string {
+  if (outcome === "expired") return "That invite has expired. Ask for a new invitation.";
+  if (outcome === "exhausted") return "That invite has reached its activation limit.";
+  if (outcome === "suspended") return CLOSED_ALPHA_SUSPENDED;
+  if (outcome === "user_not_active") return "This account cannot be activated right now.";
+  return "That invite code is not valid. Check the invitation link and try again.";
 }
 
 const SETTINGS_HELP = [
@@ -492,6 +524,34 @@ export async function handleCommand(
   }
 
   const userId = await deps.users.ensureUser(command);
+  if (deps.access !== undefined) {
+    let access = await deps.access.getAccess(userId);
+    if (
+      command.command === "start" && access?.status === "pending" &&
+      command.argumentsText !== null
+    ) {
+      const outcome = await deps.access.redeemInvite(userId, command.argumentsText);
+      if (outcome === "activated" || outcome === "already_active") {
+        access = { status: "active", activatedAt: null, suspendedAt: null };
+        if (outcome === "activated") {
+          await deps.telegram.sendMessage(
+            command.telegramChatId,
+            "✅ Invite accepted. Welcome to the Notinn Closed Alpha.",
+          );
+        }
+      } else {
+        await deps.telegram.sendMessage(command.telegramChatId, inviteOutcomeMessage(outcome));
+        return;
+      }
+    }
+    if (access?.status !== "active") {
+      await deps.telegram.sendMessage(
+        command.telegramChatId,
+        closedAlphaAccessMessage(access?.status ?? null),
+      );
+      return;
+    }
+  }
   if (
     command.command === "start" || command.command === "menu" || command.command === "new" ||
     command.command === "help" || command.command === "recent" ||

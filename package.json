@@ -25,6 +25,7 @@
     "webhook:delete": "deno task webhook:delete",
     "webhook:info": "deno task webhook:info",
     "bot-menu:set": "deno task bot-menu:set",
+    "alpha-admin": "deno task alpha-admin",
     "smoke": "deno task smoke"
   },
   "devDependencies": {

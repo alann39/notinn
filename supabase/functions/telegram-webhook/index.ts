@@ -12,6 +12,7 @@ import { RejectedChatsRepository } from "../_shared/repositories/rejected-chats.
 import { TemplatesRepository } from "../_shared/repositories/templates.repository.ts";
 import { UsageRepository } from "../_shared/repositories/usage.repository.ts";
 import { UserPreferencesRepository } from "../_shared/repositories/user-preferences.repository.ts";
+import { ClosedAlphaRepository } from "../_shared/repositories/closed-alpha.repository.ts";
 import { createNoteProvider } from "../_shared/providers/note-provider.factory.ts";
 import { GeminiEmbeddingProvider } from "../_shared/providers/gemini-embedding.provider.ts";
 import { createTelegramGateway } from "../_shared/telegram/client.ts";
@@ -99,6 +100,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
       usage: new UsageRepository(client),
       quota: new QuotaRepository(client),
       preferences: new UserPreferencesRepository(client),
+      access: new ClosedAlphaRepository(client),
       provider: noteProvider,
       embeddings: config.ai.embeddingModel === null
         ? undefined

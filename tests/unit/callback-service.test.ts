@@ -317,6 +317,22 @@ Deno.test("a save callback is answered before the owner-scoped write", async () 
   assertEquals(test.events.includes("edit_keyboard"), true);
 });
 
+Deno.test("a suspended user cannot reuse an old note callback", async () => {
+  const test = harness();
+
+  await handleCallback(callback(payload("shorter")), {
+    ...test.deps,
+    access: {
+      getAccess: () =>
+        Promise.resolve({ status: "suspended" as const, activatedAt: null, suspendedAt: null }),
+    },
+  });
+
+  assertEquals(test.providerCalls(), 0);
+  assertEquals(test.events.includes("quota_reserve"), false);
+  assertEquals(test.events.at(-1), "send");
+});
+
 Deno.test("regeneration stages a preview without changing the current output", async () => {
   const test = harness();
 
