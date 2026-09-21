@@ -18,11 +18,12 @@ import type {
   GroundingEvidence,
   LibraryAnswerProvider,
 } from "./library-ai.provider.ts";
+import { isTransientProviderFailure } from "./provider-fallback.ts";
 
 const GEMINI_INTERACTIONS_ENDPOINT =
   "https://generativelanguage.googleapis.com/v1beta/interactions";
 const DEFAULT_TIMEOUT_MS = 45_000;
-const MAX_PDF_SOURCE_DIGEST_CHARS = 12_000;
+export const MAX_PDF_SOURCE_DIGEST_CHARS = 12_000;
 
 const GeminiInteractionSchema = z.object({
   id: z.string().optional(),
@@ -41,23 +42,23 @@ const GeminiInteractionSchema = z.object({
   }).optional(),
 });
 
-const AudioEnvelopeSchema = z.object({
+export const AudioEnvelopeSchema = z.object({
   transcript: z.string().trim().min(1).max(500_000),
   note: z.unknown(),
 });
 
-const ImageEnvelopeSchema = z.object({
+export const ImageEnvelopeSchema = z.object({
   extracted_text: z.string().trim().min(1).max(500_000),
   note: z.unknown(),
 });
 
-const PdfEnvelopeSchema = z.object({
+export const PdfEnvelopeSchema = z.object({
   extracted_text: z.string().trim().min(1).max(MAX_PDF_SOURCE_DIGEST_CHARS),
   page_count: z.number().int().min(1).max(1_000).nullable(),
   note: z.unknown(),
 });
 
-const GroundedAnswerSchema = z.object({
+export const GroundedAnswerSchema = z.object({
   answer: z.string().trim().min(1).max(8_000),
   citation_indexes: z.array(z.number().int().min(1).max(10)).max(10),
   sufficient: z.boolean(),
@@ -71,7 +72,7 @@ interface GeminiCandidate {
   readonly outputTokens: number | null;
 }
 
-function systemInstruction(request: TextGenerationRequest): string {
+export function systemInstruction(request: TextGenerationRequest): string {
   const languageRule = request.outputLanguage === null
     ? "Write in the source's dominant language; preserve a natural Indonesian-English mix when the source is mixed."
     : `Write in ${request.outputLanguage}.`;
@@ -95,7 +96,7 @@ function systemInstruction(request: TextGenerationRequest): string {
   ].join("\n");
 }
 
-function userPrompt(sourceText: string): string {
+export function userPrompt(sourceText: string): string {
   return [
     "Transform the source below into the requested structured note.",
     "<source_text>",
@@ -104,7 +105,7 @@ function userPrompt(sourceText: string): string {
   ].join("\n");
 }
 
-function audioSystemInstruction(request: AudioGenerationRequest): string {
+export function audioSystemInstruction(request: AudioGenerationRequest): string {
   const languageRule = request.outputLanguage === null
     ? "Write the note in the audio's dominant language; preserve a natural Indonesian-English mix when the speakers mix languages."
     : `Write the note in ${request.outputLanguage}.`;
@@ -120,7 +121,7 @@ function audioSystemInstruction(request: AudioGenerationRequest): string {
   ].join("\n");
 }
 
-function mediaSystemInstruction(
+export function mediaSystemInstruction(
   request: ImageGenerationRequest | PdfGenerationRequest,
   kind: "image" | "PDF",
 ): string {
@@ -139,7 +140,7 @@ function mediaSystemInstruction(
 }
 
 /** Encode without spreading a potentially 14 MiB file onto the JavaScript stack. */
-function bytesToBase64(bytes: Uint8Array): string {
+export function bytesToBase64(bytes: Uint8Array): string {
   const chunkSize = 0x8000;
   const chunks: string[] = [];
   for (let offset = 0; offset < bytes.length; offset += chunkSize) {
@@ -396,7 +397,7 @@ export class GeminiNoteProvider implements NoteAIProvider, LibraryAnswerProvider
       );
     } catch (thrown) {
       const fallbackModel = this.#config.fallbackModel;
-      if (fallbackModel === null || !this.#shouldFallback(thrown)) throw thrown;
+      if (fallbackModel === null || !isTransientProviderFailure(thrown)) throw thrown;
 
       return await this.#generateWithModel(
         fallbackModel,
@@ -405,15 +406,6 @@ export class GeminiNoteProvider implements NoteAIProvider, LibraryAnswerProvider
         responseJsonSchema,
       );
     }
-  }
-
-  #shouldFallback(thrown: unknown): boolean {
-    if (!(thrown instanceof AppError)) return false;
-    if (thrown.code === "provider_rate_limited" || thrown.code === "provider_timeout") {
-      return true;
-    }
-    return thrown.code === "provider_error" &&
-      /gemini interaction returned 5\d\d/.test(thrown.internalDetail ?? "");
   }
 
   async #generateWithModel(

@@ -12,7 +12,7 @@ import { RejectedChatsRepository } from "../_shared/repositories/rejected-chats.
 import { TemplatesRepository } from "../_shared/repositories/templates.repository.ts";
 import { UsageRepository } from "../_shared/repositories/usage.repository.ts";
 import { UserPreferencesRepository } from "../_shared/repositories/user-preferences.repository.ts";
-import { GeminiNoteProvider } from "../_shared/providers/gemini-note.provider.ts";
+import { createNoteProvider } from "../_shared/providers/note-provider.factory.ts";
 import { GeminiEmbeddingProvider } from "../_shared/providers/gemini-embedding.provider.ts";
 import { createTelegramGateway } from "../_shared/telegram/client.ts";
 import { handleWebhookRequest } from "../_shared/telegram/handler.ts";
@@ -89,7 +89,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
     const client = createServiceClient(config.supabaseUrl, config.serviceRoleKey);
     const repository = new IngestionRepository(client);
 
-    const noteProvider = new GeminiNoteProvider(config.ai);
+    const noteProvider = createNoteProvider(config.ai);
     const phase1 = {
       notes: new NotesRepository(client),
       workflow: new NoteWorkflowRepository(client),

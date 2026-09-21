@@ -18,6 +18,7 @@ function providerWith(
     model: "gemini-synthetic-flash",
     fallbackModel: null,
     embeddingModel,
+    openRouter: null,
   }, {
     fetch: ((input, init) => Promise.resolve(responder(input, init))) as typeof fetch,
   });

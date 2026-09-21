@@ -3,7 +3,7 @@ import { createServiceClient } from "../_shared/db/client.ts";
 import { toAppError } from "../_shared/errors/app-error.ts";
 import { emptyResponse } from "../_shared/errors/http.ts";
 import { createLogger } from "../_shared/observability/logger.ts";
-import { GeminiNoteProvider } from "../_shared/providers/gemini-note.provider.ts";
+import { createNoteProvider } from "../_shared/providers/note-provider.factory.ts";
 import { NotesRepository } from "../_shared/repositories/notes.repository.ts";
 import { NoteWorkflowRepository } from "../_shared/repositories/note-workflow.repository.ts";
 import { ProcessingJobsRepository } from "../_shared/repositories/processing-jobs.repository.ts";
@@ -54,7 +54,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
       templates: new TemplatesRepository(client),
       usage: new UsageRepository(client),
       quota: new QuotaRepository(client),
-      provider: new GeminiNoteProvider(config.ai),
+      provider: createNoteProvider(config.ai),
       telegram: createTelegramGateway(config.botToken),
       logger,
     });

@@ -55,6 +55,8 @@ export const RECOGNISED_ENV_KEYS = [
   "GEMINI_MODEL",
   "GEMINI_FALLBACK_MODEL",
   "GEMINI_EMBEDDING_MODEL",
+  "OPENROUTER_API_KEY",
+  "OPENROUTER_FALLBACK_MODEL",
   "NOTINN_ENV",
   "NOTINN_LOG_LEVEL",
 ] as const;
@@ -128,6 +130,13 @@ export interface AiConfig {
   readonly fallbackModel: string | null;
   /** Optional because ordinary note generation must remain healthy before semantic search is enabled. */
   readonly embeddingModel: string | null;
+  /** Optional cross-provider fallback. Disabled when no OpenRouter key is configured. */
+  readonly openRouter: OpenRouterConfig | null;
+}
+
+export interface OpenRouterConfig {
+  readonly apiKey: Secret;
+  readonly model: string;
 }
 
 export interface WebhookConfig extends BaseConfig {
@@ -184,6 +193,9 @@ const TELEGRAM_SECRET_PATTERN = /^[A-Za-z0-9_-]{1,256}$/;
  * adapter that will report it as a provider error.
  */
 const MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const OPENROUTER_MODEL_ID_PATTERN =
+  /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const DEFAULT_OPENROUTER_FALLBACK_MODEL = "openrouter/free";
 
 const RawSchema = z.object({
   SUPABASE_URL: z.url().optional(),
@@ -199,6 +211,8 @@ const RawSchema = z.object({
   GEMINI_MODEL: z.string().min(1).optional(),
   GEMINI_FALLBACK_MODEL: z.string().min(1).optional(),
   GEMINI_EMBEDDING_MODEL: z.string().min(1).optional(),
+  OPENROUTER_API_KEY: z.string().min(1).optional(),
+  OPENROUTER_FALLBACK_MODEL: z.string().min(1).optional(),
   NOTINN_ENV: z.enum(NOTINN_ENVIRONMENTS).optional(),
   NOTINN_LOG_LEVEL: z.enum(LOG_LEVELS).optional(),
 });
@@ -389,7 +403,29 @@ function resolveAiConfig(raw: RawEnv): AiConfig {
     );
   }
 
-  return { provider, apiKey: new Secret(apiKey), model, fallbackModel, embeddingModel };
+  const openRouterApiKey = raw.OPENROUTER_API_KEY ?? null;
+  const openRouterModel = raw.OPENROUTER_FALLBACK_MODEL ?? DEFAULT_OPENROUTER_FALLBACK_MODEL;
+  if (!OPENROUTER_MODEL_ID_PATTERN.test(openRouterModel)) {
+    throw AppError.configuration(
+      "OPENROUTER_FALLBACK_MODEL must be an OpenRouter model slug such as openrouter/free.",
+    );
+  }
+  if (openRouterApiKey === null && raw.OPENROUTER_FALLBACK_MODEL !== undefined) {
+    throw AppError.configuration(
+      "OPENROUTER_API_KEY is required when OPENROUTER_FALLBACK_MODEL is configured.",
+    );
+  }
+
+  return {
+    provider,
+    apiKey: new Secret(apiKey),
+    model,
+    fallbackModel,
+    embeddingModel,
+    openRouter: openRouterApiKey === null
+      ? null
+      : { apiKey: new Secret(openRouterApiKey), model: openRouterModel },
+  };
 }
 
 /**
@@ -617,6 +653,8 @@ export interface EnvironmentReport {
   readonly geminiModel: string | null;
   readonly geminiFallbackModel: string | null;
   readonly geminiApiKeyLength: number | null;
+  readonly openRouterFallbackModel: string | null;
+  readonly openRouterApiKeyLength: number | null;
   readonly internalWorkerSecretLength: number | null;
 }
 
@@ -633,6 +671,7 @@ export function describeEnvironment(
   const botToken = picked["TELEGRAM_BOT_TOKEN"] ?? null;
   const webhookSecret = picked["TELEGRAM_WEBHOOK_SECRET"] ?? null;
   const geminiApiKey = picked["GEMINI_API_KEY"] ?? null;
+  const openRouterApiKey = picked["OPENROUTER_API_KEY"] ?? null;
   const internalWorkerSecret = picked["INTERNAL_WORKER_SECRET"] ?? null;
 
   return {
@@ -654,6 +693,10 @@ export function describeEnvironment(
     geminiModel: picked["GEMINI_MODEL"] ?? null,
     geminiFallbackModel: picked["GEMINI_FALLBACK_MODEL"] ?? null,
     geminiApiKeyLength: geminiApiKey?.length ?? null,
+    openRouterFallbackModel: openRouterApiKey === null
+      ? null
+      : picked["OPENROUTER_FALLBACK_MODEL"] ?? DEFAULT_OPENROUTER_FALLBACK_MODEL,
+    openRouterApiKeyLength: openRouterApiKey?.length ?? null,
     internalWorkerSecretLength: internalWorkerSecret?.length ?? null,
   };
 }

@@ -29,6 +29,7 @@ const BOT_TOKEN = "123456789:AAFakeTokenValueThatIsLongEnoughToMatch";
 const GEMINI_API_KEY = "synthetic-gemini-api-key-value";
 const GEMINI_MODEL = "gemini-synthetic-flash";
 const GEMINI_FALLBACK_MODEL = "gemini-synthetic-flash-lite";
+const OPENROUTER_API_KEY = "synthetic-openrouter-api-key-value";
 const INTERNAL_WORKER_SECRET = "synthetic-internal-worker-secret-value";
 
 /** Build a JWT-shaped string with the given payload. Unsigned and unusable. */
@@ -240,6 +241,32 @@ Deno.test("the Gemini fallback is optional but must be distinct and well formed"
       AppError,
     );
     assertEquals(error.code, ERROR_CODES.CONFIGURATION_ERROR, `${fallbackModel} was accepted`);
+  }
+});
+
+Deno.test("the OpenRouter fallback is optional and defaults to openrouter/free", async () => {
+  const disabled = await loadWebhookConfig(validSource());
+  assertEquals(disabled.ai.openRouter, null);
+
+  const enabled = await loadWebhookConfig({
+    ...validSource(),
+    OPENROUTER_API_KEY,
+  });
+  assertEquals(enabled.ai.openRouter?.model, "openrouter/free");
+  assertEquals(enabled.ai.openRouter?.apiKey.reveal(), OPENROUTER_API_KEY);
+  assert(!JSON.stringify(enabled).includes(OPENROUTER_API_KEY));
+});
+
+Deno.test("an invalid or keyless OpenRouter fallback is refused", async () => {
+  for (
+    const source of [
+      { ...validSource(), OPENROUTER_API_KEY, OPENROUTER_FALLBACK_MODEL: "no-slash" },
+      { ...validSource(), OPENROUTER_FALLBACK_MODEL: "openrouter/free" },
+    ]
+  ) {
+    const error = await assertRejects(() => loadWebhookConfig(source), AppError);
+    assertEquals(error.code, ERROR_CODES.CONFIGURATION_ERROR);
+    assert((error.internalDetail ?? "").includes("OPENROUTER"));
   }
 });
 

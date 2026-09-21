@@ -147,6 +147,13 @@ async function main(): Promise<void> {
     line("provider key length", String(report.geminiApiKeyLength));
   }
 
+  if (report.openRouterApiKeyLength === null) {
+    line("OpenRouter fallback", "disabled", "warn");
+  } else {
+    line("OpenRouter fallback", report.openRouterFallbackModel ?? "openrouter/free", "ok");
+    line("OpenRouter key length", String(report.openRouterApiKeyLength));
+  }
+
   // --- Configuration loads -------------------------------------------------
   section("Configuration loads");
 

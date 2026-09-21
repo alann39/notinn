@@ -21,6 +21,7 @@ function harness() {
       model: "gemini-synthetic-flash",
       fallbackModel: null,
       embeddingModel: null,
+      openRouter: null,
     },
     logLevel: "debug",
     fingerprints: { serviceRoleKey: "synthetic" },

@@ -31,6 +31,7 @@ function providerWith(
       model: "gemini-synthetic-flash",
       fallbackModel,
       embeddingModel: null,
+      openRouter: null,
     },
     { fetch: fetchImpl },
   );
@@ -56,6 +57,7 @@ function providerWithSequence(
       model: "gemini-synthetic-flash",
       fallbackModel: "gemini-synthetic-flash-lite",
       embeddingModel: null,
+      openRouter: null,
     },
     { fetch: fetchImpl },
   );
@@ -230,6 +232,7 @@ Deno.test("Gemini falls back after a primary timeout", async () => {
     model: "gemini-synthetic-flash",
     fallbackModel: "gemini-synthetic-flash-lite",
     embeddingModel: null,
+    openRouter: null,
   }, { fetch: fetchImpl });
 
   await provider.generateText(request());

@@ -1,9 +1,36 @@
 # Implementation status
 
-**Phase:** 6A — Plan entitlements and atomic quota control (deployed to development)
-**Date:** 2026-09-20
+**Phase:** Post-6B — Cross-provider generation fallback (deployed, awaiting secret activation)
+**Date:** 2026-09-21
 **Last verified:** the commands in [Verification](#verification) were run and their
 output is recorded below.
+
+## Cross-provider fallback snapshot
+
+The provider-resilience layer is implemented, verified, and deployed to development.
+
+- The generation chain is Gemini primary, the configured Gemini fallback model,
+  then OpenRouter using `openrouter/free`.
+- Cross-provider fallback is attempted only after a provider `429`, timeout, or
+  `5xx`. Validation failures, malformed structured output, and permanent `4xx`
+  responses are returned unchanged rather than hidden by another provider call.
+- Text, audio, image, PDF, and grounded `/ask` generation use the same provider
+  boundary. OpenRouter requests require structured-output support and deny routing
+  to providers that collect user data.
+- One user action still consumes one logical quota reservation. Successful usage
+  records store `provider=openrouter` and the concrete model selected by the free
+  router, rather than the router alias.
+- `OPENROUTER_API_KEY` is optional and secret-wrapped. With no key configured,
+  both functions retain their previous Gemini-only behavior. When a key is added,
+  the model defaults to `openrouter/free`; `OPENROUTER_FALLBACK_MODEL` is only an
+  optional override.
+- Formatting, linting, full type-checking, and the hermetic suite pass:
+  **573 passed, 0 failed**.
+- `telegram-webhook` version 35 and `process-job` version 33 are ACTIVE with
+  `verify_jwt=false`. Unsigned live requests to both functions return an empty
+  HTTP 401 response.
+- Activation is pending only the development secret `OPENROUTER_API_KEY`; no
+  database migration or further function deployment is required.
 
 ## Phase 6A deployed snapshot
 
