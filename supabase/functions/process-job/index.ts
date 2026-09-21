@@ -5,6 +5,7 @@ import { emptyResponse } from "../_shared/errors/http.ts";
 import { createLogger } from "../_shared/observability/logger.ts";
 import { GeminiNoteProvider } from "../_shared/providers/gemini-note.provider.ts";
 import { NotesRepository } from "../_shared/repositories/notes.repository.ts";
+import { NoteWorkflowRepository } from "../_shared/repositories/note-workflow.repository.ts";
 import { ProcessingJobsRepository } from "../_shared/repositories/processing-jobs.repository.ts";
 import { QuotaRepository } from "../_shared/repositories/quota.repository.ts";
 import { TemplatesRepository } from "../_shared/repositories/templates.repository.ts";
@@ -49,6 +50,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
       config,
       jobs: new ProcessingJobsRepository(client),
       notes: new NotesRepository(client),
+      workflow: new NoteWorkflowRepository(client),
       templates: new TemplatesRepository(client),
       usage: new UsageRepository(client),
       quota: new QuotaRepository(client),

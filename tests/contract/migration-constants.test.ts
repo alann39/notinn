@@ -45,6 +45,7 @@ const TEMPLATES_REPOSITORY = new URL("templates.repository.ts", REPOSITORY_DIR);
 const PROCESSING_JOBS_REPOSITORY = new URL("processing-jobs.repository.ts", REPOSITORY_DIR);
 const USER_PREFERENCES_REPOSITORY = new URL("user-preferences.repository.ts", REPOSITORY_DIR);
 const QUOTA_REPOSITORY = new URL("quota.repository.ts", REPOSITORY_DIR);
+const NOTE_WORKFLOW_REPOSITORY = new URL("note-workflow.repository.ts", REPOSITORY_DIR);
 
 /** Read every migration, concatenated, with its filename attached for messages. */
 async function loadMigrations(): Promise<{ name: string; sql: string }[]> {
@@ -88,6 +89,8 @@ const FILE_SUFFIXES = [
   "phase5_custom_templates.sql",
   "phase6a_plan_entitlements_and_quota.sql",
   "phase6a_plan_fk_index.sql",
+  "phase6b_note_delivery_drafts.sql",
+  "phase6b_draft_fk_indexes.sql",
 ] as const;
 
 /** Read the one migration whose filename ends with `suffix`. */
@@ -114,6 +117,7 @@ const PHASE4_SEMANTIC_SQL = await loadMigration("phase4_semantic_library.sql");
 const PHASE5_PREFERENCES_SQL = await loadMigration("phase5_user_preference_contract.sql");
 const PHASE5_CUSTOM_TEMPLATES_SQL = await loadMigration("phase5_custom_templates.sql");
 const PHASE6_QUOTA_SQL = await loadMigration("phase6a_plan_entitlements_and_quota.sql");
+const PHASE6_WORKFLOW_SQL = await loadMigration("phase6b_note_delivery_drafts.sql");
 const ALL_MIGRATIONS = await loadMigrations();
 const ALL_SQL = ALL_MIGRATIONS.map((migration) => migration.sql).join("\n");
 
@@ -698,6 +702,16 @@ const RPC_CONTRACTS = [
   [QUOTA_REPOSITORY, "consume_plan_quota", PHASE6_QUOTA_SQL],
   [QUOTA_REPOSITORY, "release_plan_quota", PHASE6_QUOTA_SQL],
   [QUOTA_REPOSITORY, "get_user_usage_summary", PHASE6_QUOTA_SQL],
+  [NOTE_WORKFLOW_REPOSITORY, "register_note_delivery", PHASE6_WORKFLOW_SQL],
+  [NOTE_WORKFLOW_REPOSITORY, "find_note_delivery", PHASE6_WORKFLOW_SQL],
+  [NOTE_WORKFLOW_REPOSITORY, "list_note_deliveries", PHASE6_WORKFLOW_SQL],
+  [NOTE_WORKFLOW_REPOSITORY, "replace_note_delivery_messages", PHASE6_WORKFLOW_SQL],
+  [NOTE_WORKFLOW_REPOSITORY, "begin_note_edit_draft", PHASE6_WORKFLOW_SQL],
+  [NOTE_WORKFLOW_REPOSITORY, "complete_note_edit_draft", PHASE6_WORKFLOW_SQL],
+  [NOTE_WORKFLOW_REPOSITORY, "get_note_edit_draft", PHASE6_WORKFLOW_SQL],
+  [NOTE_WORKFLOW_REPOSITORY, "apply_note_edit_draft", PHASE6_WORKFLOW_SQL],
+  [NOTE_WORKFLOW_REPOSITORY, "discard_note_edit_draft", PHASE6_WORKFLOW_SQL],
+  [NOTE_WORKFLOW_REPOSITORY, "fail_note_edit_draft", PHASE6_WORKFLOW_SQL],
 ] as const;
 
 for (const [repository, name, sql] of RPC_CONTRACTS) {

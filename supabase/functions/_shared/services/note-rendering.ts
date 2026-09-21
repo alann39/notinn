@@ -453,6 +453,17 @@ function button(
   };
 }
 
+function disabledButton(
+  text: string,
+  style?: InlineKeyboardButton["style"],
+): InlineKeyboardButton {
+  return {
+    text,
+    ...(style === undefined ? {} : { style }),
+    disabled: {},
+  };
+}
+
 function templateIcon(key: string): string {
   const icons: Readonly<Record<string, string>> = {
     clean_note: "📝",
@@ -501,8 +512,15 @@ export function buildNoteKeyboard(options: NoteKeyboardOptions): InlineKeyboard 
   ]];
 }
 
-/** The first level revealed after Options. */
-export function buildEditKeyboard(noteId: string): InlineKeyboard {
+/** The first level revealed after Options. Minimal-mode notes keep AI edits closed. */
+export function buildEditKeyboard(noteId: string, canRegenerate = true): InlineKeyboard {
+  if (!canRegenerate) {
+    return [
+      [disabledButton("🔒 AI edits unavailable — Minimal privacy")],
+      [button("📤 Export", { kind: "edit_export" }, noteId)],
+      [button("⬅️ Back", { kind: "edit_back" }, noteId, 0, "primary")],
+    ];
+  }
   return [
     [
       button("✂️ Shorter", { kind: "shorter" }, noteId),
@@ -513,6 +531,32 @@ export function buildEditKeyboard(noteId: string): InlineKeyboard {
       button("📤 Export", { kind: "edit_export" }, noteId),
     ],
     [button("⬅️ Back", { kind: "edit_back" }, noteId, 0, "primary")],
+  ];
+}
+
+/** Replace all actionable buttons while provider or destructive work is running. */
+export function buildProcessingKeyboard(label: string): InlineKeyboard {
+  return [[disabledButton(`⏳ ${label}`, "primary")]];
+}
+
+/** Toggle one delivery group between its immutable base and staged candidate. */
+export function buildDraftComparisonKeyboard(
+  draftId: string,
+  visible: "before" | "after",
+): InlineKeyboard {
+  return [
+    [
+      visible === "before"
+        ? disabledButton("◀️ Before ✓")
+        : button("◀️ Before", { kind: "draft_before" }, draftId),
+      visible === "after"
+        ? disabledButton("After ✓ ▶️")
+        : button("After ▶️", { kind: "draft_after" }, draftId),
+    ],
+    [
+      button("✅ Apply change", { kind: "draft_apply" }, draftId, 0, "success"),
+      button("↩️ Cancel", { kind: "draft_discard" }, draftId, 0, "danger"),
+    ],
   ];
 }
 

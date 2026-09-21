@@ -5,12 +5,16 @@ import { encodeCallbackPayload } from "../../supabase/functions/_shared/schemas/
 import { encodeNavigationCallback } from "../../supabase/functions/_shared/schemas/navigation-callback.ts";
 import { handleCallback } from "../../supabase/functions/_shared/services/callback.service.ts";
 import type { CallbackActionRequest } from "../../supabase/functions/_shared/telegram/parse-update.ts";
-import type { InlineKeyboardMarkup } from "../../supabase/functions/_shared/telegram/client.ts";
+import type {
+  InlineKeyboardMarkup,
+  SendMessageOptions,
+} from "../../supabase/functions/_shared/telegram/client.ts";
 import { structuredNoteFixture } from "../fixtures/notes/builders.ts";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const NOTE_ID = "22222222-2222-4222-8222-222222222222";
 const OUTPUT_ID = "33333333-3333-4333-8333-333333333333";
+const DRAFT_ID = "55555555-5555-4555-8555-555555555555";
 
 function callback(data: string): CallbackActionRequest {
   return {
@@ -33,6 +37,7 @@ function payload(
     | "edit_export"
     | "edit_back"
     | "shorter"
+    | "delete_confirm"
     | "export_md"
     | "export_txt"
     | "export_pdf",
@@ -40,16 +45,38 @@ function payload(
   return encodeCallbackPayload({ action: { kind }, resourceId: NOTE_ID, revision: 0 });
 }
 
+function draftPayload(
+  kind: "draft_before" | "draft_after" | "draft_apply" | "draft_discard",
+): string {
+  return encodeCallbackPayload({ action: { kind }, resourceId: DRAFT_ID, revision: 0 });
+}
+
 function harness(
-  options: { sourceExists?: boolean; displayExists?: boolean; quotaError?: AppError } = {},
+  options: {
+    sourceExists?: boolean;
+    sourceText?: string | null;
+    displayExists?: boolean;
+    quotaError?: AppError;
+    draftBusy?: boolean;
+    deliveries?: readonly {
+      deliveryId: string;
+      noteId: string;
+      chatId: number;
+      messageIds: readonly number[];
+    }[];
+  } = {},
 ) {
   const events: string[] = [];
   const documents: { filename: string; mimeType: string; content: string }[] = [];
   const keyboards: string[][][] = [];
   const editedTexts: string[] = [];
+  const editedMessageIds: number[] = [];
+  const deletedMessageIds: number[][] = [];
   let providerCalls = 0;
   const { logger } = createCapturingLogger({ level: "debug" });
   const note = structuredNoteFixture();
+  const beforeNote = structuredNoteFixture({ title: "Before synthetic note" });
+  const afterNote = structuredNoteFixture({ title: "After synthetic note" });
 
   const deps = {
     users: {
@@ -81,7 +108,7 @@ function harness(
             noteId: NOTE_ID,
             language: "en",
             sourceType: "text" as const,
-            sourceText: "Synthetic source.",
+            sourceText: options.sourceText === undefined ? "Synthetic source." : options.sourceText,
             templateKey: "clean_note",
           },
         ),
@@ -102,6 +129,51 @@ function harness(
         });
       },
       deleteNote: () => Promise.resolve({ outcome: "deleted" as const, noteId: NOTE_ID }),
+    },
+    workflow: {
+      registerDelivery: () =>
+        Promise.resolve({ outcome: "created" as const, deliveryId: DRAFT_ID }),
+      findDelivery: () => Promise.resolve(null),
+      listDeliveries: () => Promise.resolve(options.deliveries ?? []),
+      replaceDeliveryMessages: () => Promise.resolve("updated" as const),
+      beginDraft: () => {
+        events.push("begin_draft");
+        return options.draftBusy
+          ? Promise.resolve({ outcome: "busy" as const, draftId: null })
+          : Promise.resolve({ outcome: "created" as const, draftId: DRAFT_ID });
+      },
+      completeDraft: () => {
+        events.push("complete_draft");
+        return Promise.resolve("ready" as const);
+      },
+      getDraft: () =>
+        Promise.resolve({
+          draftId: DRAFT_ID,
+          noteId: NOTE_ID,
+          baseOutputId: "66666666-6666-4666-8666-666666666666",
+          draftOutputId: OUTPUT_ID,
+          baseContentJson: beforeNote,
+          draftContentJson: afterNote,
+          isSaved: true,
+        }),
+      applyDraft: () => {
+        events.push("apply_draft");
+        return Promise.resolve({
+          outcome: "applied" as const,
+          noteId: NOTE_ID,
+          outputId: OUTPUT_ID,
+          isSaved: true,
+        });
+      },
+      discardDraft: () => {
+        events.push("discard_draft");
+        return Promise.resolve({
+          outcome: "discarded" as const,
+          noteId: NOTE_ID,
+          isSaved: true,
+        });
+      },
+      failDraft: () => Promise.resolve(),
     },
     templates: {
       findForGeneration: () =>
@@ -200,16 +272,40 @@ function harness(
         keyboards.push(markup.inline_keyboard.map((row) => row.map((item) => item.text)));
         return Promise.resolve(true);
       },
-      editMessageText: (_chatId: number, _messageId: number, text: string) => {
+      editMessageText: (
+        _chatId: number,
+        _messageId: number,
+        text: string,
+        sendOptions?: SendMessageOptions,
+      ) => {
         events.push("edit_text");
+        editedMessageIds.push(_messageId);
         editedTexts.push(text);
+        if (sendOptions?.inlineKeyboard !== undefined) {
+          keyboards.push(
+            sendOptions.inlineKeyboard.inline_keyboard.map((row) => row.map((item) => item.text)),
+          );
+        }
+        return Promise.resolve(true);
+      },
+      deleteMessages: (_chatId: number, messageIds: readonly number[]) => {
+        deletedMessageIds.push([...messageIds]);
         return Promise.resolve(true);
       },
     },
     logger,
   };
 
-  return { deps, events, documents, keyboards, editedTexts, providerCalls: () => providerCalls };
+  return {
+    deps,
+    events,
+    documents,
+    keyboards,
+    editedTexts,
+    editedMessageIds,
+    deletedMessageIds,
+    providerCalls: () => providerCalls,
+  };
 }
 
 Deno.test("a save callback is answered before the owner-scoped write", async () => {
@@ -221,13 +317,15 @@ Deno.test("a save callback is answered before the owner-scoped write", async () 
   assertEquals(test.events.includes("edit_keyboard"), true);
 });
 
-Deno.test("regeneration becomes current only after the new output is sent", async () => {
+Deno.test("regeneration stages a preview without changing the current output", async () => {
   const test = harness();
 
   await handleCallback(callback(payload("shorter")), test.deps);
 
-  assertEquals(test.events.indexOf("insert_output") < test.events.indexOf("send"), true);
-  assertEquals(test.events.indexOf("send") < test.events.indexOf("set_current"), true);
+  assertEquals(test.events.indexOf("begin_draft") < test.events.indexOf("quota_reserve"), true);
+  assertEquals(test.events.indexOf("insert_output") < test.events.indexOf("complete_draft"), true);
+  assertEquals(test.events.includes("set_current"), false);
+  assertEquals(test.editedTexts.at(-1)?.includes("Synthetic weekly sync"), true);
   assertEquals(test.providerCalls(), 1);
 });
 
@@ -249,6 +347,84 @@ Deno.test("regeneration quota exhaustion is reported before a provider call", as
   assertEquals(test.providerCalls(), 0);
   assertEquals(test.events.includes("quota_consume"), false);
   assertEquals(test.events.at(-1), "send");
+});
+
+Deno.test("a duplicate regeneration click stops before quota and provider work", async () => {
+  const test = harness({ draftBusy: true });
+
+  await handleCallback(callback(payload("shorter")), test.deps);
+
+  assertEquals(test.providerCalls(), 0);
+  assertEquals(test.events.includes("quota_reserve"), false);
+  assertEquals(test.keyboards.at(-1), [["⏳ Edit already in progress…"]]);
+});
+
+Deno.test("minimal privacy keeps AI edits visibly disabled", async () => {
+  const test = harness({ sourceText: null });
+
+  await handleCallback(callback(payload("edit")), test.deps);
+
+  assertEquals(test.keyboards.at(-1), [
+    ["🔒 AI edits unavailable — Minimal privacy"],
+    ["📤 Export"],
+    ["⬅️ Back"],
+  ]);
+  assertEquals(test.providerCalls(), 0);
+});
+
+Deno.test("Before and After toggle by editing the same Telegram bubble", async () => {
+  const test = harness();
+
+  await handleCallback(callback(draftPayload("draft_before")), test.deps);
+  await handleCallback(callback(draftPayload("draft_after")), test.deps);
+
+  assertEquals(test.editedMessageIds, [17, 17]);
+  assertEquals(test.editedTexts[0]?.includes("Before synthetic note"), true);
+  assertEquals(test.editedTexts[1]?.includes("After synthetic note"), true);
+  assertEquals(test.keyboards.at(-1), [
+    ["◀️ Before", "After ✓ ▶️"],
+    ["✅ Apply change", "↩️ Cancel"],
+  ]);
+});
+
+Deno.test("Apply commits the staged output and restores the compact note controls", async () => {
+  const test = harness();
+
+  await handleCallback(callback(draftPayload("draft_apply")), test.deps);
+
+  assertEquals(test.events.includes("apply_draft"), true);
+  assertEquals(test.editedTexts.at(-1)?.includes("After synthetic note"), true);
+  assertEquals(test.keyboards[0], [["⏳ Applying change…"]]);
+  assertEquals(test.keyboards.at(-1), [["📤 Unsave", "⚙️ Options", "🗑️ Delete"]]);
+});
+
+Deno.test("Cancel discards the candidate and restores the original note", async () => {
+  const test = harness();
+
+  await handleCallback(callback(draftPayload("draft_discard")), test.deps);
+
+  assertEquals(test.events.includes("discard_draft"), true);
+  assertEquals(test.editedTexts.at(-1)?.includes("Before synthetic note"), true);
+  assertEquals(test.keyboards[0], [["⏳ Restoring original…"]]);
+});
+
+Deno.test("delete keeps one tombstone and removes every other registered note message", async () => {
+  const test = harness({
+    deliveries: [
+      {
+        deliveryId: DRAFT_ID,
+        noteId: NOTE_ID,
+        chatId: 900_000_001,
+        messageIds: [15, 16, 17],
+      },
+    ],
+  });
+
+  await handleCallback(callback(payload("delete_confirm")), test.deps);
+
+  assertEquals(test.editedTexts.at(-1), "Note deleted.");
+  assertEquals(test.deletedMessageIds, [[15, 16]]);
+  assertEquals(test.keyboards[0], [["⏳ Deleting note…"]]);
 });
 
 Deno.test("malformed callback data is acknowledged without resolving a user", async () => {

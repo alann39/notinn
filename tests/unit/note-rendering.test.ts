@@ -17,7 +17,13 @@ import {
 import { decodeCallbackPayload } from "../../supabase/functions/_shared/schemas/callback.ts";
 import { AppError } from "../../supabase/functions/_shared/errors/app-error.ts";
 import { ERROR_CODES } from "../../supabase/functions/_shared/errors/taxonomy.ts";
+import type { InlineKeyboardButton } from "../../supabase/functions/_shared/telegram/client.ts";
 import { structuredNoteFixture } from "../fixtures/notes/builders.ts";
+
+function callbackData(button: InlineKeyboardButton): string {
+  assert(button.callback_data !== undefined, `${button.text} is disabled`);
+  return button.callback_data;
+}
 
 /**
  * Rendering (blueprint 16.2, 23.1).
@@ -452,7 +458,7 @@ Deno.test("the primary keyboard stays minimal", () => {
   ]);
   assertEquals(keyboard[0]?.map((button) => button.style), ["success", "primary", "danger"]);
   assertEquals(
-    keyboard[0]?.map((button) => decodeCallbackPayload(button.callback_data).action),
+    keyboard[0]?.map((button) => decodeCallbackPayload(callbackData(button)).action),
     [{ kind: "save" }, { kind: "edit" }, { kind: "delete" }],
   );
 });
@@ -489,7 +495,7 @@ Deno.test("the export submenu offers all file types and a way back", () => {
     ["⬅️ Back to options"],
   ]);
   assertEquals(
-    keyboard[0]?.map((button) => decodeCallbackPayload(button.callback_data).action),
+    keyboard[0]?.map((button) => decodeCallbackPayload(callbackData(button)).action),
     [{ kind: "export_md" }, { kind: "export_txt" }, { kind: "export_pdf" }],
   );
 });
@@ -509,7 +515,7 @@ Deno.test("format choices are paginated and omit the current format", () => {
   });
   const offered = [...first, ...second]
     .flat()
-    .map((button) => decodeCallbackPayload(button.callback_data).action)
+    .map((button) => decodeCallbackPayload(callbackData(button)).action)
     .filter((action) => action.kind === "format")
     .map((action) => (action.kind === "format" ? action.templateKey : ""));
 
@@ -543,7 +549,7 @@ Deno.test("every button decodes back to the note it was built for", () => {
 
   assert(buttons.length > 0);
   for (const item of buttons) {
-    assertEquals(decodeCallbackPayload(item.callback_data).resourceId, NOTE_ID);
+    assertEquals(decodeCallbackPayload(callbackData(item)).resourceId, NOTE_ID);
     assert(item.text.length > 0, "a button has no label");
   }
 });
@@ -556,7 +562,7 @@ Deno.test("an empty available-template list produces only a way back", () => {
     page: 0,
   });
 
-  const formats = keyboard.flat().filter((button) => button.callback_data.includes("format."));
+  const formats = keyboard.flat().filter((button) => callbackData(button).includes("format."));
 
   assertEquals(formats.length, 0);
   assertEquals(keyboard.map((row) => row.map((item) => item.text)), [[
@@ -577,8 +583,9 @@ Deno.test("every button payload fits Telegram's byte limit", () => {
     });
 
     for (const item of keyboard.flat()) {
-      const bytes = new TextEncoder().encode(item.callback_data).length;
-      assert(bytes <= TELEGRAM_MAX_CALLBACK_DATA_BYTES, `${item.callback_data} is ${bytes} bytes`);
+      const data = callbackData(item);
+      const bytes = new TextEncoder().encode(data).length;
+      assert(bytes <= TELEGRAM_MAX_CALLBACK_DATA_BYTES, `${data} is ${bytes} bytes`);
     }
   }
 });
@@ -586,7 +593,7 @@ Deno.test("every button payload fits Telegram's byte limit", () => {
 Deno.test("the delete confirmation offers a way back that changes nothing", () => {
   const actions = buildDeleteConfirmationKeyboard(NOTE_ID)
     .flat()
-    .map((button) => decodeCallbackPayload(button.callback_data).action);
+    .map((button) => decodeCallbackPayload(callbackData(button)).action);
 
   assertEquals(actions, [{ kind: "delete_confirm" }, { kind: "cancel_delete" }]);
 });

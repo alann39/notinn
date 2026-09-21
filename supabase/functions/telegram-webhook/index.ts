@@ -5,6 +5,7 @@ import { emptyResponse } from "../_shared/errors/http.ts";
 import { createLogger } from "../_shared/observability/logger.ts";
 import { IngestionRepository } from "../_shared/repositories/ingestion.repository.ts";
 import { NotesRepository } from "../_shared/repositories/notes.repository.ts";
+import { NoteWorkflowRepository } from "../_shared/repositories/note-workflow.repository.ts";
 import { ProcessingJobsRepository } from "../_shared/repositories/processing-jobs.repository.ts";
 import { QuotaRepository } from "../_shared/repositories/quota.repository.ts";
 import { RejectedChatsRepository } from "../_shared/repositories/rejected-chats.repository.ts";
@@ -91,6 +92,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
     const noteProvider = new GeminiNoteProvider(config.ai);
     const phase1 = {
       notes: new NotesRepository(client),
+      workflow: new NoteWorkflowRepository(client),
       jobs: new ProcessingJobsRepository(client),
       rejectedChats: new RejectedChatsRepository(client),
       templates: new TemplatesRepository(client),

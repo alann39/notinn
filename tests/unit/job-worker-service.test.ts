@@ -57,6 +57,7 @@ function harness(
   const sends: string[] = [];
   const usage: unknown[] = [];
   const quotaEvents: string[] = [];
+  const deliveries: number[][] = [];
   const audio = options.fileBytes ?? new Uint8Array([1, 2, 3, 4]);
   let sourceType = job.inputType ?? "text";
   let sourceText = job.sourceText;
@@ -190,6 +191,17 @@ function harness(
           templateKey: "clean_note",
         }),
     },
+    workflow: {
+      registerDelivery: (
+        _userId: string,
+        _noteId: string,
+        _chatId: number,
+        messageIds: readonly number[],
+      ) => {
+        deliveries.push([...messageIds]);
+        return Promise.resolve({ outcome: "created" as const, deliveryId: OUTPUT_ID });
+      },
+    },
     templates: {
       findForGeneration: () =>
         Promise.resolve({
@@ -238,6 +250,10 @@ function harness(
           ? Promise.resolve(true)
           : Promise.reject(options.deliveryError);
       },
+      deleteMessages: (_chatId: number, messageIds: readonly number[]) => {
+        deleted.push(...messageIds);
+        return Promise.resolve(true);
+      },
       downloadFile: () =>
         options.fileError === undefined
           ? Promise.resolve(audio)
@@ -258,6 +274,7 @@ function harness(
     sends,
     usage,
     quotaEvents,
+    deliveries,
     audio,
     providerCalls: () => ({
       text: providerTextCalls,

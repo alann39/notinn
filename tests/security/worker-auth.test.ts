@@ -55,6 +55,11 @@ function harness() {
       findNoteForDisplay: () => Promise.resolve(null),
       findNoteForRegeneration: () => Promise.resolve(null),
     },
+    workflow: {
+      registerDelivery: () => {
+        throw new Error("delivery registration must not run in an empty batch");
+      },
+    },
     templates: {
       findForGeneration: () => {
         throw new Error("template read must not run in an empty batch");
@@ -87,6 +92,7 @@ function harness() {
     telegram: {
       sendMessage: () => Promise.resolve({ messageId: 1 }),
       editMessageText: () => Promise.resolve(true),
+      deleteMessages: () => Promise.resolve(true),
       downloadFile: () => Promise.resolve(new Uint8Array()),
     },
   };

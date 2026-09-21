@@ -9,6 +9,7 @@ import { sha256Hex } from "../security/hashing.ts";
 import { assertWebhookSecret } from "../security/webhook-secret.ts";
 import type { IngestionRepository } from "../repositories/ingestion.repository.ts";
 import type { NotesRepository } from "../repositories/notes.repository.ts";
+import type { NoteWorkflowRepository } from "../repositories/note-workflow.repository.ts";
 import type { ProcessingJobsRepository } from "../repositories/processing-jobs.repository.ts";
 import type { QuotaRepository } from "../repositories/quota.repository.ts";
 import type { RejectedChatsRepository } from "../repositories/rejected-chats.repository.ts";
@@ -56,6 +57,7 @@ export interface WebhookDependencies {
    */
   readonly phase1?: {
     readonly notes: NotesRepository;
+    readonly workflow: NoteWorkflowRepository;
     readonly jobs: ProcessingJobsRepository;
     readonly rejectedChats: RejectedChatsRepository;
     readonly templates: TemplatesRepository;
@@ -72,6 +74,7 @@ export interface WebhookDependencies {
       | "answerCallbackQuery"
       | "editMessageReplyMarkup"
       | "editMessageText"
+      | "deleteMessages"
     >;
     /** Schedules a non-blocking worker call. The durable queue remains authoritative. */
     readonly triggerWorker?: (jobId: string) => void;
@@ -214,6 +217,7 @@ export async function handleWebhookRequest(
         await handleCallback(classification.callback, {
           users: repository,
           notes: deps.phase1.notes,
+          workflow: deps.phase1.workflow,
           templates: deps.phase1.templates,
           usage: deps.phase1.usage,
           quota: deps.phase1.quota,

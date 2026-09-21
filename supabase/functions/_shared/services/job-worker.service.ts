@@ -17,6 +17,7 @@ import type {
   NoteGenerationResult,
 } from "../providers/note-ai.provider.ts";
 import type { NotesRepository, PersistNoteInput } from "../repositories/notes.repository.ts";
+import type { NoteWorkflowRepository } from "../repositories/note-workflow.repository.ts";
 import type {
   ClaimedProcessingJob,
   ProcessingJobsRepository,
@@ -78,11 +79,15 @@ export interface JobWorkerDependencies {
     NotesRepository,
     "stageNoteForDelivery" | "findNoteForDisplay" | "findNoteForRegeneration"
   >;
+  readonly workflow: Pick<NoteWorkflowRepository, "registerDelivery">;
   readonly templates: Pick<TemplatesRepository, "findForGeneration" | "listLabels">;
   readonly usage: Pick<UsageRepository, "recordGeneration">;
   readonly quota: Pick<QuotaRepository, "reserve" | "consume">;
   readonly provider: NoteAIProvider;
-  readonly telegram: Pick<TelegramGateway, "downloadFile" | "editMessageText" | "sendMessage">;
+  readonly telegram: Pick<
+    TelegramGateway,
+    "downloadFile" | "editMessageText" | "sendMessage" | "deleteMessages"
+  >;
   readonly logger: Logger;
 }
 
@@ -167,39 +172,62 @@ async function deliverPages(
   transcript: string | null,
   notePages: readonly string[],
   keyboard: Parameters<TelegramGateway["sendMessage"]>[2],
-): Promise<void> {
+): Promise<readonly number[]> {
   const pages = [
     ...(transcript === null ? [] : renderTranscriptPages(transcript)),
     ...notePages,
   ];
 
+  const messageIds: number[] = [];
   const sendFresh = async (fromIndex: number): Promise<void> => {
     for (let index = fromIndex; index < pages.length; index += 1) {
       const isLast = index === pages.length - 1;
-      await deps.telegram.sendMessage(job.chatId, pages[index] ?? "", {
+      const sent = await deps.telegram.sendMessage(job.chatId, pages[index] ?? "", {
         parseMode: "HTML",
         ...(isLast ? keyboard : {}),
       });
+      messageIds.push(sent.messageId);
     }
   };
 
-  if (job.statusMessageId === null) {
-    await sendFresh(0);
-    return;
-  }
-
   try {
-    const isOnly = pages.length === 1;
-    await deps.telegram.editMessageText(job.chatId, job.statusMessageId, pages[0] ?? "", {
-      parseMode: "HTML",
-      ...(isOnly ? keyboard : {}),
-    });
+    if (job.statusMessageId === null) {
+      await sendFresh(0);
+      return messageIds;
+    }
+
+    try {
+      const isOnly = pages.length === 1;
+      await deps.telegram.editMessageText(job.chatId, job.statusMessageId, pages[0] ?? "", {
+        parseMode: "HTML",
+        ...(isOnly ? keyboard : {}),
+      });
+      messageIds.push(job.statusMessageId);
+    } catch {
+      // A status message may have been deleted or become uneditable while the
+      // job was waiting. Recover with a fresh, fully tracked delivery.
+      await sendFresh(0);
+      return messageIds;
+    }
+
     await sendFresh(1);
-  } catch {
-    // A status message may have been deleted or become uneditable while the job
-    // was waiting. A fresh delivery is the recovery path; if Telegram itself is
-    // unavailable this second call throws and the durable job is retried.
-    await sendFresh(0);
+    return messageIds;
+  } catch (thrown) {
+    // Do not leave half a multi-page note behind. A retry will create one clean
+    // replacement group and register it only after every page has arrived.
+    if (messageIds.length > 0) {
+      try {
+        await deps.telegram.deleteMessages(job.chatId, messageIds);
+      } catch (cleanupThrown) {
+        const error = toAppError(cleanupThrown);
+        deps.logger[error.logLevel]("worker.partial_delivery_cleanup_failed", {
+          job_id: job.jobId,
+          error_code: error.code,
+          error_detail: error.internalDetail,
+        });
+      }
+    }
+    throw thrown;
   }
 }
 
@@ -233,7 +261,16 @@ async function deliverPersistedNote(
     : null;
 
   try {
-    await deliverPages(deps, job, transcript, rendered.pages, keyboard);
+    const messageIds = await deliverPages(deps, job, transcript, rendered.pages, keyboard);
+    const registered = await deps.workflow.registerDelivery(
+      job.userId,
+      noteId,
+      job.chatId,
+      messageIds,
+    );
+    if (registered.outcome !== "created") {
+      throw AppError.internal("delivered note message ids could not be registered");
+    }
   } catch (thrown) {
     throw AppError.deliveryFailed("telegram note delivery failed", thrown);
   }

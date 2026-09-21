@@ -321,17 +321,30 @@ export async function downloadFile(
  */
 export const SUBSCRIBED_UPDATE_KINDS = ["message", "callback_query"] as const;
 
-/** One button on an inline keyboard. */
-export interface InlineKeyboardButton {
+interface InlineKeyboardButtonBase {
   readonly text: string;
   /** Visual emphasis supported by Telegram Bot API 10.x clients. */
   readonly style?: "danger" | "success" | "primary";
-  /**
-   * The payload, from `schemas/callback.ts`. Never user content: blueprint 17.4
-   * requires opaque ids, and Telegram echoes this value back verbatim.
-   */
-  readonly callback_data: string;
 }
+
+/** One actionable or genuinely disabled button on an inline keyboard. */
+export type InlineKeyboardButton =
+  & InlineKeyboardButtonBase
+  & (
+    | {
+      /**
+       * The payload, from `schemas/callback.ts`. Never user content: blueprint 17.4
+       * requires opaque ids, and Telegram echoes this value back verbatim.
+       */
+      readonly callback_data: string;
+      readonly disabled?: never;
+    }
+    | {
+      readonly callback_data?: never;
+      /** Bot API 10.3 disabled-button marker. The object intentionally has no fields. */
+      readonly disabled: Readonly<Record<string, never>>;
+    }
+  );
 
 export interface InlineKeyboardMarkup {
   readonly inline_keyboard: readonly (readonly InlineKeyboardButton[])[];
@@ -554,6 +567,27 @@ export function editMessageText(
   );
 }
 
+/** Delete up to one hundred bot messages from one private chat. */
+export function deleteMessages(
+  botToken: Secret,
+  chatId: number,
+  messageIds: readonly number[],
+  options: { fetch?: typeof fetch } = {},
+): Promise<boolean> {
+  if (messageIds.length === 0 || messageIds.length > 100) {
+    throw AppError.validation("Telegram deleteMessages requires 1-100 message ids");
+  }
+  return callTelegram<boolean>(
+    botToken,
+    "deleteMessages",
+    {
+      chat_id: chatId,
+      message_ids: [...messageIds],
+    },
+    { fetch: options.fetch },
+  );
+}
+
 /** Injectable transport used by services and backed by the Bot API in production. */
 export interface TelegramGateway {
   sendMessage(
@@ -583,6 +617,7 @@ export interface TelegramGateway {
     text: string,
     options?: SendMessageOptions,
   ): Promise<unknown>;
+  deleteMessages(chatId: number, messageIds: readonly number[]): Promise<boolean>;
   downloadFile(fileId: string, maxBytes: number): Promise<Uint8Array>;
 }
 
@@ -597,6 +632,7 @@ export function createTelegramGateway(botToken: Secret): TelegramGateway {
       editMessageReplyMarkup(botToken, chatId, messageId, keyboard),
     editMessageText: (chatId, messageId, text, options) =>
       editMessageText(botToken, chatId, messageId, text, options),
+    deleteMessages: (chatId, messageIds) => deleteMessages(botToken, chatId, messageIds),
     downloadFile: (fileId, maxBytes) => downloadFile(botToken, fileId, maxBytes),
   };
 }
