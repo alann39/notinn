@@ -31,6 +31,7 @@ export const NAVIGATION_ACTIONS = [
   "set_text",
   "set_voice",
   "set_document",
+  "upgrade",
 ] as const;
 
 export type NavigationAction = (typeof NAVIGATION_ACTIONS)[number];

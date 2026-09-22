@@ -641,7 +641,7 @@ export async function handleCommand(
     command.command !== "settings" && command.command !== "template" &&
     command.command !== "templates" && command.command !== "privacy" &&
     command.command !== "terms" && command.command !== "delete_account" &&
-    command.command !== "cancel_deletion"
+    command.command !== "cancel_deletion" && command.command !== "upgrade"
   ) {
     await deps.telegram.sendMessage(
       command.telegramChatId,
@@ -711,6 +711,7 @@ export async function handleCommand(
     command.command === "start" || command.command === "menu" || command.command === "new" ||
     command.command === "help" || command.command === "recent" ||
     command.command === "templates" || command.command === "usage" ||
+    command.command === "upgrade" ||
     (command.command === "settings" && command.argumentsText === null)
   ) {
     await sendNavigationCommand(command, userId, {

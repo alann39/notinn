@@ -11,6 +11,7 @@ function usage(): never {
     "  deno task alpha-admin activate <telegram-user-id>",
     "  deno task alpha-admin suspend <telegram-user-id>",
     "  deno task alpha-admin pending <telegram-user-id>",
+    "  deno task alpha-admin set-plan <telegram-user-id> <plan-key>",
     "",
     "Add --yes for non-interactive execution.",
   ].join("\n"));
@@ -83,6 +84,36 @@ async function main(): Promise<void> {
     }
     if (data !== true) throw new Error("No invite matched that code.");
     console.log("Closed-alpha invite revoked.");
+    return;
+  }
+
+  if (action === "set-plan") {
+    const id = telegramId(args[1]);
+    const planKey = args[2]?.trim().toLowerCase();
+    if (planKey === undefined || !/^[a-z][a-z0-9_]{0,31}$/.test(planKey)) {
+      throw new Error("plan-key must be a valid plan key (lowercase, alphanumeric, max 32 chars).");
+    }
+    await requireConfirmation(
+      Deno.args,
+      `Set Telegram user ${id} to plan "${planKey}"?`,
+    );
+    const { data, error } = await client.rpc("change_user_plan", {
+      p_user_id: (
+        await client.rpc("get_user_ops_status", { p_telegram_user_id: id })
+      ).data?.[0]?.internal_user_id ?? "00000000-0000-0000-0000-000000000000",
+      p_new_plan: planKey,
+      p_changed_by: "operator",
+      p_reason: `Set via alpha-admin by operator`,
+    });
+    if (error !== null) throw new Error(`Plan change failed: ${error.code ?? "database_error"}`);
+    if (data === "not_found") throw new Error("No user found with that Telegram ID.");
+    if (data === "plan_not_found") throw new Error(`Plan "${planKey}" does not exist.`);
+    if (data === "plan_inactive") throw new Error(`Plan "${planKey}" is not active.`);
+    if (data === "already_on_plan") {
+      console.log(`User ${id} is already on plan "${planKey}".`);
+    } else {
+      console.log(`User ${id} plan changed to "${planKey}".`);
+    }
     return;
   }
 

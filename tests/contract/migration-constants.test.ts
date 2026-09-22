@@ -55,6 +55,10 @@ const OPS_METRICS_REPOSITORY = new URL(
   "ops-metrics.repository.ts",
   REPOSITORY_DIR,
 );
+const PLAN_REPOSITORY = new URL(
+  "plan.repository.ts",
+  REPOSITORY_DIR,
+);
 
 /** Read every migration, concatenated, with its filename attached for messages. */
 async function loadMigrations(): Promise<{ name: string; sql: string }[]> {
@@ -103,6 +107,7 @@ const FILE_SUFFIXES = [
   "phase6b_closed_alpha_access.sql",
   "phase6c_privacy_account_lifecycle.sql",
   "phase6d_ops_monitoring.sql",
+  "phase6e_plan_upgrade_mechanics.sql",
 ] as const;
 
 /** Read the one migration whose filename ends with `suffix`. */
@@ -135,6 +140,7 @@ const PHASE6_ACCOUNT_LIFECYCLE_SQL = await loadMigration(
   "phase6c_privacy_account_lifecycle.sql",
 );
 const PHASE6D_OPS_SQL = await loadMigration("phase6d_ops_monitoring.sql");
+const PHASE6E_PLAN_SQL = await loadMigration("phase6e_plan_upgrade_mechanics.sql");
 const ALL_MIGRATIONS = await loadMigrations();
 const ALL_SQL = ALL_MIGRATIONS.map((migration) => migration.sql).join("\n");
 
@@ -311,6 +317,62 @@ Deno.test("phase 6d cancel returns only documented outcomes", () => {
   assert(sql.includes("'cancelled'"));
   assert(sql.includes("'not_found'"));
   assert(sql.includes("'already_terminal'"));
+});
+
+// --- Phase 6E plan upgrade mechanics ----------------------------------------
+
+Deno.test("phase 6e adds plan metadata columns", () => {
+  const sql = normalise(PHASE6E_PLAN_SQL);
+  assert(sql.includes("price_monthly_usd"));
+  assert(sql.includes("features jsonb"));
+  assert(sql.includes("display_order integer"));
+});
+
+Deno.test("phase 6e creates plan_changes audit table", () => {
+  const sql = normalise(PHASE6E_PLAN_SQL);
+  assert(sql.includes("create table public.plan_changes"));
+  assert(sql.includes("from_plan text not null"));
+  assert(sql.includes("to_plan text not null"));
+  assert(sql.includes("changed_by text not null"));
+  assert(sql.includes("plan_changes_changed_by check"));
+});
+
+Deno.test("phase 6e plan RPCs stay service-role only", () => {
+  const sql = normalise(PHASE6E_PLAN_SQL);
+  for (
+    const rpc of [
+      "change_user_plan(uuid, text, text, text)",
+      "get_plan_catalogue()",
+    ] as const
+  ) {
+    assert(sql.includes(`set search_path = ''`), `${rpc} does not pin search_path`);
+    assert(sql.includes(`grant execute on function public.${rpc} to service_role`));
+  }
+});
+
+Deno.test("phase 6e plan RPCs are revoked from client roles", () => {
+  const sql = normalise(PHASE6E_PLAN_SQL);
+  for (
+    const rpc of [
+      "change_user_plan(uuid, text, text, text)",
+      "get_plan_catalogue()",
+    ] as const
+  ) {
+    assert(
+      sql.includes(`revoke all on function public.${rpc} from public, anon, authenticated`),
+      `${rpc} is not revoked from client roles`,
+    );
+  }
+});
+
+Deno.test("phase 6e change_user_plan returns only documented outcomes", () => {
+  const sql = normalise(PHASE6E_PLAN_SQL);
+  assert(sql.includes("'changed'"));
+  assert(sql.includes("'not_found'"));
+  assert(sql.includes("'user_deleted'"));
+  assert(sql.includes("'already_on_plan'"));
+  assert(sql.includes("'plan_not_found'"));
+  assert(sql.includes("'plan_inactive'"));
 });
 
 // --- Extracting values from SQL --------------------------------------------
@@ -856,6 +918,8 @@ const RPC_CONTRACTS = [
   [OPS_METRICS_REPOSITORY, "get_user_ops_status", PHASE6D_OPS_SQL],
   [OPS_METRICS_REPOSITORY, "requeue_processing_job", PHASE6D_OPS_SQL],
   [OPS_METRICS_REPOSITORY, "cancel_processing_job", PHASE6D_OPS_SQL],
+  [PLAN_REPOSITORY, "get_plan_catalogue", PHASE6E_PLAN_SQL],
+  [PLAN_REPOSITORY, "change_user_plan", PHASE6E_PLAN_SQL],
 ] as const;
 
 for (const [repository, name, sql] of RPC_CONTRACTS) {

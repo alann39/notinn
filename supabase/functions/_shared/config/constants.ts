@@ -165,6 +165,14 @@ export const MAX_CUSTOM_TEMPLATE_NAME_CHARS = 80;
 export const MAX_CUSTOM_TEMPLATE_INSTRUCTION_CHARS = 2_000;
 
 /**
+ * Known plan keys. The source of truth is the `plans` table; this mirror
+ * exists so the application can reference plans without a round trip.
+ */
+export const PLAN_KEYS = ["alpha", "free", "pro"] as const;
+
+export type PlanKey = (typeof PLAN_KEYS)[number];
+
+/**
  * Where in a source a claim came from (blueprint 12.4, `source_references`).
  *
  * A closed vocabulary because each kind is addressed a different way and a reader

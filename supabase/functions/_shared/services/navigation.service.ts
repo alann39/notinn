@@ -1,6 +1,7 @@
 import type { InputType } from "../config/constants.ts";
 import type { NotesRepository } from "../repositories/notes.repository.ts";
 import type { QuotaRepository, UsageSummary } from "../repositories/quota.repository.ts";
+import type { PlanCatalogueEntry, PlanRepository } from "../repositories/plan.repository.ts";
 import type { TemplatesRepository } from "../repositories/templates.repository.ts";
 import type {
   PreferenceSetting,
@@ -30,6 +31,8 @@ interface NavigationDataDependencies {
     & Pick<TemplatesRepository, "listLabels">
     & Partial<Pick<TemplatesRepository, "listAvailable">>;
   readonly quota?: Pick<QuotaRepository, "getSummary">;
+  readonly plans?: Pick<PlanRepository, "getCatalogue">;
+  readonly userPlanKey?: string;
 }
 
 export type NavigationCommandDependencies = NavigationDataDependencies & {
@@ -496,6 +499,9 @@ async function usageView(
   if (first === undefined) {
     return unavailableView("📊 Plan & usage", "Your plan is not configured yet.");
   }
+  const planLabel = deps.userPlanKey !== undefined
+    ? `\nPlan: ${first.planName} (${deps.userPlanKey})`
+    : `\nPlan: ${first.planName}`;
   const lines = rows.map((item) => {
     const pending = item.reservedUnits === 0 ? "" : ` (+${item.reservedUnits} processing)`;
     const dailyPending = item.dailyReservedUnits === 0
@@ -510,8 +516,7 @@ async function usageView(
   return {
     text: [
       "📊 Plan & usage",
-      "",
-      `Plan: ${first.planName}`,
+      planLabel,
       `Period: ${first.periodStart} to ${first.periodEnd} (UTC)`,
       `Today: ${first.usageDate} (UTC)`,
       "",
@@ -520,7 +525,66 @@ async function usageView(
       "Daily usage resets at 00:00 UTC; monthly usage resets on the first day of the month.",
     ].join("\n"),
     keyboard: keyboard([
-      [navButton("🔄 Refresh", "usage")],
+      [navButton("⬆️ Upgrade", "upgrade"), navButton("🔄 Refresh", "usage")],
+      [navButton("🏠 Main menu", "main", null, "primary")],
+    ]),
+  };
+}
+
+async function upgradeView(
+  _userId: string,
+  deps: NavigationDataDependencies,
+): Promise<NavigationView> {
+  const currentPlan = deps.userPlanKey ?? "free";
+
+  if (deps.plans === undefined) {
+    return unavailableView("⬆️ Upgrade", "Plan information is not available yet.");
+  }
+
+  let catalogue: readonly PlanCatalogueEntry[];
+  try {
+    catalogue = await deps.plans.getCatalogue();
+  } catch {
+    return unavailableView("⬆️ Upgrade", "Could not load plan information.");
+  }
+
+  const current = catalogue.find((p) => p.planKey === currentPlan);
+  const pro = catalogue.find((p) => p.planKey === "pro");
+
+  const lines = ["⬆️ Upgrade to Pro", ""];
+
+  if (current !== undefined) {
+    lines.push(`Current plan: ${current.displayName}`);
+    if (current.features.length > 0) {
+      lines.push("");
+      lines.push(`📋 ${current.displayName} plan:`);
+      for (const feature of current.features) {
+        lines.push(`• ${feature}`);
+      }
+    }
+  }
+
+  if (pro !== undefined && pro.planKey !== currentPlan) {
+    lines.push("");
+    lines.push(`🚀 Pro plan:`);
+    for (const feature of pro.features) {
+      lines.push(`• ${feature}`);
+    }
+    if (pro.priceMonthlyUsd !== null) {
+      lines.push("");
+      lines.push(`Price: $${pro.priceMonthlyUsd}/month`);
+    }
+    lines.push("");
+    lines.push("To upgrade, contact our operator.");
+  } else if (pro !== undefined && pro.planKey === currentPlan) {
+    lines.push("");
+    lines.push("✅ You are already on the Pro plan!");
+  }
+
+  return {
+    text: lines.join("\n"),
+    keyboard: keyboard([
+      [navButton("📊 My usage", "usage")],
       [navButton("🏠 Main menu", "main", null, "primary")],
     ]),
   };
@@ -538,6 +602,7 @@ async function viewFor(
   if (action.startsWith("help_")) return helpTopicView(action);
   if (action === "search" || action === "ask") return commandPromptView(action);
   if (action === "usage") return await usageView(userId, deps);
+  if (action === "upgrade") return await upgradeView(userId, deps);
   if (action === "recent") {
     return await recentView(userId, Number.parseInt(value ?? "0", 10), deps);
   }
@@ -570,6 +635,8 @@ export async function sendNavigationCommand(
     ? "ask"
     : command.command === "usage"
     ? "usage"
+    : command.command === "upgrade"
+    ? "upgrade"
     : command.command === "templates"
     ? "templates"
     : "settings";

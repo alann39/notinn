@@ -1,9 +1,28 @@
 # Implementation status
 
-**Phase:** 6D — Operations & Production Hardening (implemented, pending deployment)
+**Phase:** 6E — Freemium Upgrade Mechanics (deployed to development)
 **Date:** 2026-09-22
 **Last verified:** the commands in [Verification](#verification) were run and their
 output is recorded below.
+
+## Phase 6E freemium-upgrade snapshot
+
+The Phase 6E slice is implemented, verified, and deployed to development.
+
+- `/upgrade` command shows current plan, Pro plan benefits, and instructions
+  to contact an operator for upgrade.
+- `deno task alpha-admin set-plan <telegram-id> <plan-key>` allows operators
+  to change a user's plan with audit logging.
+- Plan metadata (price, features, display order) is stored in the `plans`
+  table as database-owned configuration.
+- `plan_changes` audit log records every plan transition with actor and reason.
+- Two new `SECURITY DEFINER` RPC functions: `change_user_plan` and
+  `get_plan_catalogue`, with Zod validation in the repository layer.
+- [ADR 0018](ADR/0018-phase-6e-freemium-upgrade.md) records the decision.
+- Formatting, linting, full type-checking, and the hermetic
+  unit/contract/security suite pass: **662 passed, 0 failed**.
+- Migration `phase6e_plan_upgrade_mechanics` is applied to the development
+  schema.
 
 ## Phase 6D operations-hardening snapshot
 
