@@ -76,3 +76,8 @@ verify_jwt = false
 # verification off avoids coupling Cron or another server-side scheduler to an
 # end-user Supabase session; the function performs its own constant-time check.
 verify_jwt = false
+
+[functions.ops-monitor]
+# Operator monitoring function. Authenticates with X-Notinn-Worker-Secret.
+# Sends alerts to OPS_ALERT_CHAT_ID when operational thresholds are breached.
+verify_jwt = false

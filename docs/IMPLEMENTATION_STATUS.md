@@ -1,9 +1,34 @@
 # Implementation status
 
-**Phase:** 6C — Privacy & Account Lifecycle (deployed to development)
-**Date:** 2026-09-21
+**Phase:** 6D — Operations & Production Hardening (implemented, pending deployment)
+**Date:** 2026-09-22
 **Last verified:** the commands in [Verification](#verification) were run and their
 output is recorded below.
+
+## Phase 6D operations-hardening snapshot
+
+The Phase 6D slice is implemented, verified, and ready for deployment to development.
+
+- Operator CLI scripts provide health overview, job inspection, usage statistics,
+  per-user status, safe job requeuing, and job cancellation via `deno task ops`.
+- All operator commands refuse to run when `NOTINN_ENV=production` and verify
+  `NOTINN_PROJECT_REF` matches the deployment target.
+- Five `SECURITY DEFINER` RPC functions serve operational queries through a
+  dedicated `OpsMetricsRepository` with Zod validation on every response.
+- Four monitoring indexes optimise stale-job, per-user, and reservation queries.
+- The `ops-monitor` Edge Function runs on a pg_cron schedule, checks queue
+  staleness, failed jobs, cron failures, and deletion backlog, and sends alerts
+  to a configurable Telegram chat (`OPS_ALERT_CHAT_ID`).
+- Runbooks cover backup/restore procedures, secret rotation for all seven
+  credentials, and an operator command reference with incident procedures.
+- [ADR 0017](ADR/0017-phase-6d-operations-hardening.md) records the decision.
+- Formatting, linting, full type-checking, and the hermetic
+  unit/contract/security suite pass: **644 passed, 0 failed**.
+- Migration `phase6d_ops_monitoring` is recorded remotely. The four monitoring
+  indexes and five RPC functions are applied to the development schema.
+- `telegram-webhook` version 38 and `process-job` version 35 remain ACTIVE with
+  `verify_jwt=false`. `ops-monitor` is deployed and ACTIVE with
+  `verify_jwt=false`; unsigned requests receive an empty HTTP 401.
 
 ## Phase 6C privacy and deletion snapshot
 

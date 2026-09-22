@@ -51,6 +51,10 @@ const ACCOUNT_LIFECYCLE_REPOSITORY = new URL(
   "account-lifecycle.repository.ts",
   REPOSITORY_DIR,
 );
+const OPS_METRICS_REPOSITORY = new URL(
+  "ops-metrics.repository.ts",
+  REPOSITORY_DIR,
+);
 
 /** Read every migration, concatenated, with its filename attached for messages. */
 async function loadMigrations(): Promise<{ name: string; sql: string }[]> {
@@ -98,6 +102,7 @@ const FILE_SUFFIXES = [
   "phase6b_draft_fk_indexes.sql",
   "phase6b_closed_alpha_access.sql",
   "phase6c_privacy_account_lifecycle.sql",
+  "phase6d_ops_monitoring.sql",
 ] as const;
 
 /** Read the one migration whose filename ends with `suffix`. */
@@ -129,6 +134,7 @@ const PHASE6_CLOSED_ALPHA_SQL = await loadMigration("phase6b_closed_alpha_access
 const PHASE6_ACCOUNT_LIFECYCLE_SQL = await loadMigration(
   "phase6c_privacy_account_lifecycle.sql",
 );
+const PHASE6D_OPS_SQL = await loadMigration("phase6d_ops_monitoring.sql");
 const ALL_MIGRATIONS = await loadMigrations();
 const ALL_SQL = ALL_MIGRATIONS.map((migration) => migration.sql).join("\n");
 
@@ -246,6 +252,65 @@ Deno.test("account lifecycle RPCs stay service-role only", () => {
   ) {
     assert(sql.includes(`grant execute on function public.${rpc} to service_role`));
   }
+});
+
+// --- Phase 6D ops monitoring ------------------------------------------------
+
+Deno.test("phase 6d creates monitoring indexes", () => {
+  const sql = normalise(PHASE6D_OPS_SQL);
+  assert(sql.includes("processing_jobs_state_created_idx"));
+  assert(sql.includes("processing_jobs_user_state_idx"));
+  assert(sql.includes("users_status_alpha_idx"));
+  assert(sql.includes("quota_reservations_status_created_idx"));
+});
+
+Deno.test("phase 6d ops RPCs stay service-role only", () => {
+  const sql = normalise(PHASE6D_OPS_SQL);
+  for (
+    const rpc of [
+      "get_ops_health()",
+      "get_ops_problematic_jobs(integer)",
+      "get_user_ops_status(bigint)",
+      "requeue_processing_job(uuid)",
+      "cancel_processing_job(uuid)",
+    ] as const
+  ) {
+    assert(sql.includes(`set search_path = ''`), `${rpc} does not pin search_path`);
+    assert(sql.includes(`grant execute on function public.${rpc} to service_role`));
+  }
+});
+
+Deno.test("phase 6d ops RPCs are revoked from client roles", () => {
+  const sql = normalise(PHASE6D_OPS_SQL);
+  for (
+    const rpc of [
+      "get_ops_health()",
+      "get_ops_problematic_jobs(integer)",
+      "get_user_ops_status(bigint)",
+      "requeue_processing_job(uuid)",
+      "cancel_processing_job(uuid)",
+    ] as const
+  ) {
+    assert(
+      sql.includes(`revoke all on function public.${rpc} from public, anon, authenticated`),
+      `${rpc} is not revoked from client roles`,
+    );
+  }
+});
+
+Deno.test("phase 6d requeue returns only documented outcomes", () => {
+  const sql = normalise(PHASE6D_OPS_SQL);
+  assert(sql.includes("'requeued'"));
+  assert(sql.includes("'no_note_yet'"));
+  assert(sql.includes("'not_found'"));
+  assert(sql.includes("'terminal'"));
+});
+
+Deno.test("phase 6d cancel returns only documented outcomes", () => {
+  const sql = normalise(PHASE6D_OPS_SQL);
+  assert(sql.includes("'cancelled'"));
+  assert(sql.includes("'not_found'"));
+  assert(sql.includes("'already_terminal'"));
 });
 
 // --- Extracting values from SQL --------------------------------------------
@@ -786,6 +851,11 @@ const RPC_CONTRACTS = [
   [NOTE_WORKFLOW_REPOSITORY, "apply_note_edit_draft", PHASE6_WORKFLOW_SQL],
   [NOTE_WORKFLOW_REPOSITORY, "discard_note_edit_draft", PHASE6_WORKFLOW_SQL],
   [NOTE_WORKFLOW_REPOSITORY, "fail_note_edit_draft", PHASE6_WORKFLOW_SQL],
+  [OPS_METRICS_REPOSITORY, "get_ops_health", PHASE6D_OPS_SQL],
+  [OPS_METRICS_REPOSITORY, "get_ops_problematic_jobs", PHASE6D_OPS_SQL],
+  [OPS_METRICS_REPOSITORY, "get_user_ops_status", PHASE6D_OPS_SQL],
+  [OPS_METRICS_REPOSITORY, "requeue_processing_job", PHASE6D_OPS_SQL],
+  [OPS_METRICS_REPOSITORY, "cancel_processing_job", PHASE6D_OPS_SQL],
 ] as const;
 
 for (const [repository, name, sql] of RPC_CONTRACTS) {

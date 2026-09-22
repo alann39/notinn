@@ -59,6 +59,8 @@ export const RECOGNISED_ENV_KEYS = [
   "OPENROUTER_FALLBACK_MODEL",
   "NOTINN_ENV",
   "NOTINN_LOG_LEVEL",
+  "NOTINN_PROJECT_REF",
+  "OPS_ALERT_CHAT_ID",
 ] as const;
 
 export type EnvKey = (typeof RECOGNISED_ENV_KEYS)[number];
@@ -218,6 +220,8 @@ const RawSchema = z.object({
   OPENROUTER_FALLBACK_MODEL: z.string().min(1).optional(),
   NOTINN_ENV: z.enum(NOTINN_ENVIRONMENTS).optional(),
   NOTINN_LOG_LEVEL: z.enum(LOG_LEVELS).optional(),
+  NOTINN_PROJECT_REF: z.string().min(1).optional(),
+  OPS_ALERT_CHAT_ID: z.string().min(1).optional(),
 });
 
 type RawEnv = z.infer<typeof RawSchema>;
