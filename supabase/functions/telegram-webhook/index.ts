@@ -14,6 +14,7 @@ import { UsageRepository } from "../_shared/repositories/usage.repository.ts";
 import { UserPreferencesRepository } from "../_shared/repositories/user-preferences.repository.ts";
 import { ClosedAlphaRepository } from "../_shared/repositories/closed-alpha.repository.ts";
 import { AccountLifecycleRepository } from "../_shared/repositories/account-lifecycle.repository.ts";
+import { AuthLinkRepository } from "../_shared/repositories/auth-link.repository.ts";
 import { createNoteProvider } from "../_shared/providers/note-provider.factory.ts";
 import { GeminiEmbeddingProvider } from "../_shared/providers/gemini-embedding.provider.ts";
 import { createTelegramGateway } from "../_shared/telegram/client.ts";
@@ -103,6 +104,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
       preferences: new UserPreferencesRepository(client),
       access: new ClosedAlphaRepository(client),
       lifecycle: new AccountLifecycleRepository(client),
+      authLinks: new AuthLinkRepository(client),
       provider: noteProvider,
       embeddings: config.ai.embeddingModel === null
         ? undefined

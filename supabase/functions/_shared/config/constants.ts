@@ -47,13 +47,15 @@ export type TerminalJobState = (typeof TERMINAL_JOB_STATES)[number];
 
 /**
  * The permitted transitions, mirroring public.enforce_processing_job_transition()
- * (migration 6) exactly. The database is the enforcement point; this copy exists
- * so the application can reject an impossible transition before attempting it,
- * and so a unit test can prove the two definitions have not drifted.
+ * (migration 6 + 20260922130000) exactly. The database is the enforcement point;
+ * this copy exists so the application can reject an impossible transition before
+ * attempting it, and so a unit test can prove the two definitions have not drifted.
  *
- * CANCELLED is reachable from every non-terminal state. The blueprint's state
- * diagram does not show this edge; it is an inference recorded in
- * docs/ADR/0004-job-state-machine.md.
+ * CANCELLED is reachable from every non-terminal state (inference recorded in
+ * docs/ADR/0004-job-state-machine.md) and also from any terminal state so that
+ * operators can silence noisy terminal jobs.  CANCELLED is itself terminal and
+ * "more final" than any other terminal state — the transition does not reopen
+ * the job for processing.
  */
 export const JOB_STATE_TRANSITIONS: Readonly<Record<JobState, readonly JobState[]>> = {
   RECEIVED: ["QUEUED", "REJECTED", "CANCELLED"],
@@ -63,10 +65,10 @@ export const JOB_STATE_TRANSITIONS: Readonly<Record<JobState, readonly JobState[
   GENERATING: ["DELIVERING", "RETRYABLE_FAILED", "CANCELLED"],
   DELIVERING: ["COMPLETED", "RETRYABLE_FAILED", "CANCELLED"],
   RETRYABLE_FAILED: ["QUEUED", "FAILED", "CANCELLED"],
-  COMPLETED: [],
-  FAILED: [],
-  REJECTED: [],
-  EXPIRED: [],
+  COMPLETED: ["CANCELLED"],
+  FAILED: ["CANCELLED"],
+  REJECTED: ["CANCELLED"],
+  EXPIRED: ["CANCELLED"],
   CANCELLED: [],
 };
 

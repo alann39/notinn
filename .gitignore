@@ -35,3 +35,8 @@ Thumbs.db
 # --- Build / coverage ------------------------------------------------------
 coverage/
 *.lcov
+dashboard/dist/
+dashboard/.env.local
+!dashboard/.env.local.example
+.playwright-mcp/
+

@@ -57,6 +57,8 @@ export const RECOGNISED_ENV_KEYS = [
   "GEMINI_EMBEDDING_MODEL",
   "OPENROUTER_API_KEY",
   "OPENROUTER_FALLBACK_MODEL",
+  "DASHBOARD_LINK_SECRET",
+  "DASHBOARD_URL",
   "NOTINN_ENV",
   "NOTINN_LOG_LEVEL",
   "NOTINN_PROJECT_REF",
@@ -155,6 +157,19 @@ export interface WebhookConfig extends BaseConfig {
    */
   readonly botToken: Secret;
   readonly ai: AiConfig;
+  /**
+   * Optional dashboard configuration. When present, the `/web` command
+   * generates magic-link tokens. When absent, the command explains the
+   * dashboard is not yet configured. See docs/ADR/0019-web-dashboard-auth.md.
+   */
+  readonly dashboard: DashboardConfig | null;
+}
+
+export interface DashboardConfig {
+  /** HMAC key for signing magic-link tokens. */
+  readonly linkSecret: Secret;
+  /** Base URL of the dashboard (e.g. https://notinn.vercel.app). */
+  readonly url: string;
 }
 
 export interface WorkerConfig extends BaseConfig {
@@ -218,6 +233,8 @@ const RawSchema = z.object({
   GEMINI_EMBEDDING_MODEL: z.string().min(1).optional(),
   OPENROUTER_API_KEY: z.string().min(1).optional(),
   OPENROUTER_FALLBACK_MODEL: z.string().min(1).optional(),
+  DASHBOARD_LINK_SECRET: z.string().min(32).optional(),
+  DASHBOARD_URL: z.url().optional(),
   NOTINN_ENV: z.enum(NOTINN_ENVIRONMENTS).optional(),
   NOTINN_LOG_LEVEL: z.enum(LOG_LEVELS).optional(),
   NOTINN_PROJECT_REF: z.string().min(1).optional(),
@@ -501,6 +518,13 @@ export async function loadWebhookConfig(
   const serviceSecret = new Secret(serviceRoleKey);
   const webhookSecretValue = new Secret(webhookSecret);
 
+  // Dashboard config is optional — the bot works without it.
+  const dashboardLinkSecret = raw.DASHBOARD_LINK_SECRET ?? null;
+  const dashboardUrl = raw.DASHBOARD_URL ?? null;
+  const dashboard = dashboardLinkSecret !== null && dashboardUrl !== null
+    ? { linkSecret: new Secret(dashboardLinkSecret), url: dashboardUrl }
+    : null;
+
   return {
     environment,
     supabaseUrl: requireSupabaseUrl(raw),
@@ -509,6 +533,7 @@ export async function loadWebhookConfig(
     internalWorkerSecret: new Secret(internalWorkerSecret),
     botToken: new Secret(botToken),
     ai,
+    dashboard,
     logLevel: resolveLogLevel(raw, environment),
     fingerprints: {
       serviceRoleKey: await serviceSecret.fingerprint(),

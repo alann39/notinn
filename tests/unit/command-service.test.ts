@@ -1,4 +1,5 @@
 import { assertEquals } from "@std/assert";
+import { Secret } from "../../supabase/functions/_shared/config/env.ts";
 import { AppError } from "../../supabase/functions/_shared/errors/app-error.ts";
 import { handleCommand } from "../../supabase/functions/_shared/services/command.service.ts";
 import type { CommandMessage } from "../../supabase/functions/_shared/telegram/parse-update.ts";
@@ -684,4 +685,43 @@ Deno.test("pending deletion blocks features but can still be cancelled", async (
   await handleCommand(command("cancel_deletion", null), { ...test.deps, lifecycle });
   assertEquals(cancellations, 1);
   assertEquals(test.sent[1]?.text.includes("deletion cancelled"), true);
+});
+
+Deno.test("/web command returns magic link when dashboard is configured", async () => {
+  const test = harness();
+  const createdTokens: { userId: string; nonce: string; expiresAt: Date }[] = [];
+  const authLinks = {
+    createToken: (userId: string, nonce: string, expiresAt: Date) => {
+      createdTokens.push({ userId, nonce, expiresAt });
+      return Promise.resolve();
+    },
+  };
+  const dashboard = {
+    linkSecret: new Secret("secret-key-that-is-at-least-32-chars-long"),
+    url: "https://notinn.vercel.app",
+  };
+
+  await handleCommand(command("web", null), {
+    ...test.deps,
+    authLinks,
+    dashboard,
+  });
+
+  assertEquals(createdTokens.length, 1);
+  assertEquals(createdTokens[0]?.userId, USER_ID);
+  assertEquals(test.sent.length, 1);
+  assertEquals(test.sent[0]?.text.includes("https://notinn.vercel.app/auth/callback?token="), true);
+  assertEquals(test.sent[0]?.text.includes("expires in 10 minutes"), true);
+});
+
+Deno.test("/web command replies with unconfigured message when dashboard is absent", async () => {
+  const test = harness();
+
+  await handleCommand(command("web", null), {
+    ...test.deps,
+    dashboard: null,
+  });
+
+  assertEquals(test.sent.length, 1);
+  assertEquals(test.sent[0]?.text.includes("not configured yet"), true);
 });

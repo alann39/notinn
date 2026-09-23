@@ -54,12 +54,20 @@ Deno.test("no state transitions to itself", () => {
   }
 });
 
-Deno.test("a terminal state has no way out", () => {
-  // This is what "terminal" means, and it is load-bearing: it is why a
-  // COMPLETED job cannot be quietly reopened, and why the immutability trigger
-  // has an exemption for exactly one column and nothing else.
+Deno.test("a terminal state can only reach CANCELLED", () => {
+  // Terminal states are absorbing — a COMPLETED job cannot be reopened.
+  // CANCELLED is the sole exception: operators may silence noisy terminal jobs.
+  // CANCELLED itself has no outgoing transitions.
   for (const state of TERMINAL_JOB_STATES) {
-    assertEquals(JOB_STATE_TRANSITIONS[state], [], `${state} has outgoing transitions`);
+    if (state === "CANCELLED") {
+      assertEquals(JOB_STATE_TRANSITIONS[state], [], "CANCELLED has outgoing transitions");
+    } else {
+      assertEquals(
+        JOB_STATE_TRANSITIONS[state],
+        ["CANCELLED"],
+        `${state} can only transition to CANCELLED`,
+      );
+    }
   }
 });
 

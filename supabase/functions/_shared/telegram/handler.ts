@@ -18,6 +18,7 @@ import type { UsageRepository } from "../repositories/usage.repository.ts";
 import type { UserPreferencesRepository } from "../repositories/user-preferences.repository.ts";
 import type { ClosedAlphaRepository } from "../repositories/closed-alpha.repository.ts";
 import type { AccountLifecycleRepository } from "../repositories/account-lifecycle.repository.ts";
+import type { AuthLinkRepository } from "../repositories/auth-link.repository.ts";
 import type { NoteAIProvider } from "../providers/note-ai.provider.ts";
 import type { EmbeddingProvider, LibraryAnswerProvider } from "../providers/library-ai.provider.ts";
 import { handleCallback } from "../services/callback.service.ts";
@@ -68,6 +69,7 @@ export interface WebhookDependencies {
     readonly preferences: UserPreferencesRepository;
     readonly access: ClosedAlphaRepository;
     readonly lifecycle: AccountLifecycleRepository;
+    readonly authLinks?: AuthLinkRepository;
     readonly provider: Pick<NoteAIProvider, "generateText">;
     readonly embeddings?: EmbeddingProvider;
     readonly answers?: LibraryAnswerProvider;
@@ -209,6 +211,8 @@ export async function handleWebhookRequest(
           templates: deps.phase1.templates,
           access: deps.phase1.access,
           lifecycle: deps.phase1.lifecycle,
+          authLinks: deps.phase1.authLinks,
+          dashboard: deps.config.dashboard,
         });
       }
       log.info("webhook.command", {

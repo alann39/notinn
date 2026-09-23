@@ -11,6 +11,10 @@ import type {
 import type { UsageRepository } from "../repositories/usage.repository.ts";
 import type { TemplatesRepository } from "../repositories/templates.repository.ts";
 import type { AccountLifecycleRepository } from "../repositories/account-lifecycle.repository.ts";
+import type { PlanRepository } from "../repositories/plan.repository.ts";
+import type { AuthLinkRepository } from "../repositories/auth-link.repository.ts";
+import { createMagicToken } from "../security/magic-token.ts";
+import type { DashboardConfig } from "../config/env.ts";
 import {
   OUTPUT_LANGUAGES,
   type PreferenceSetting,
@@ -60,6 +64,10 @@ export interface CommandDependencies {
   readonly templates?:
     & Pick<TemplatesRepository, "listLabels">
     & Partial<Pick<TemplatesRepository, "listAvailable" | "createCustom" | "archiveCustom">>;
+  readonly plans?: Pick<PlanRepository, "getCatalogue">;
+  readonly userPlanKey?: string;
+  readonly authLinks?: Pick<AuthLinkRepository, "createToken">;
+  readonly dashboard?: DashboardConfig | null;
 }
 
 const CLOSED_ALPHA_PENDING = [
@@ -194,6 +202,44 @@ async function handleCancelDeletion(
     ? "The cancellation deadline has passed and deletion can no longer be cancelled."
     : "This account can no longer be restored.";
   await deps.telegram.sendMessage(command.telegramChatId, message);
+}
+
+async function handleWeb(
+  command: CommandMessage,
+  userId: string,
+  deps: CommandDependencies,
+): Promise<void> {
+  if (deps.authLinks === undefined || !deps.dashboard) {
+    await deps.telegram.sendMessage(
+      command.telegramChatId,
+      "The web dashboard is not configured yet.",
+    );
+    return;
+  }
+
+  const { token, nonce, expiresAt } = await createMagicToken(
+    userId,
+    deps.dashboard.linkSecret.reveal(),
+    10 * 60 * 1000,
+  );
+
+  await deps.authLinks.createToken(userId, nonce, expiresAt);
+
+  const baseUrl = deps.dashboard.url.replace(/\/+$/, "");
+  const loginUrl = `${baseUrl}/auth/callback?token=${encodeURIComponent(token)}`;
+
+  await deps.telegram.sendMessage(
+    command.telegramChatId,
+    [
+      "🌐 Notinn Web Dashboard",
+      "",
+      "Use this magic link to open your dashboard in a browser:",
+      loginUrl,
+      "",
+      "⚠️ This link is single-use and expires in 10 minutes.",
+      "Never share this link with anyone.",
+    ].join("\n"),
+  );
 }
 
 export function closedAlphaAccessMessage(status: ClosedAlphaAccessStatus | null): string {
@@ -641,7 +687,8 @@ export async function handleCommand(
     command.command !== "settings" && command.command !== "template" &&
     command.command !== "templates" && command.command !== "privacy" &&
     command.command !== "terms" && command.command !== "delete_account" &&
-    command.command !== "cancel_deletion" && command.command !== "upgrade"
+    command.command !== "cancel_deletion" && command.command !== "upgrade" &&
+    command.command !== "web"
   ) {
     await deps.telegram.sendMessage(
       command.telegramChatId,
@@ -720,11 +767,17 @@ export async function handleCommand(
       preferences: deps.preferences,
       templates: deps.templates,
       quota: deps.quota,
+      plans: deps.plans,
+      userPlanKey: deps.userPlanKey,
     });
     return;
   }
   if (command.command === "template") {
     await handleTemplates(command, userId, deps);
+    return;
+  }
+  if (command.command === "web") {
+    await handleWeb(command, userId, deps);
     return;
   }
   if (command.command === "settings") {

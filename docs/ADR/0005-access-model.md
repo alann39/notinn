@@ -162,3 +162,16 @@ closed, costs one line per table.
 
 **Rely on `returns trigger` to protect the trigger functions.** Rejected: it is a
 property of a return type, not a control. See point 5.
+
+## Amendments
+
+### Phase 7 (2026-09-22) — Web Dashboard Read Access
+
+Phase 7 introduces the web dashboard and Supabase Auth integration ([ADR 0019](0019-web-dashboard-auth.md)):
+
+- `auth_links` table bridges `auth.users` to internal `public.users`.
+- `authenticated` role receives `SELECT` grants on readable tables (`notes`, `note_outputs`, `templates`, `user_preferences`, `usage_events`, `auth_links`).
+- RLS `SELECT` policies are added for `authenticated`, scoping access via `get_linked_user_id()`.
+- Dedicated `web_*` RPC functions are granted to `authenticated` only.
+- `anon` remains completely denied (zero grants, zero policies).
+- Internal processing tables (`telegram_updates`, `processing_jobs`, `plan_changes`, `auth_link_tokens`) remain strictly service-role-only with zero client policies.

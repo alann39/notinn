@@ -23,7 +23,9 @@
       "node_modules",
       "supabase/migrations",
       "supabase/functions/_shared/schemas/database.types.ts",
-      "docs/Master_Blueprint.md"
+      "docs/Master_Blueprint.md",
+      ".agents",
+      "dashboard"
     ]
   },
   "lint": {
@@ -32,7 +34,9 @@
     },
     "exclude": [
       "node_modules",
-      "supabase/functions/_shared/schemas/database.types.ts"
+      "supabase/functions/_shared/schemas/database.types.ts",
+      ".agents",
+      "dashboard"
     ]
   },
   "test": {
@@ -54,7 +58,8 @@
     "bot-menu:set": "deno run --env-file=.env --allow-read --allow-env --allow-net scripts/set-bot-menu.ts",
     "alpha-admin": "deno run --env-file=.env --allow-read --allow-env --allow-net scripts/closed-alpha-admin.ts",
     "smoke": "deno run --env-file=.env --allow-read --allow-env --allow-net scripts/smoke-test.ts",
-    "ops": "deno run --env-file=.env --allow-read --allow-env --allow-net scripts/ops.ts"
+    "ops": "deno run --env-file=.env --allow-read --allow-env --allow-net scripts/ops.ts",
+    "admin": "deno run --env-file=.env --allow-read --allow-env --allow-net scripts/admin-user.ts"
   },
   "nodeModulesDir": "auto"
 }

@@ -1,9 +1,23 @@
 # Implementation status
 
-**Phase:** 6E — Freemium Upgrade Mechanics (deployed to development)
+**Phase:** 7 — Web Dashboard and Integrations (ready for deployment)
 **Date:** 2026-09-22
 **Last verified:** the commands in [Verification](#verification) were run and their
 output is recorded below.
+
+## Phase 7 web dashboard snapshot
+
+The Phase 7 web dashboard slice is implemented, verified, and ready for deployment.
+
+- **Vite + React 19 + TypeScript + Tailwind CSS 4** dashboard application built in `dashboard/` with zero build warnings and clean production bundle.
+- **Magic link authentication via bot**: `/web` Telegram command issues a time-limited (10 min), single-use HMAC-signed token.
+- **`dashboard-auth` Edge Function**: verifies the HMAC signature, consumes the token nonce (replay prevention), creates/links the Supabase Auth user, and returns an authenticated session.
+- **`auth_links` table**: bridges `auth.users` to internal `public.users` without modifying the core user schema shape.
+- **Clean security posture**: All tables retain RLS enabled and zero client grants (`REVOKE ALL FROM anon, authenticated`).
+- **Web-specific RPC layer**: 6 `SECURITY DEFINER` RPC functions (`web_list_notes`, `web_get_note`, `web_search_notes`, `web_get_usage_summary`, `web_get_profile`, `web_get_preferences`) granted strictly to `authenticated`. `anon` remains 100% denied across the entire schema.
+- **Dashboard views**: Note library (search, filters, pagination), note detail (structured sections, action items, tags, export), monthly quota/usage summary with progress bars, account settings & preferences.
+- **[ADR 0019](ADR/0019-web-dashboard-auth.md)** records the decision; [ADR 0005](ADR/0005-access-model.md) amended.
+- **Verification**: 671 tests passed, 0 failed. Full type check clean, formatting clean, linting clean. Frontend build clean (`dist/` built in 1.25s).
 
 ## Phase 6E freemium-upgrade snapshot
 

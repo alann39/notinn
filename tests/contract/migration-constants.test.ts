@@ -108,6 +108,16 @@ const FILE_SUFFIXES = [
   "phase6c_privacy_account_lifecycle.sql",
   "phase6d_ops_monitoring.sql",
   "phase6e_plan_upgrade_mechanics.sql",
+  "fix_cancel_terminal_jobs.sql",
+  "phase7a_web_dashboard_auth.sql",
+  "fix_web_get_usage_summary.sql",
+  "fix_web_get_usage_summary_columns.sql",
+  "phase7b_web_search_and_snippets.sql",
+  "phase7c_auth_link_rpc.sql",
+  "phase7d_admin_dashboard.sql",
+  "fix_admin_set_user_plan.sql",
+  "phase7e_admin_provider_keys.sql",
+  "phase7e_provider_model_selection.sql",
 ] as const;
 
 /** Read the one migration whose filename ends with `suffix`. */
@@ -413,7 +423,8 @@ function declaredTransitions(sql: string): Map<string, string[]> {
     const from = arm[1] as string;
     const targets = [...(arm[2] ?? "").matchAll(/'([^']+)'/g)].map((match) => match[1]) as string[];
 
-    assert(!transitions.has(from), `transition table declares ${from} twice`);
+    // The trigger may appear in multiple migrations (original + amend).  The
+    // last definition wins; earlier ones are silently overwritten.
     transitions.set(from, targets);
   }
 
@@ -551,7 +562,10 @@ Deno.test("the seed is a catalogue and not a duplicate list", () => {
 // --- The job state machine -------------------------------------------------
 
 Deno.test("the transition mirror matches the trigger function", () => {
-  const declared = declaredTransitions(JOBS_SQL);
+  // The trigger is defined in multiple migrations (original + amend);
+  // the last definition wins when concatenated, which is the current
+  // truth the mirror must agree with.
+  const declared = declaredTransitions(ALL_SQL);
 
   for (const state of JOB_STATES) {
     const fromDatabase = declared.get(state) ?? [];
@@ -591,20 +605,24 @@ Deno.test("the creation-state mirror matches the trigger's insert guard", () => 
   assertEquals([...JOB_CREATION_STATES].sort(), [...declared].sort());
 });
 
-Deno.test("a state the trigger omits is a state the mirror treats as terminal", () => {
-  // The two representations express terminality differently — the mirror lists
-  // empty arrays, the trigger simply leaves the state out of the case chain —
-  // so this checks that the two encodings agree rather than assuming it.
-  const declared = declaredTransitions(JOBS_SQL);
-  const omitted = JOB_STATES.filter((state) => !declared.has(state));
-  const terminal = new Set<string>(TERMINAL_JOB_STATES);
-
-  for (const state of omitted) {
-    assert(terminal.has(state), `${state} has no transitions in the trigger but is not terminal`);
-  }
+Deno.test("terminal states explicitly include CANCELLED in the trigger", () => {
+  // With the fix migration, terminal states now explicitly transition to CANCELLED
+  // (except CANCELLED itself which remains omitted from the case chain — the
+  // trigger's original encoding for terminal states).
+  const declared = declaredTransitions(ALL_SQL);
 
   for (const state of TERMINAL_JOB_STATES) {
-    assert(omitted.includes(state), `terminal state ${state} has transitions in the trigger`);
+    if (state === "CANCELLED") {
+      // CANCELLED remains omitted from the case chain (old encoding for terminal)
+      assert(!declared.has(state), `${state} should be omitted (no outgoing transitions)`);
+    } else {
+      // Other terminal states now explicitly include CANCELLED
+      assertEquals(
+        declared.get(state),
+        ["CANCELLED"],
+        `${state} should transition only to CANCELLED`,
+      );
+    }
   }
 });
 
@@ -728,12 +746,38 @@ Deno.test("every function is either SECURITY DEFINER or a trigger function", () 
   }
 });
 
-Deno.test("no function is executable by a client role", () => {
+const WEB_RPC_FUNCTIONS = new Set([
+  "get_linked_user_id",
+  "web_list_notes",
+  "web_get_note",
+  "web_search_notes",
+  "web_get_usage_summary",
+  "web_get_profile",
+  "web_get_preferences",
+  "is_current_user_admin",
+  "admin_check_access",
+  "admin_get_health",
+  "admin_list_jobs",
+  "admin_requeue_job",
+  "admin_cancel_job",
+  "admin_list_users",
+  "admin_set_user_plan",
+  "admin_set_user_status",
+  "admin_list_invites",
+  "admin_create_invite",
+  "admin_revoke_invite",
+  "admin_list_provider_keys",
+  "admin_set_provider_key",
+  "admin_record_provider_test",
+  "admin_set_provider_model",
+]);
+
+Deno.test("no function is executable by anon, and only web RPCs are executable by authenticated", () => {
   // A SECURITY DEFINER function runs with the owner's privileges, so an execute
-  // grant to anon or authenticated would hand a caller the definer's rights —
-  // including a bypass of the row level security asserted above. The revoke is
-  // asserted for every function, including the trigger one, so that the
-  // deny-by-default posture does not depend on a return type.
+  // grant to anon would hand an unauthenticated caller the definer's rights.
+  // The revoke from public, anon, authenticated is asserted for every function.
+  // Only explicitly designated web_* RPC functions and get_linked_user_id (Phase 7)
+  // are granted execute to authenticated.
   for (const { name, migration } of createdFunctions()) {
     const body = normalise(migration.sql);
 
@@ -743,12 +787,31 @@ Deno.test("no function is executable by a client role", () => {
       ).test(body),
       `${name} is not revoked from public, anon and authenticated`,
     );
+
+    // Anon is NEVER granted execute on any function
     assert(
       !new RegExp(
-        `grant execute on function public\\.${name}\\([^)]*\\) to [^;]*\\b(anon|authenticated)\\b`,
+        `grant execute on function public\\.${name}\\([^)]*\\) to [^;]*\\banon\\b`,
       ).test(body),
-      `${name} is granted to a client role`,
+      `${name} is granted to anon`,
     );
+
+    // Authenticated is ONLY granted execute on designated web RPCs
+    if (WEB_RPC_FUNCTIONS.has(name)) {
+      assert(
+        new RegExp(
+          `grant execute on function public\\.${name}\\([^)]*\\) to [^;]*\\bauthenticated\\b`,
+        ).test(body),
+        `${name} is a web RPC but is not granted to authenticated`,
+      );
+    } else {
+      assert(
+        !new RegExp(
+          `grant execute on function public\\.${name}\\([^)]*\\) to [^;]*\\bauthenticated\\b`,
+        ).test(body),
+        `${name} is not a web RPC but is granted to authenticated`,
+      );
+    }
   }
 });
 

@@ -81,3 +81,10 @@ verify_jwt = false
 # Operator monitoring function. Authenticates with X-Notinn-Worker-Secret.
 # Sends alerts to OPS_ALERT_CHAT_ID when operational thresholds are breached.
 verify_jwt = false
+
+[functions.dashboard-auth]
+# Magic-link token exchange for web dashboard account linking.
+# The function validates its own HMAC-signed tokens; Supabase JWT verification
+# is disabled because the caller is a browser redirect, not a Supabase client.
+# See docs/ADR/0019-web-dashboard-auth.md.
+verify_jwt = false

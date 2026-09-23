@@ -26,7 +26,9 @@
     "webhook:info": "deno task webhook:info",
     "bot-menu:set": "deno task bot-menu:set",
     "alpha-admin": "deno task alpha-admin",
-    "smoke": "deno task smoke"
+    "smoke": "deno task smoke",
+    "dashboard:dev": "npm --prefix dashboard run dev",
+    "dashboard:build": "npm --prefix dashboard run build"
   },
   "devDependencies": {
     "@types/node": "22.18.6",
