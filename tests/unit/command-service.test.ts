@@ -411,6 +411,60 @@ Deno.test("usage shows the active plan and each monthly allowance", async () => 
   assertEquals(test.sent[0]?.text.includes("This month: 3 / 50"), true);
 });
 
+Deno.test("/upgrade loads the Free and Pro plan details", async () => {
+  const test = harness();
+  await handleCommand(command("upgrade", null), {
+    ...test.deps,
+    quota: {
+      reserve: () => Promise.reject(new Error("reserve must not run")),
+      consume: () => Promise.reject(new Error("consume must not run")),
+      release: () => Promise.reject(new Error("release must not run")),
+      getSummary: () =>
+        Promise.resolve([{
+          planKey: "free",
+          planName: "Free",
+          metric: "note_generation" as const,
+          monthlyLimit: 50,
+          usedUnits: 0,
+          reservedUnits: 0,
+          remainingUnits: 50,
+          periodStart: "2026-09-01",
+          periodEnd: "2026-10-01",
+          dailyLimit: 50,
+          dailyUsedUnits: 0,
+          dailyReservedUnits: 0,
+          dailyRemainingUnits: 50,
+          usageDate: "2026-09-23",
+        }]),
+    },
+    plans: {
+      getCatalogue: () =>
+        Promise.resolve([
+          {
+            planKey: "free",
+            displayName: "Free",
+            priceMonthlyUsd: null,
+            features: ["50 new notes/month"],
+            displayOrder: 0,
+          },
+          {
+            planKey: "pro",
+            displayName: "Pro",
+            priceMonthlyUsd: 9.99,
+            features: ["1,000 new notes/month"],
+            displayOrder: 1,
+          },
+        ]),
+    },
+  });
+
+  assertEquals(test.sent.length, 1);
+  assertEquals(test.sent[0]?.text.includes("Current plan: Free"), true);
+  assertEquals(test.sent[0]?.text.includes("50 new notes/month"), true);
+  assertEquals(test.sent[0]?.text.includes("1,000 new notes/month"), true);
+  assertEquals(test.sent[0]?.text.includes("Price: $9.99/month"), true);
+});
+
 Deno.test("settings displays the current preference snapshot", async () => {
   const test = harness();
   const sent: string[] = [];
@@ -710,7 +764,17 @@ Deno.test("/web command returns magic link when dashboard is configured", async 
   assertEquals(createdTokens.length, 1);
   assertEquals(createdTokens[0]?.userId, USER_ID);
   assertEquals(test.sent.length, 1);
-  assertEquals(test.sent[0]?.text.includes("https://notinn.vercel.app/auth/callback?token="), true);
+  assertEquals(
+    test.sent[0]?.text.includes(
+      '<a href="https://notinn.vercel.app/auth/callback?token=',
+    ),
+    true,
+  );
+  assertEquals(test.sent[0]?.text.includes(">Open Notinn Web Dashboard</a>"), true);
+  assertEquals(
+    (test.sent[0]?.options as { parseMode?: string } | undefined)?.parseMode,
+    "HTML",
+  );
   assertEquals(test.sent[0]?.text.includes("expires in 10 minutes"), true);
 });
 

@@ -15,6 +15,8 @@ import { UserPreferencesRepository } from "../_shared/repositories/user-preferen
 import { ClosedAlphaRepository } from "../_shared/repositories/closed-alpha.repository.ts";
 import { AccountLifecycleRepository } from "../_shared/repositories/account-lifecycle.repository.ts";
 import { AuthLinkRepository } from "../_shared/repositories/auth-link.repository.ts";
+import { PlanRepository } from "../_shared/repositories/plan.repository.ts";
+import { resolveProviderConfig } from "../_shared/repositories/provider-config.repository.ts";
 import { createNoteProvider } from "../_shared/providers/note-provider.factory.ts";
 import { GeminiEmbeddingProvider } from "../_shared/providers/gemini-embedding.provider.ts";
 import { createTelegramGateway } from "../_shared/telegram/client.ts";
@@ -92,7 +94,8 @@ Deno.serve(async (request: Request): Promise<Response> => {
     const client = createServiceClient(config.supabaseUrl, config.serviceRoleKey);
     const repository = new IngestionRepository(client);
 
-    const noteProvider = createNoteProvider(config.ai);
+    const ai = await resolveProviderConfig(client, config.ai);
+    const noteProvider = createNoteProvider(ai);
     const phase1 = {
       notes: new NotesRepository(client),
       workflow: new NoteWorkflowRepository(client),
@@ -105,10 +108,9 @@ Deno.serve(async (request: Request): Promise<Response> => {
       access: new ClosedAlphaRepository(client),
       lifecycle: new AccountLifecycleRepository(client),
       authLinks: new AuthLinkRepository(client),
+      plans: new PlanRepository(client),
       provider: noteProvider,
-      embeddings: config.ai.embeddingModel === null
-        ? undefined
-        : new GeminiEmbeddingProvider(config.ai),
+      embeddings: ai.embeddingModel === null ? undefined : new GeminiEmbeddingProvider(ai),
       answers: noteProvider,
       telegram: createTelegramGateway(config.botToken),
       triggerWorker: (jobId: string) =>

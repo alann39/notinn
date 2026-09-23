@@ -12,9 +12,10 @@ processing. DOCX/TXT/Markdown are extracted locally before model generation. See
 
 The Phase 5.5 navigation layer adds `/start` onboarding, a `/menu` dashboard,
 category-based Help, button-driven Settings, paginated Recent notes, and recovery
-actions for Search and Ask. It is deployed to development, including the verified
-eight-command private-chat native Telegram menu. Future environments can configure
-and verify the same menu with the guarded `bot-menu:set` operator task.
+actions for Search and Ask. It is deployed to development. The guarded native-menu
+task now defines fourteen private-chat commands, including `/upgrade` and `/web`.
+Environments can configure and verify the menu with the guarded `bot-menu:set`
+operator task.
 
 Saved notes can be listed with `/recent`, searched by title, tags, retained source,
 or current note content with `/search <keywords>`, and queried with evidence-only

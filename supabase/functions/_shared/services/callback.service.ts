@@ -19,6 +19,7 @@ import type { UsageRepository } from "../repositories/usage.repository.ts";
 import type { UserPreferencesRepository } from "../repositories/user-preferences.repository.ts";
 import type { ClosedAlphaRepository } from "../repositories/closed-alpha.repository.ts";
 import type { AccountLifecycleRepository } from "../repositories/account-lifecycle.repository.ts";
+import type { PlanRepository } from "../repositories/plan.repository.ts";
 import { actionToken, decodeCallbackPayload } from "../schemas/callback.ts";
 import { decodeNavigationCallback, isNavigationCallback } from "../schemas/navigation-callback.ts";
 import { parseStructuredNote, STRUCTURED_NOTE_VERSION } from "../schemas/structured-note.ts";
@@ -74,6 +75,7 @@ export interface CallbackDependencies {
   readonly quota: Pick<QuotaRepository, "reserve" | "consume" | "getSummary">;
   readonly access?: Pick<ClosedAlphaRepository, "getAccess">;
   readonly lifecycle?: Pick<AccountLifecycleRepository, "get">;
+  readonly plans?: Pick<PlanRepository, "getCatalogue">;
   readonly provider: Pick<NoteAIProvider, "generateText">;
   readonly telegram: Pick<
     TelegramGateway,
@@ -583,6 +585,7 @@ export async function handleCallback(
         preferences: deps.preferences,
         templates: deps.templates,
         quota: deps.quota,
+        plans: deps.plans,
       });
       log.info("callback.completed", {
         callback_action: navigation.action,

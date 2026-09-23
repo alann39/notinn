@@ -32,6 +32,7 @@ import { AppError, isAppError } from "../errors/app-error.ts";
 import type { TelegramGateway } from "../telegram/client.ts";
 import type { CommandMessage } from "../telegram/parse-update.ts";
 import { sendNavigationCommand } from "./navigation.service.ts";
+import { escapeHtml } from "./note-rendering.ts";
 
 const SEARCH_LIMIT = 10;
 const SEARCH_QUERY_MAX_CHARS = 200;
@@ -227,18 +228,20 @@ async function handleWeb(
 
   const baseUrl = deps.dashboard.url.replace(/\/+$/, "");
   const loginUrl = `${baseUrl}/auth/callback?token=${encodeURIComponent(token)}`;
+  const safeLoginUrl = escapeHtml(loginUrl).replace(/"/g, "&quot;");
 
   await deps.telegram.sendMessage(
     command.telegramChatId,
     [
       "🌐 Notinn Web Dashboard",
       "",
-      "Use this magic link to open your dashboard in a browser:",
-      loginUrl,
+      "Use this secure link to open your dashboard in a browser:",
+      `<a href="${safeLoginUrl}">Open Notinn Web Dashboard</a>`,
       "",
       "⚠️ This link is single-use and expires in 10 minutes.",
       "Never share this link with anyone.",
     ].join("\n"),
+    { parseMode: "HTML" },
   );
 }
 

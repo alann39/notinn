@@ -10,6 +10,7 @@ import { ProcessingJobsRepository } from "../_shared/repositories/processing-job
 import { QuotaRepository } from "../_shared/repositories/quota.repository.ts";
 import { TemplatesRepository } from "../_shared/repositories/templates.repository.ts";
 import { UsageRepository } from "../_shared/repositories/usage.repository.ts";
+import { resolveProviderConfig } from "../_shared/repositories/provider-config.repository.ts";
 import { createTelegramGateway } from "../_shared/telegram/client.ts";
 import { handleProcessJobRequest } from "../_shared/worker/handler.ts";
 
@@ -46,6 +47,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
   try {
     const client = createServiceClient(config.supabaseUrl, config.serviceRoleKey);
+    const ai = await resolveProviderConfig(client, config.ai);
     return await handleProcessJobRequest(request, {
       config,
       jobs: new ProcessingJobsRepository(client),
@@ -54,7 +56,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
       templates: new TemplatesRepository(client),
       usage: new UsageRepository(client),
       quota: new QuotaRepository(client),
-      provider: createNoteProvider(config.ai),
+      provider: createNoteProvider(ai),
       telegram: createTelegramGateway(config.botToken),
       logger,
     });

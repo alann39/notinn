@@ -532,20 +532,31 @@ async function usageView(
 }
 
 async function upgradeView(
-  _userId: string,
+  userId: string,
   deps: NavigationDataDependencies,
 ): Promise<NavigationView> {
-  const currentPlan = deps.userPlanKey ?? "free";
-
   if (deps.plans === undefined) {
     return unavailableView("⬆️ Upgrade", "Plan information is not available yet.");
   }
+
+  let currentPlan = deps.userPlanKey;
+  if (currentPlan === undefined && deps.quota !== undefined) {
+    try {
+      currentPlan = (await deps.quota.getSummary(userId))[0]?.planKey;
+    } catch {
+      // The catalogue can still provide useful upgrade information below.
+    }
+  }
+  currentPlan ??= "free";
 
   let catalogue: readonly PlanCatalogueEntry[];
   try {
     catalogue = await deps.plans.getCatalogue();
   } catch {
     return unavailableView("⬆️ Upgrade", "Could not load plan information.");
+  }
+  if (catalogue.length === 0) {
+    return unavailableView("⬆️ Upgrade", "No active plans are available right now.");
   }
 
   const current = catalogue.find((p) => p.planKey === currentPlan);
@@ -562,6 +573,8 @@ async function upgradeView(
         lines.push(`• ${feature}`);
       }
     }
+  } else {
+    lines.push(`Current plan: ${currentPlan}`);
   }
 
   if (pro !== undefined && pro.planKey !== currentPlan) {
@@ -579,6 +592,9 @@ async function upgradeView(
   } else if (pro !== undefined && pro.planKey === currentPlan) {
     lines.push("");
     lines.push("✅ You are already on the Pro plan!");
+  } else {
+    lines.push("");
+    lines.push("Pro plan information is not available right now.");
   }
 
   return {

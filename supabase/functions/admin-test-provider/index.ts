@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.116.0";
+import { createClient } from "@supabase/supabase-js";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -20,7 +20,7 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
 
-    if (!supabaseUrl || !serviceRoleKey) {
+    if (!supabaseUrl || !serviceRoleKey || !anonKey) {
       return new Response(
         JSON.stringify({ error: "Missing configuration" }),
         { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
@@ -36,7 +36,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const userClient = createClient(supabaseUrl, anonKey || serviceRoleKey, {
+    const userClient = createClient(supabaseUrl, anonKey, {
       auth: { autoRefreshToken: false, persistSession: false },
       global: { headers: { Authorization: authHeader } },
     });
@@ -64,13 +64,24 @@ Deno.serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    const { data: keyRow, error: keyError } = await serviceClient
-      .from("system_provider_keys")
-      .select("api_key, selected_model")
-      .eq("provider", provider)
-      .single();
-
-    if (keyError || !keyRow || !keyRow.api_key || keyRow.api_key === "configured_via_env") {
+    const isCandidate = typeof body.api_key === "string";
+    if (isCandidate && (body.api_key.length < 8 || body.api_key.length > 4096)) {
+      return new Response(JSON.stringify({ error: "Invalid API key length" }), {
+        status: 400,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      });
+    }
+    const { data: rows, error: keyError } = isCandidate
+      ? { data: null, error: null }
+      : await serviceClient.rpc("get_provider_runtime_config");
+    const keyRow = (rows ?? []).find((row: { provider: string }) => row.provider === provider);
+    const environmentKey = provider === "gemini"
+      ? Deno.env.get("GEMINI_API_KEY")
+      : Deno.env.get("OPENROUTER_API_KEY");
+    if (
+      keyError || (!isCandidate && (keyRow?.is_active === false ||
+        !(keyRow?.api_key || environmentKey)))
+    ) {
       return new Response(
         JSON.stringify({
           status: "unhealthy",
@@ -82,7 +93,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    const apiKey = keyRow.api_key.trim();
+    const apiKey = isCandidate
+      ? body.api_key.trim()
+      : (keyRow?.api_key || environmentKey || "").trim();
     const startTime = performance.now();
 
     let testStatus: "healthy" | "unhealthy" = "unhealthy";
@@ -101,18 +114,15 @@ Deno.serve(async (req) => {
         if (res.ok) {
           testStatus = "healthy";
         } else {
-          const errBody = await res.json().catch(() => ({}));
-          testError = errBody?.error?.message || `Google API returned HTTP ${res.status}`;
+          testError = `Google API returned HTTP ${res.status}`;
         }
-      } catch (err: unknown) {
+      } catch {
         testLatency = Math.round(performance.now() - startTime);
-        testError = err instanceof Error
-          ? err.message
-          : "Network timeout connecting to Google Gemini API";
+        testError = "Network timeout connecting to Google Gemini API";
       }
     } else {
       try {
-        const res = await fetch("https://openrouter.ai/api/v1/models", {
+        const res = await fetch("https://openrouter.ai/api/v1/auth/key", {
           headers: {
             Authorization: `Bearer ${apiKey}`,
             "HTTP-Referer": "https://notinn.app",
@@ -124,24 +134,24 @@ Deno.serve(async (req) => {
         if (res.ok) {
           testStatus = "healthy";
         } else {
-          const errBody = await res.json().catch(() => ({}));
-          testError = errBody?.error?.message || `OpenRouter API returned HTTP ${res.status}`;
+          testError = `OpenRouter API returned HTTP ${res.status}`;
         }
-      } catch (err: unknown) {
+      } catch {
         testLatency = Math.round(performance.now() - startTime);
-        testError = err instanceof Error
-          ? err.message
-          : "Network timeout connecting to OpenRouter API";
+        testError = "Network timeout connecting to OpenRouter API";
       }
     }
 
     // 4. Record the test result in the database vault
-    await serviceClient.rpc("admin_record_provider_test", {
-      p_provider: provider,
-      p_status: testStatus,
-      p_latency_ms: testLatency,
-      p_error: testError,
-    });
+    if (!isCandidate) {
+      const { error: recordError } = await userClient.rpc("admin_record_provider_test", {
+        p_provider: provider,
+        p_status: testStatus,
+        p_latency_ms: testLatency,
+        p_error: testError,
+      });
+      if (recordError) throw recordError;
+    }
 
     return new Response(
       JSON.stringify({
@@ -151,10 +161,9 @@ Deno.serve(async (req) => {
       }),
       { status: 200, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
     );
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Internal error";
+  } catch (_err: unknown) {
     return new Response(
-      JSON.stringify({ error: message }),
+      JSON.stringify({ error: "Provider test failed" }),
       { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
     );
   }

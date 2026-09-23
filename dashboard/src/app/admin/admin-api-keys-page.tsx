@@ -61,11 +61,11 @@ const PROVIDERS: ProviderMeta[] = [
     id: "openrouter",
     name: "OpenRouter",
     role: "Controlled Cross-Provider Fallback",
-    defaultModel: "openrouter/auto",
+    defaultModel: "openrouter/free",
     icon: Server,
     docsUrl: "https://openrouter.ai/keys",
     presets: [
-      { label: "openrouter/auto", value: "openrouter/auto", desc: "Auto-routes to best available free/cheap provider" },
+      { label: "openrouter/free", value: "openrouter/free", desc: "Free model router" },
       { label: "meta-llama/llama-3.3-70b-instruct:free", value: "meta-llama/llama-3.3-70b-instruct:free", desc: "Open weights instruction model" },
       { label: "deepseek/deepseek-chat", value: "deepseek/deepseek-chat", desc: "High reasoning performance" },
       { label: "google/gemini-2.5-flash", value: "google/gemini-2.5-flash", desc: "Gemini via OpenRouter gateway" },
@@ -208,6 +208,12 @@ export function AdminApiKeysPage() {
           type: "error",
         });
       }
+    } catch (err: unknown) {
+      toastManager.add({
+        title: "Test Execution Error",
+        description: err instanceof Error ? err.message : "Provider test failed",
+        type: "error",
+      });
     } finally {
       setDialogTesting(false);
     }
@@ -343,7 +349,7 @@ export function AdminApiKeysPage() {
         <div className="space-y-1">
           <span className="font-semibold block">Zero Plaintext Exposure Guarantee</span>
           <p className="text-[11px] opacity-90 leading-relaxed">
-            API keys are vaulted in PostgreSQL with strict Row Level Security (<code className="font-mono text-[10px]">REVOKE ALL</code>). 
+            API keys are encrypted with Supabase Vault and protected by server-only database access.
             Client interfaces only receive masked hints (e.g. <code className="font-mono text-[10px]">AIzaSy…9x12</code>) and latency metrics. 
             All live connection tests run on the server through secure Edge Functions.
           </p>

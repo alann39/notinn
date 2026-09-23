@@ -16,8 +16,9 @@ The Phase 7 web dashboard slice is implemented, verified, and ready for deployme
 - **Clean security posture**: All tables retain RLS enabled and zero client grants (`REVOKE ALL FROM anon, authenticated`).
 - **Web-specific RPC layer**: 6 `SECURITY DEFINER` RPC functions (`web_list_notes`, `web_get_note`, `web_search_notes`, `web_get_usage_summary`, `web_get_profile`, `web_get_preferences`) granted strictly to `authenticated`. `anon` remains 100% denied across the entire schema.
 - **Dashboard views**: Note library (search, filters, pagination), note detail (structured sections, action items, tags, export), monthly quota/usage summary with progress bars, account settings & preferences.
+- **Telegram Phase 7 entry points corrected**: the native command source now includes `/upgrade` and `/web`; direct commands and Usage-menu callbacks receive the plan catalogue; `/web` returns a labelled HTML link instead of exposing the magic URL as visible text. Applying the native command list remains an operator deployment step.
 - **[ADR 0019](ADR/0019-web-dashboard-auth.md)** records the decision; [ADR 0005](ADR/0005-access-model.md) amended.
-- **Verification**: 671 tests passed, 0 failed. Full type check clean, formatting clean, linting clean. Frontend build clean (`dist/` built in 1.25s).
+- **Verification**: after the Telegram entry-point and provider-security corrections, 678 hermetic tests pass with 0 failures. Changed backend files pass type-check, formatting, and linting. The previously recorded frontend build remains clean (`dist/` built in 1.25s); no dashboard component changed in the Telegram correction.
 
 ## Phase 6E freemium-upgrade snapshot
 

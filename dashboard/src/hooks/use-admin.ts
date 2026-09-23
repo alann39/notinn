@@ -275,58 +275,23 @@ export function useAdmin() {
     provider: "gemini" | "openrouter",
     apiKey: string,
   ): Promise<AdminKeyTestResult> => {
-    const cleanKey = apiKey.trim();
-    const start = performance.now();
-
-    if (provider === "gemini") {
-      try {
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`,
-          { signal: AbortSignal.timeout(8000) },
-        );
-        const latency = Math.round(performance.now() - start);
-        if (res.ok) {
-          return { status: "healthy", latency_ms: latency, error_message: null };
-        }
-        const errJson = await res.json().catch(() => ({}));
-        return {
-          status: "unhealthy",
-          latency_ms: latency,
-          error_message: errJson?.error?.message || `HTTP ${res.status}: Validation rejected by Google API`,
-        };
-      } catch (err: unknown) {
-        const latency = Math.round(performance.now() - start);
-        return {
-          status: "unhealthy",
-          latency_ms: latency,
-          error_message: err instanceof Error ? err.message : "Network error / timeout",
-        };
-      }
-    } else {
-      try {
-        const res = await fetch("https://openrouter.ai/api/v1/auth/key", {
-          headers: { Authorization: `Bearer ${cleanKey}` },
-          signal: AbortSignal.timeout(8000),
-        });
-        const latency = Math.round(performance.now() - start);
-        if (res.ok) {
-          return { status: "healthy", latency_ms: latency, error_message: null };
-        }
-        const errJson = await res.json().catch(() => ({}));
-        return {
-          status: "unhealthy",
-          latency_ms: latency,
-          error_message: errJson?.error?.message || `HTTP ${res.status}: Validation rejected by OpenRouter`,
-        };
-      } catch (err: unknown) {
-        const latency = Math.round(performance.now() - start);
-        return {
-          status: "unhealthy",
-          latency_ms: latency,
-          error_message: err instanceof Error ? err.message : "Network error / timeout",
-        };
-      }
-    }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) throw new Error("Admin session required");
+    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-test-provider`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ provider, api_key: apiKey }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || "Provider test failed");
+    return {
+      status: body.status === "healthy" ? "healthy" : "unhealthy",
+      latency_ms: Number(body.latency_ms) || 0,
+      error_message: body.error_message || null,
+    };
   }, []);
 
   return {

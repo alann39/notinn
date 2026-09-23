@@ -118,6 +118,7 @@ const FILE_SUFFIXES = [
   "fix_admin_set_user_plan.sql",
   "phase7e_admin_provider_keys.sql",
   "phase7e_provider_model_selection.sql",
+  "fix_admin_provider_vault.sql",
 ] as const;
 
 /** Read the one migration whose filename ends with `suffix`. */
@@ -1142,6 +1143,24 @@ Deno.test("every migration in the directory is one the suite knows about", () =>
   assertEquals(
     ALL_MIGRATIONS.map((migration) => migration.name).map((name) => name.replace(/^\d+_/, "")),
     [...FILE_SUFFIXES],
+  );
+});
+
+Deno.test("Phase 7 admin seed is revoked and provider plaintext storage is removed", async () => {
+  const correction = await loadMigration("fix_admin_provider_vault.sql");
+  const sql = normalise(correction);
+  assert(sql.includes("lower(u.telegram_username) = 'iarchii'"));
+  assert(sql.includes("set created_by = 'migration_operator'"));
+  assert(sql.includes("delete from public.admin_users where created_by = 'initial_seed'"));
+  assert(sql.includes("vault.create_secret"));
+  assert(sql.includes("alter table public.system_provider_keys drop column api_key"));
+  assert(
+    sql.includes("grant execute on function public.get_provider_runtime_config() to service_role"),
+  );
+  assert(
+    !sql.includes(
+      "grant execute on function public.get_provider_runtime_config() to authenticated",
+    ),
   );
 });
 

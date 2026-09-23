@@ -19,6 +19,7 @@ import type { UserPreferencesRepository } from "../repositories/user-preferences
 import type { ClosedAlphaRepository } from "../repositories/closed-alpha.repository.ts";
 import type { AccountLifecycleRepository } from "../repositories/account-lifecycle.repository.ts";
 import type { AuthLinkRepository } from "../repositories/auth-link.repository.ts";
+import type { PlanRepository } from "../repositories/plan.repository.ts";
 import type { NoteAIProvider } from "../providers/note-ai.provider.ts";
 import type { EmbeddingProvider, LibraryAnswerProvider } from "../providers/library-ai.provider.ts";
 import { handleCallback } from "../services/callback.service.ts";
@@ -70,6 +71,7 @@ export interface WebhookDependencies {
     readonly access: ClosedAlphaRepository;
     readonly lifecycle: AccountLifecycleRepository;
     readonly authLinks?: AuthLinkRepository;
+    readonly plans?: PlanRepository;
     readonly provider: Pick<NoteAIProvider, "generateText">;
     readonly embeddings?: EmbeddingProvider;
     readonly answers?: LibraryAnswerProvider;
@@ -213,6 +215,7 @@ export async function handleWebhookRequest(
           lifecycle: deps.phase1.lifecycle,
           authLinks: deps.phase1.authLinks,
           dashboard: deps.config.dashboard,
+          plans: deps.phase1.plans,
         });
       }
       log.info("webhook.command", {
@@ -237,6 +240,7 @@ export async function handleWebhookRequest(
           logger: log,
           access: deps.phase1.access,
           lifecycle: deps.phase1.lifecycle,
+          plans: deps.phase1.plans,
         });
       }
       return acceptedResponse();
