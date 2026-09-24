@@ -8,6 +8,8 @@ import type {
   AdminInvite,
   AdminProviderKey,
   AdminKeyTestResult,
+  AdminPaymentOrder,
+  AdminTransactionStats,
 } from "@/types/admin";
 
 export async function sha256Hex(text: string): Promise<string> {
@@ -294,6 +296,98 @@ export function useAdmin() {
     };
   }, []);
 
+  const getTransactionStats = useCallback(async (): Promise<AdminTransactionStats> => {
+    const { data, error } = await supabase.rpc("admin_get_transaction_stats");
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    return {
+      total_revenue_idr: Number(row?.total_revenue_idr ?? 0),
+      completed_count: Number(row?.completed_count ?? 0),
+      problem_count: Number(row?.problem_count ?? 0),
+      active_pro_subscribers: Number(row?.active_pro_subscribers ?? 0),
+    };
+  }, []);
+
+  const listPaymentOrders = useCallback(async (
+    status?: string | null,
+    search?: string | null,
+    limit: number = 50,
+    offset: number = 0,
+  ): Promise<AdminPaymentOrder[]> => {
+    const { data, error } = await supabase.rpc("admin_list_payment_orders", {
+      p_status: status || null,
+      p_search: search || null,
+      p_limit: limit,
+      p_offset: offset,
+    });
+    if (error) throw error;
+    return (data || []).map((row: Record<string, unknown>) => ({
+      id: String(row.id),
+      user_id: String(row.user_id),
+      telegram_user_id: row.telegram_user_id != null ? Number(row.telegram_user_id) : null,
+      display_name: row.display_name != null ? String(row.display_name) : null,
+      order_code: String(row.order_code),
+      target_plan: String(row.target_plan),
+      amount_idr: Number(row.amount_idr),
+      is_early_bird: Boolean(row.is_early_bird),
+      status: String(row.status) as AdminPaymentOrder["status"],
+      tiptap_payment_id: row.tiptap_payment_id != null ? String(row.tiptap_payment_id) : null,
+      tiptap_payload: (row.tiptap_payload as Record<string, unknown>) || null,
+      expires_at: String(row.expires_at),
+      created_at: String(row.created_at),
+      completed_at: row.completed_at != null ? String(row.completed_at) : null,
+    }));
+  }, []);
+
+  const reconcilePaymentOrder = useCallback(async (
+    orderId: string,
+    notes?: string,
+  ): Promise<{ order_id: string; user_id: string; new_status: string; subscription_expires_at: string }> => {
+    const { data, error } = await supabase.rpc("admin_reconcile_payment_order", {
+      p_order_id: orderId,
+      p_notes: notes || null,
+    });
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    return {
+      order_id: String(row.order_id),
+      user_id: String(row.user_id),
+      new_status: String(row.new_status),
+      subscription_expires_at: String(row.subscription_expires_at),
+    };
+  }, []);
+
+  const resolvePaymentOrder = useCallback(async (
+    orderId: string,
+    action: "cancel" | "expire",
+    notes?: string,
+    notifyUser: boolean = false,
+  ): Promise<{ ok: boolean; order_id: string; new_status: string; notified: boolean }> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) throw new Error("Admin session required");
+    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-resolve-order`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        order_id: orderId,
+        action,
+        notes: notes || null,
+        notify_user: notifyUser,
+      }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || "Failed to resolve payment order");
+    return {
+      ok: Boolean(body.ok),
+      order_id: String(body.order_id),
+      new_status: String(body.new_status),
+      notified: Boolean(body.notified),
+    };
+  }, []);
+
   return {
     isAdmin,
     loading: authLoading || loading,
@@ -314,5 +408,9 @@ export function useAdmin() {
     recordProviderTest,
     testProviderKeyDirect,
     testVaultedProviderKey,
+    getTransactionStats,
+    listPaymentOrders,
+    reconcilePaymentOrder,
+    resolvePaymentOrder,
   };
 }

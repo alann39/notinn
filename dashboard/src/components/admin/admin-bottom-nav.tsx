@@ -1,5 +1,5 @@
 import { NavLink, Link } from "react-router-dom";
-import { Activity, Layers, Users, Ticket, Key, ArrowLeft } from "lucide-react";
+import { Activity, Layers, Users, Ticket, Key, CreditCard, ArrowLeft } from "lucide-react";
 import {
   TooltipProvider,
   Tooltip,
@@ -17,6 +17,7 @@ interface AdminNavItem {
 
 const navTabs: readonly AdminNavItem[] = [
   { name: "System Health", href: "/admin", icon: Activity, exact: true },
+  { name: "Transactions", href: "/admin/transactions", icon: CreditCard },
   { name: "Job Queue", href: "/admin/jobs", icon: Layers },
   { name: "User Directory", href: "/admin/users", icon: Users },
   { name: "Alpha Invites", href: "/admin/invites", icon: Ticket },

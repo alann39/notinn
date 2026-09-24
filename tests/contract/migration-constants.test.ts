@@ -59,6 +59,10 @@ const PLAN_REPOSITORY = new URL(
   "plan.repository.ts",
   REPOSITORY_DIR,
 );
+const PAYMENT_REPOSITORY = new URL(
+  "payment.repository.ts",
+  REPOSITORY_DIR,
+);
 
 /** Read every migration, concatenated, with its filename attached for messages. */
 async function loadMigrations(): Promise<{ name: string; sql: string }[]> {
@@ -119,6 +123,16 @@ const FILE_SUFFIXES = [
   "phase7e_admin_provider_keys.sql",
   "phase7e_provider_model_selection.sql",
   "fix_admin_provider_vault.sql",
+  "fix_admin_job_actions_and_gemini_model.sql",
+  "fix_requeue_quota_cleanup.sql",
+  "phase8_tiptap_subscriptions.sql",
+  "fix_create_upgrade_order_ambiguous_columns.sql",
+  "notify_underpaid_tiptap_payment.sql",
+  "fix_plan_subscriptions_columns.sql",
+  "phase8b_admin_transactions.sql",
+  "phase8c_admin_order_actions.sql",
+  "phase8d_web_upgrade_orders.sql",
+  "fix_web_upgrade_orders_linked_user.sql",
 ] as const;
 
 /** Read the one migration whose filename ends with `suffix`. */
@@ -152,6 +166,7 @@ const PHASE6_ACCOUNT_LIFECYCLE_SQL = await loadMigration(
 );
 const PHASE6D_OPS_SQL = await loadMigration("phase6d_ops_monitoring.sql");
 const PHASE6E_PLAN_SQL = await loadMigration("phase6e_plan_upgrade_mechanics.sql");
+const PHASE8_TIPTAP_SQL = await loadMigration("phase8_tiptap_subscriptions.sql");
 const ALL_MIGRATIONS = await loadMigrations();
 const ALL_SQL = ALL_MIGRATIONS.map((migration) => migration.sql).join("\n");
 
@@ -771,6 +786,12 @@ const WEB_RPC_FUNCTIONS = new Set([
   "admin_set_provider_key",
   "admin_record_provider_test",
   "admin_set_provider_model",
+  "admin_get_transaction_stats",
+  "admin_list_payment_orders",
+  "admin_reconcile_payment_order",
+  "admin_resolve_payment_order",
+  "web_create_upgrade_order",
+  "web_get_upgrade_order_status",
 ]);
 
 Deno.test("no function is executable by anon, and only web RPCs are executable by authenticated", () => {
@@ -984,6 +1005,9 @@ const RPC_CONTRACTS = [
   [OPS_METRICS_REPOSITORY, "cancel_processing_job", PHASE6D_OPS_SQL],
   [PLAN_REPOSITORY, "get_plan_catalogue", PHASE6E_PLAN_SQL],
   [PLAN_REPOSITORY, "change_user_plan", PHASE6E_PLAN_SQL],
+  [PAYMENT_REPOSITORY, "create_upgrade_order", PHASE8_TIPTAP_SQL],
+  [PAYMENT_REPOSITORY, "process_tiptap_payment", PHASE8_TIPTAP_SQL],
+  [PAYMENT_REPOSITORY, "get_user_subscription", PHASE8_TIPTAP_SQL],
 ] as const;
 
 for (const [repository, name, sql] of RPC_CONTRACTS) {

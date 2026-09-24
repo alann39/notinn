@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { NavLink, Link } from "react-router-dom";
 import {
   Activity,
@@ -5,13 +6,16 @@ import {
   Users,
   Ticket,
   Key,
+  CreditCard,
   ArrowLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NotinnLogo } from "@/components/brand/notinn-logo";
+import { useAdmin } from "@/hooks/use-admin";
 
 const adminNavItems = [
   { name: "System Health", href: "/admin", icon: Activity, exact: true },
+  { name: "Transactions", href: "/admin/transactions", icon: CreditCard },
   { name: "Job Queue", href: "/admin/jobs", icon: Layers },
   { name: "User Directory", href: "/admin/users", icon: Users },
   { name: "Alpha Invites", href: "/admin/invites", icon: Ticket },
@@ -19,6 +23,15 @@ const adminNavItems = [
 ];
 
 export function AdminSidebar() {
+  const { getTransactionStats } = useAdmin();
+  const [problemCount, setProblemCount] = useState<number>(0);
+
+  useEffect(() => {
+    getTransactionStats()
+      .then((s) => setProblemCount(s.problem_count))
+      .catch(() => {});
+  }, [getTransactionStats]);
+
   return (
     <aside className="hidden lg:flex fixed inset-y-0 left-0 z-40 flex-col bg-card border-r border-border w-64">
       {/* Header Branding */}
@@ -51,7 +64,12 @@ export function AdminSidebar() {
             }
           >
             <item.icon className="size-4 shrink-0" />
-            <span>{item.name}</span>
+            <span className="flex-1">{item.name}</span>
+            {item.href === "/admin/transactions" && problemCount > 0 && (
+              <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-500 dark:text-amber-400">
+                {problemCount}
+              </span>
+            )}
           </NavLink>
         ))}
       </nav>

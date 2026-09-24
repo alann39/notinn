@@ -16,6 +16,7 @@ import { ClosedAlphaRepository } from "../_shared/repositories/closed-alpha.repo
 import { AccountLifecycleRepository } from "../_shared/repositories/account-lifecycle.repository.ts";
 import { AuthLinkRepository } from "../_shared/repositories/auth-link.repository.ts";
 import { PlanRepository } from "../_shared/repositories/plan.repository.ts";
+import { PaymentRepository } from "../_shared/repositories/payment.repository.ts";
 import { resolveProviderConfig } from "../_shared/repositories/provider-config.repository.ts";
 import { createNoteProvider } from "../_shared/providers/note-provider.factory.ts";
 import { GeminiEmbeddingProvider } from "../_shared/providers/gemini-embedding.provider.ts";
@@ -109,6 +110,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
       lifecycle: new AccountLifecycleRepository(client),
       authLinks: new AuthLinkRepository(client),
       plans: new PlanRepository(client),
+      payments: new PaymentRepository(client),
       provider: noteProvider,
       embeddings: ai.embeddingModel === null ? undefined : new GeminiEmbeddingProvider(ai),
       answers: noteProvider,

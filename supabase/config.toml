@@ -88,3 +88,10 @@ verify_jwt = false
 # is disabled because the caller is a browser redirect, not a Supabase client.
 # See docs/ADR/0019-web-dashboard-auth.md.
 verify_jwt = false
+
+[functions.tiptap-webhook]
+# TipTap payment webhook callback.
+# External payment gateway caller cannot present a Supabase JWT.
+# Authenticates via TIPTAP_WEBHOOK_SECRET if configured.
+verify_jwt = false
+

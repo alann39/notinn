@@ -47,12 +47,12 @@ const PROVIDERS: ProviderMeta[] = [
     id: "gemini",
     name: "Google Gemini",
     role: "Primary Note Extraction & Semantic Embeddings",
-    defaultModel: "gemini-2.5-flash",
+    defaultModel: "gemini-3.8-flash",
     icon: Sparkles,
     docsUrl: "https://aistudio.google.com/app/apikey",
     presets: [
-      { label: "gemini-2.5-flash", value: "gemini-2.5-flash", desc: "Default, recommended multimodal note generation" },
-      { label: "gemini-2.5-flash-lite", value: "gemini-2.5-flash-lite", desc: "Lightweight, lowest latency" },
+      { label: "gemini-3.8-flash", value: "gemini-3.8-flash", desc: "Default, recommended multimodal note generation" },
+      { label: "gemini-3.5-flash-lite", value: "gemini-3.5-flash-lite", desc: "Lightweight, lowest latency" },
       { label: "gemini-2.0-flash", value: "gemini-2.0-flash", desc: "High throughput stable" },
       { label: "gemini-1.5-pro", value: "gemini-1.5-pro", desc: "Deep multi-step reasoning" },
     ],
@@ -284,7 +284,7 @@ export function AdminApiKeysPage() {
     if (!customValue || customValue.length < 2) {
       toastManager.add({
         title: "Invalid Model ID",
-        description: "Please enter a valid model identifier (e.g. gemini-2.5-flash).",
+        description: "Please enter a valid model identifier (e.g. gemini-3.8-flash).",
         type: "error",
       });
       return;

@@ -20,6 +20,7 @@ import type { ClosedAlphaRepository } from "../repositories/closed-alpha.reposit
 import type { AccountLifecycleRepository } from "../repositories/account-lifecycle.repository.ts";
 import type { AuthLinkRepository } from "../repositories/auth-link.repository.ts";
 import type { PlanRepository } from "../repositories/plan.repository.ts";
+import type { PaymentRepository } from "../repositories/payment.repository.ts";
 import type { NoteAIProvider } from "../providers/note-ai.provider.ts";
 import type { EmbeddingProvider, LibraryAnswerProvider } from "../providers/library-ai.provider.ts";
 import { handleCallback } from "../services/callback.service.ts";
@@ -72,6 +73,7 @@ export interface WebhookDependencies {
     readonly lifecycle: AccountLifecycleRepository;
     readonly authLinks?: AuthLinkRepository;
     readonly plans?: PlanRepository;
+    readonly payments?: PaymentRepository;
     readonly provider: Pick<NoteAIProvider, "generateText">;
     readonly embeddings?: EmbeddingProvider;
     readonly answers?: LibraryAnswerProvider;
@@ -215,7 +217,9 @@ export async function handleWebhookRequest(
           lifecycle: deps.phase1.lifecycle,
           authLinks: deps.phase1.authLinks,
           dashboard: deps.config.dashboard,
+          supabaseUrl: deps.config.supabaseUrl,
           plans: deps.phase1.plans,
+          payments: deps.phase1.payments,
         });
       }
       log.info("webhook.command", {
@@ -241,6 +245,7 @@ export async function handleWebhookRequest(
           access: deps.phase1.access,
           lifecycle: deps.phase1.lifecycle,
           plans: deps.phase1.plans,
+          payments: deps.phase1.payments,
         });
       }
       return acceptedResponse();

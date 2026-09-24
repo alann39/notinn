@@ -1,11 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { Header } from "@/components/layout/header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
-  ArrowUpRight,
   Calendar,
   Clock,
   Sparkles,
@@ -23,42 +22,45 @@ import {
   EmptyTitle,
   EmptyDescription,
 } from "@/components/ui/empty";
+import { UpgradeDrawer } from "@/components/dashboard/upgrade-drawer";
 import type { RawUsageRow, UsageSummary } from "@/types/usage";
 
 export function UsagePage() {
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isUpgradeOpen, setIsUpgradeOpen] = useState(false);
+
+  const loadUsage = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.rpc("web_get_usage_summary");
+      if (error) throw error;
+      if (Array.isArray(data) && data.length > 0) {
+        const rows = data as RawUsageRow[];
+        const first = rows[0];
+        setUsage({
+          plan_key: first.plan_key,
+          plan_display_name: first.plan_display_name,
+          period_start: first.period_start,
+          period_end: first.period_end,
+          metrics: rows.map((r) => ({
+            metric: r.metric,
+            display_name: r.display_name,
+            used: Number(r.used),
+            monthly_limit: Number(r.monthly_limit),
+            reserved: Number(r.reserved),
+          })),
+        });
+      }
+    } catch (err) {
+      console.error("Failed to load usage:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    async function loadUsage() {
-      try {
-        const { data, error } = await supabase.rpc("web_get_usage_summary");
-        if (error) throw error;
-        if (Array.isArray(data) && data.length > 0) {
-          const rows = data as RawUsageRow[];
-          const first = rows[0];
-          setUsage({
-            plan_key: first.plan_key,
-            plan_display_name: first.plan_display_name,
-            period_start: first.period_start,
-            period_end: first.period_end,
-            metrics: rows.map((r) => ({
-              metric: r.metric,
-              display_name: r.display_name,
-              used: Number(r.used),
-              monthly_limit: Number(r.monthly_limit),
-              reserved: Number(r.reserved),
-            })),
-          });
-        }
-      } catch (err) {
-        console.error("Failed to load usage:", err);
-      } finally {
-        setLoading(false);
-      }
-    }
     loadUsage();
-  }, []);
+  }, [loadUsage]);
 
   if (loading) {
     return (
@@ -173,28 +175,41 @@ export function UsagePage() {
 
             {/* Upgrade CTA */}
             {usage.plan_key !== "pro" && (
-              <Card className="p-6 border-border bg-muted/20 rounded-2xl">
+              <Card className="p-6 border border-primary/20 bg-primary/5 rounded-2xl">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
-                      <Sparkles className="size-4 text-foreground" />
+                      <Sparkles className="size-4 text-primary" />
                       <h3 className="text-base font-semibold text-foreground tracking-tight">
-                        Need higher capacity?
+                        Upgrade ke Notinn Pro
                       </h3>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium border border-primary/20">
+                        Promo Rp 10.000 / bln
+                      </span>
                     </div>
                     <p className="text-sm text-muted-foreground leading-relaxed">
-                      Upgrade to Notinn Pro for higher limits, priority processing, and extended retention.
+                      Akses Web Dashboard penuh selamanya (Free plan terbatas 14 hari), kuota 1.000 catatan/bulan, dan pemrosesan AI prioritas.
                     </p>
                   </div>
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onClick={() => window.open("https://t.me/NotinnBot", "_blank")}
-                    className="shrink-0 gap-1.5 text-xs font-medium"
-                  >
-                    <span>Upgrade in Telegram</span>
-                    <ArrowUpRight className="size-3.5" />
-                  </Button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => setIsUpgradeOpen(true)}
+                      className="gap-1.5 text-xs font-medium cursor-pointer"
+                    >
+                      <Sparkles className="size-3.5" />
+                      <span>Bayar via TipTap</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.open("https://t.me/NotinnBot", "_blank")}
+                      className="gap-1.5 text-xs font-medium cursor-pointer"
+                    >
+                      <span>Buka Bot</span>
+                    </Button>
+                  </div>
                 </div>
               </Card>
             )}
@@ -212,6 +227,12 @@ export function UsagePage() {
             </EmptyHeader>
           </Empty>
         )}
+
+        <UpgradeDrawer
+          open={isUpgradeOpen}
+          onOpenChange={setIsUpgradeOpen}
+          onUpgraded={loadUsage}
+        />
       </div>
     </>
   );

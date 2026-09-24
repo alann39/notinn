@@ -4,6 +4,7 @@ import { useAdmin } from "@/hooks/use-admin";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Link, useNavigate } from "react-router-dom";
+import { useTrial } from "@/hooks/use-trial";
 import {
   ChevronDown,
   ExternalLink,
@@ -11,6 +12,7 @@ import {
   Search,
   Send,
   Shield,
+  Sparkles,
   User as UserIcon,
 } from "lucide-react";
 import {
@@ -33,6 +35,7 @@ export function Header({ title, description, actions }: HeaderProps) {
   const { user, profile, signOut } = useAuth();
   const { open: searchOpen, setOpen: setSearchOpen } = useSearch();
   const { isAdmin } = useAdmin();
+  const { daysRemaining, isPro } = useTrial();
   const navigate = useNavigate();
 
   const userDisplayName = profile?.display_name || "Account";
@@ -82,6 +85,19 @@ export function Header({ title, description, actions }: HeaderProps) {
             />
           )}
 
+          {!isPro && profile?.plan_key === "free" && (
+            <a
+              href="https://tiptap.gg/notinn"
+              target="_blank"
+              rel="noreferrer"
+              className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition-colors"
+              title="Akses Web Dashboard untuk akun Free adalah 14 hari sejak pendaftaran. Klik untuk upgrade ke Pro!"
+            >
+              <Sparkles className="size-3" />
+              <span>Trial: {daysRemaining} hari</span>
+            </a>
+          )}
+
           <ThemeToggle />
 
           {/* User Profile Dropdown Menu (works on both mobile and desktop) */}
@@ -116,6 +132,17 @@ export function Header({ title, description, actions }: HeaderProps) {
                     </Badge>
                   )}
                 </div>
+
+                {!isPro && profile?.plan_key === "free" && (
+                  <MenuItem
+                    onClick={() => window.open("https://tiptap.gg/notinn", "_blank")}
+                    className="cursor-pointer gap-2.5 text-xs py-2 mt-1 text-primary focus:bg-primary/10"
+                  >
+                    <Sparkles className="size-3.5 text-primary" />
+                    <span className="flex-1 font-medium">Upgrade to Pro (Rp 10.000)</span>
+                    <ExternalLink className="size-3 text-primary/60" />
+                  </MenuItem>
+                )}
 
                 {isAdmin && (
                   <MenuItem

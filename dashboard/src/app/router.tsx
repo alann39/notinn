@@ -13,6 +13,7 @@ import { AdminJobsPage } from "./admin/admin-jobs-page";
 import { AdminUsersPage } from "./admin/admin-users-page";
 import { AdminInvitesPage } from "./admin/admin-invites-page";
 import { AdminApiKeysPage } from "./admin/admin-api-keys-page";
+import { AdminTransactionsPage } from "./admin/admin-transactions-page";
 
 export const router = createBrowserRouter([
   {
@@ -73,6 +74,10 @@ export const router = createBrowserRouter([
           {
             path: "/admin/api-keys",
             element: <AdminApiKeysPage />,
+          },
+          {
+            path: "/admin/transactions",
+            element: <AdminTransactionsPage />,
           },
         ],
       },

@@ -764,18 +764,22 @@ Deno.test("/web command returns magic link when dashboard is configured", async 
   assertEquals(createdTokens.length, 1);
   assertEquals(createdTokens[0]?.userId, USER_ID);
   assertEquals(test.sent.length, 1);
+  assertEquals(test.sent[0]?.text.includes("Akses dashboard catatan Anda"), true);
+  const keyboard = (test.sent[0]?.options as {
+    inlineKeyboard?: { inline_keyboard: { text: string; url?: string }[][] };
+  })?.inlineKeyboard;
+  assertEquals(keyboard?.inline_keyboard[0]?.[0]?.text, "🌐 Buka Web Dashboard");
   assertEquals(
-    test.sent[0]?.text.includes(
-      '<a href="https://notinn.vercel.app/auth/callback?token=',
+    keyboard?.inline_keyboard[0]?.[0]?.url?.startsWith(
+      "https://notinn.vercel.app/auth/callback?token=",
     ),
     true,
   );
-  assertEquals(test.sent[0]?.text.includes(">Open Notinn Web Dashboard</a>"), true);
   assertEquals(
     (test.sent[0]?.options as { parseMode?: string } | undefined)?.parseMode,
     "HTML",
   );
-  assertEquals(test.sent[0]?.text.includes("expires in 10 minutes"), true);
+  assertEquals(test.sent[0]?.text.includes("10 menit"), true);
 });
 
 Deno.test("/web command replies with unconfigured message when dashboard is absent", async () => {

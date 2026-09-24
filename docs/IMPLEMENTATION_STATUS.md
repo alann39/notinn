@@ -1,9 +1,31 @@
 # Implementation status
 
-**Phase:** 7 — Web Dashboard and Integrations (ready for deployment)
-**Date:** 2026-09-22
+**Phase:** 8 — TipTap Automated Subscriptions, Admin Transactions & Web Upgrade
+**Date:** 2026-09-24
 **Last verified:** the commands in [Verification](#verification) were run and their
 output is recorded below.
+
+## Phase 8 TipTap subscriptions, admin transactions & web upgrade snapshot
+
+The Phase 8 slice is implemented, verified, and deployed to development.
+
+- **TipTap automated payment processing**:
+  - `tiptap-webhook` Edge Function receives automated transaction notifications, validates webhook token, updates `payment_orders`, and activates user plans atomically.
+  - Automatically handles underpaid payments by triggering user-facing Telegram notifications with remaining amount instructions.
+  - Idempotent order matching via order codes and transaction reference keys.
+- **Admin transactions & order resolution**:
+  - `admin-resolve-order` Edge Function provides operator actions: Reconcile, Cancel, and Expire with validation and audit logging.
+  - Database migrations `20260924010000_phase8_tiptap_subscriptions.sql` through `20260924080000_fix_web_upgrade_orders_linked_user.sql` define schema tables (`payment_orders`, `plan_subscriptions`), constraints, and RPC functions (`get_admin_payment_orders`, `admin_resolve_payment_order`, `web_create_upgrade_order`, `web_get_upgrade_order_status`).
+- **Dashboard enhancements**:
+  - Admin Transactions page (`/admin/transactions`) with unified segmented filter toolbar (matching Job Queue), compact desktop and mobile layouts, and slide-over / bottom drawer for order inspection and manual resolution actions.
+  - Consistent pagination component (`DataTablePagination`) deployed across Notes, Jobs, Users, and Transactions.
+  - Web Upgrade Drawer in user dashboard Usage page (`/usage`) allowing web-based order generation, instructions, payment codes, TipTap checkout link, and live status verification polling.
+  - Proper user bridging via `public.get_linked_user_id()` ensuring web sessions from Supabase Auth (`auth.users`) resolve cleanly to internal `public.users` foreign keys without conflict.
+- **Verification**:
+  - 694 unit, security, and contract tests pass with 0 failures (`npx deno task test`).
+  - Full TypeScript type check passes (`npx deno task check`).
+  - Dashboard frontend builds cleanly with 0 errors (`npm run build`).
+  - Code formatting (`npx deno fmt`) and linting (`npx deno lint`) verified.
 
 ## Phase 7 web dashboard snapshot
 

@@ -22,7 +22,7 @@ export function AdminLayout() {
       <AdminSidebar />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 lg:pl-64 transition-all duration-200 pb-20 lg:pb-0">
+      <div className="flex-1 flex flex-col min-w-0 lg:pl-64 transition-all duration-200">
         {/* Top Header */}
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-background/80 px-4 sm:px-6 backdrop-blur-sm">
           <div className="flex items-center gap-3">

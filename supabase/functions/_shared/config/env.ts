@@ -63,6 +63,7 @@ export const RECOGNISED_ENV_KEYS = [
   "NOTINN_LOG_LEVEL",
   "NOTINN_PROJECT_REF",
   "OPS_ALERT_CHAT_ID",
+  "TIPTAP_WEBHOOK_SECRET",
 ] as const;
 
 export type EnvKey = (typeof RECOGNISED_ENV_KEYS)[number];
@@ -402,7 +403,7 @@ function resolveAiConfig(raw: RawEnv): AiConfig {
   if (!MODEL_ID_PATTERN.test(model)) {
     throw AppError.configuration(
       "GEMINI_MODEL is not a plain model identifier. Use the model name only, " +
-        "such as gemini-2.5-flash — no URL, path or query string.",
+        "such as gemini-3.8-flash — no URL, path or query string.",
     );
   }
 
@@ -410,7 +411,7 @@ function resolveAiConfig(raw: RawEnv): AiConfig {
   if (fallbackModel !== null && !MODEL_ID_PATTERN.test(fallbackModel)) {
     throw AppError.configuration(
       "GEMINI_FALLBACK_MODEL is not a plain model identifier. Use the model name only, " +
-        "such as gemini-2.5-flash-lite — no URL, path or query string.",
+        "such as gemini-3.5-flash-lite — no URL, path or query string.",
     );
   }
   if (fallbackModel === model) {

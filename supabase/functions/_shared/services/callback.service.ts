@@ -20,6 +20,7 @@ import type { UserPreferencesRepository } from "../repositories/user-preferences
 import type { ClosedAlphaRepository } from "../repositories/closed-alpha.repository.ts";
 import type { AccountLifecycleRepository } from "../repositories/account-lifecycle.repository.ts";
 import type { PlanRepository } from "../repositories/plan.repository.ts";
+import type { PaymentRepository } from "../repositories/payment.repository.ts";
 import { actionToken, decodeCallbackPayload } from "../schemas/callback.ts";
 import { decodeNavigationCallback, isNavigationCallback } from "../schemas/navigation-callback.ts";
 import { parseStructuredNote, STRUCTURED_NOTE_VERSION } from "../schemas/structured-note.ts";
@@ -76,6 +77,7 @@ export interface CallbackDependencies {
   readonly access?: Pick<ClosedAlphaRepository, "getAccess">;
   readonly lifecycle?: Pick<AccountLifecycleRepository, "get">;
   readonly plans?: Pick<PlanRepository, "getCatalogue">;
+  readonly payments?: Pick<PaymentRepository, "createUpgradeOrder" | "getUserSubscription">;
   readonly provider: Pick<NoteAIProvider, "generateText">;
   readonly telegram: Pick<
     TelegramGateway,
@@ -554,8 +556,29 @@ export async function handleCallback(
       return;
     }
 
-    await deps.telegram.answerCallbackQuery(callback.callbackQueryId);
+    if (navigation.action !== "upgrade") {
+      await deps.telegram.answerCallbackQuery(callback.callbackQueryId);
+    }
     const userId = await deps.users.ensureUser(callback);
+    if (navigation.action === "upgrade") {
+      let isPro = false;
+      if (deps.payments !== undefined) {
+        try {
+          const sub = await deps.payments.getUserSubscription(userId);
+          if (sub !== null && sub.status === "active") {
+            isPro = true;
+          }
+        } catch {
+          // ignore
+        }
+      }
+      await deps.telegram.answerCallbackQuery(callback.callbackQueryId, {
+        text: isPro
+          ? "🎉 Pembayaran terverifikasi! Akun Notinn Pro Anda telah aktif."
+          : "⏳ Belum ada pembayaran terverifikasi. Selesaikan pembayaran di TipTap dengan memasukkan kode pembayaran pada kolom pesan.",
+        showAlert: true,
+      });
+    }
     const lifecycle = await deps.lifecycle?.get(userId);
     if (lifecycle?.status === "deletion_pending" || lifecycle?.status === "deleted") {
       await deps.telegram.sendMessage(
@@ -586,6 +609,7 @@ export async function handleCallback(
         templates: deps.templates,
         quota: deps.quota,
         plans: deps.plans,
+        payments: deps.payments,
       });
       log.info("callback.completed", {
         callback_action: navigation.action,

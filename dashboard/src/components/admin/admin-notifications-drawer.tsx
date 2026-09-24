@@ -9,6 +9,7 @@ import {
   ArrowRight,
   RefreshCw,
   Clock,
+  CreditCard,
 } from "lucide-react";
 import {
   Drawer,
@@ -24,14 +25,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { useAdmin } from "@/hooks/use-admin";
-import type { AdminHealth, AdminJob } from "@/types/admin";
+import type { AdminHealth, AdminJob, AdminPaymentOrder, AdminTransactionStats } from "@/types/admin";
 import { formatRelativeTime } from "@/lib/utils";
 
 export function AdminNotificationsDrawer() {
-  const { getHealth, listJobs } = useAdmin();
+  const { getHealth, listJobs, getTransactionStats, listPaymentOrders } = useAdmin();
   const [open, setOpen] = useState(false);
   const [health, setHealth] = useState<AdminHealth | null>(null);
   const [problematicJobs, setProblematicJobs] = useState<AdminJob[]>([]);
+  const [transactionStats, setTransactionStats] = useState<AdminTransactionStats | null>(null);
+  const [problematicOrders, setProblematicOrders] = useState<AdminPaymentOrder[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -40,20 +43,27 @@ export function AdminNotificationsDrawer() {
     else setLoading(true);
 
     try {
-      const [h, jobs] = await Promise.all([getHealth(), listJobs(25)]);
+      const [h, jobs, tStats, pOrders] = await Promise.all([
+        getHealth(),
+        listJobs(25),
+        getTransactionStats(),
+        listPaymentOrders("problematic", null, 5),
+      ]);
       setHealth(h);
       // Filter for jobs that need attention: failed, stale, or retry attempts > 1
       const issues = jobs.filter(
         (j) => j.state === "failed" || j.state === "stale" || j.attempt_count > 1,
       );
       setProblematicJobs(issues);
+      setTransactionStats(tStats);
+      setProblematicOrders(pOrders);
     } catch {
       // Graceful fallback; keep existing state if already loaded
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [getHealth, listJobs]);
+  }, [getHealth, listJobs, getTransactionStats, listPaymentOrders]);
 
   // Initial fetch on mount for badge notification dot
   useEffect(() => {
@@ -71,12 +81,13 @@ export function AdminNotificationsDrawer() {
   const failedCount = health?.failed_jobs ?? 0;
   const staleCount = health?.stale_jobs ?? 0;
   const queueDepth = health?.queue_depth ?? 0;
-  const hasAlerts = failedCount > 0 || staleCount > 0 || queueDepth > 10;
+  const problemTxCount = transactionStats?.problem_count ?? 0;
+  const hasAlerts = failedCount > 0 || staleCount > 0 || queueDepth > 10 || problemTxCount > 0;
 
   // Determine overall status
   const clusterStatus = failedCount > 5
     ? "critical"
-    : failedCount > 0 || staleCount > 0 || queueDepth > 10
+    : failedCount > 0 || staleCount > 0 || queueDepth > 10 || problemTxCount > 0
     ? "degraded"
     : "healthy";
 
@@ -275,18 +286,83 @@ export function AdminNotificationsDrawer() {
             )}
           </div>
 
-          {/* Quick Queue Link */}
-          <div className="pt-2">
+          {/* Problematic Payment Transactions */}
+          <div className="space-y-2 pt-2 border-t border-border">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-foreground flex items-center gap-1.5">
+                <CreditCard className="size-3.5 text-muted-foreground" />
+                <span>Transaction Alerts ({problematicOrders.length})</span>
+              </span>
+              <Link
+                to="/admin/transactions"
+                onClick={() => setOpen(false)}
+                className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-[11px] transition-colors"
+              >
+                <span>View all</span>
+                <ArrowRight className="size-3" />
+              </Link>
+            </div>
+
+            {problematicOrders.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border p-3.5 text-center space-y-1">
+                <CheckCircle2 className="size-4 text-emerald-500 mx-auto" />
+                <p className="text-[11px] text-muted-foreground">
+                  No payment discrepancies or underpaid orders detected.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {problematicOrders.map((order) => (
+                  <div
+                    key={order.id}
+                    className="p-3 rounded-xl border border-border bg-card hover:bg-muted/40 transition-colors text-xs space-y-1"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-[11px] font-semibold text-foreground">
+                        {order.order_code}
+                      </span>
+                      <Badge
+                        variant="secondary"
+                        className="text-[9px] uppercase font-mono py-0 px-1.5 bg-amber-500/10 text-amber-500"
+                      >
+                        {order.status === "invalid" ? "Underpaid" : order.status}
+                      </Badge>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                      <span>User: {order.display_name || order.telegram_user_id || "N/A"}</span>
+                      <span>Rp {order.amount_idr.toLocaleString("id-ID")}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Quick Action Links */}
+          <div className="pt-2 grid grid-cols-2 gap-2">
+            <Link
+              to="/admin/transactions"
+              onClick={() => setOpen(false)}
+              className="flex items-center justify-between p-2.5 rounded-xl border border-border bg-muted/30 hover:bg-muted/70 text-xs font-medium transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <CreditCard className="size-3.5 text-foreground" />
+                <span>Transactions</span>
+              </div>
+              <ArrowRight className="size-3 text-muted-foreground" />
+            </Link>
+
             <Link
               to="/admin/jobs"
               onClick={() => setOpen(false)}
-              className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/30 hover:bg-muted/70 text-xs font-medium transition-colors"
+              className="flex items-center justify-between p-2.5 rounded-xl border border-border bg-muted/30 hover:bg-muted/70 text-xs font-medium transition-colors"
             >
               <div className="flex items-center gap-2">
-                <Activity className="size-4 text-foreground" />
-                <span>Open Job Queue Console</span>
+                <Activity className="size-3.5 text-foreground" />
+                <span>Job Queue</span>
               </div>
-              <ArrowRight className="size-3.5 text-muted-foreground" />
+              <ArrowRight className="size-3 text-muted-foreground" />
             </Link>
           </div>
         </DrawerPanel>

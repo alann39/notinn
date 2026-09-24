@@ -1,5 +1,7 @@
 import { Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
+import { useTrial } from "@/hooks/use-trial";
+import { TrialExpiredScreen } from "@/components/trial-expired-screen";
 import { SidebarProvider, useSidebar } from "@/hooks/use-sidebar";
 import { Spinner } from "@/components/ui/spinner";
 import { Sidebar } from "./sidebar";
@@ -46,6 +48,7 @@ function DashboardContent() {
 
 export function DashboardLayout() {
   const { session, loading } = useAuth();
+  const { isTrialExpired } = useTrial();
 
   if (loading) {
     return (
@@ -62,6 +65,10 @@ export function DashboardLayout() {
 
   if (!session) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (isTrialExpired) {
+    return <TrialExpiredScreen />;
   }
 
   return (

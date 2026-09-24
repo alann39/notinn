@@ -338,9 +338,17 @@ export type InlineKeyboardButton =
        */
       readonly callback_data: string;
       readonly disabled?: never;
+      readonly url?: never;
+    }
+    | {
+      /** Direct URL button (e.g. for external payment gateway links). */
+      readonly url: string;
+      readonly callback_data?: never;
+      readonly disabled?: never;
     }
     | {
       readonly callback_data?: never;
+      readonly url?: never;
       /** Bot API 10.3 disabled-button marker. The object intentionally has no fields. */
       readonly disabled: Readonly<Record<string, never>>;
     }

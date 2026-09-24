@@ -10,9 +10,11 @@ import {
   Globe,
   Shield,
   Sliders,
+  Sparkles,
   User,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
+import { useTrial } from "@/hooks/use-trial";
 import type { UserPreferences, UserProfile } from "@/types/user";
 
 const LANGUAGE_LABELS: Record<string, string> = {
@@ -36,6 +38,7 @@ export function SettingsPage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [loading, setLoading] = useState(true);
+  const { daysRemaining, isPro } = useTrial();
 
   useEffect(() => {
     async function loadSettings() {
@@ -99,12 +102,38 @@ export function SettingsPage() {
               </div>
               <div className="flex items-center justify-between py-3">
                 <dt className="text-muted-foreground font-medium">Subscription Tier</dt>
-                <dd>
+                <dd className="flex items-center gap-2">
                   <Badge variant="default" className="capitalize text-xs font-semibold">
                     {profile.plan_key}
                   </Badge>
+                  {!isPro && profile.plan_key === "free" && (
+                    <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+                      (Web Trial: {daysRemaining} hari lagi)
+                    </span>
+                  )}
                 </dd>
               </div>
+              {!isPro && profile.plan_key === "free" && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between py-3 gap-2 bg-amber-500/5 -mx-6 px-6 border-y border-amber-500/10">
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                      Masa Percobaan Web Dashboard
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Akses Web Dashboard untuk akun Free adalah 14 hari sejak pendaftaran. Upgrade ke Pro untuk akses selamanya seharga Rp 10.000 / bulan.
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => window.open("https://tiptap.gg/notinn", "_blank")}
+                    className="shrink-0 gap-1.5 text-xs font-medium self-start sm:self-center"
+                  >
+                    <Sparkles className="size-3.5" />
+                    <span>Upgrade Pro (Rp 10.000)</span>
+                    <ExternalLink className="size-3" />
+                  </Button>
+                </div>
+              )}
               <div className="flex items-center justify-between py-3">
                 <dt className="text-muted-foreground font-medium">Member since</dt>
                 <dd className="font-medium text-foreground tabular-nums">

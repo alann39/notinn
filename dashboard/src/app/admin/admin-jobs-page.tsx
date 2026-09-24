@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import {
   Layers,
   RotateCcw,
@@ -31,6 +31,7 @@ import {
   AlertDialogFooter,
   AlertDialogClose,
 } from "@/components/ui/alert-dialog";
+import { DataTablePagination } from "@/components/admin/data-table-pagination";
 import { toastManager } from "@/components/ui/toast";
 import { useAdmin } from "@/hooks/use-admin";
 import type { AdminJob } from "@/types/admin";
@@ -130,6 +131,20 @@ export function AdminJobsPage() {
     }
     return true;
   });
+
+  const PAGE_SIZE = 10;
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Reset page when filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredJobs.length / PAGE_SIZE));
+  const paginatedJobs = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filteredJobs.slice(start, start + PAGE_SIZE);
+  }, [filteredJobs, currentPage]);
 
   const getJobBadge = (job: AdminJob) => {
     const isStale =
@@ -234,7 +249,8 @@ export function AdminJobsPage() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -247,7 +263,7 @@ export function AdminJobsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredJobs.map((job) => (
+                {paginatedJobs.map((job) => (
                   <TableRow key={job.job_id} className="hover:bg-muted/40 transition-colors">
                     <TableCell className="font-mono text-xs text-foreground">
                       <div className="flex items-center gap-1.5">
@@ -385,8 +401,19 @@ export function AdminJobsPage() {
               </TableBody>
             </Table>
           </div>
-        )}
-      </Card>
+
+          <DataTablePagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={filteredJobs.length}
+            pageSize={PAGE_SIZE}
+            onPageChange={setCurrentPage}
+            itemName="job"
+            loading={loading}
+          />
+        </>
+      )}
+    </Card>
     </div>
   );
 }

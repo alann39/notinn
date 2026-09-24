@@ -12,6 +12,7 @@ import type { UsageRepository } from "../repositories/usage.repository.ts";
 import type { TemplatesRepository } from "../repositories/templates.repository.ts";
 import type { AccountLifecycleRepository } from "../repositories/account-lifecycle.repository.ts";
 import type { PlanRepository } from "../repositories/plan.repository.ts";
+import type { PaymentRepository } from "../repositories/payment.repository.ts";
 import type { AuthLinkRepository } from "../repositories/auth-link.repository.ts";
 import { createMagicToken } from "../security/magic-token.ts";
 import type { DashboardConfig } from "../config/env.ts";
@@ -32,7 +33,6 @@ import { AppError, isAppError } from "../errors/app-error.ts";
 import type { TelegramGateway } from "../telegram/client.ts";
 import type { CommandMessage } from "../telegram/parse-update.ts";
 import { sendNavigationCommand } from "./navigation.service.ts";
-import { escapeHtml } from "./note-rendering.ts";
 
 const SEARCH_LIMIT = 10;
 const SEARCH_QUERY_MAX_CHARS = 200;
@@ -66,9 +66,11 @@ export interface CommandDependencies {
     & Pick<TemplatesRepository, "listLabels">
     & Partial<Pick<TemplatesRepository, "listAvailable" | "createCustom" | "archiveCustom">>;
   readonly plans?: Pick<PlanRepository, "getCatalogue">;
+  readonly payments?: Pick<PaymentRepository, "createUpgradeOrder" | "getUserSubscription">;
   readonly userPlanKey?: string;
   readonly authLinks?: Pick<AuthLinkRepository, "createToken">;
   readonly dashboard?: DashboardConfig | null;
+  readonly supabaseUrl?: string;
 }
 
 const CLOSED_ALPHA_PENDING = [
@@ -228,21 +230,56 @@ async function handleWeb(
 
   const baseUrl = deps.dashboard.url.replace(/\/+$/, "");
   const loginUrl = `${baseUrl}/auth/callback?token=${encodeURIComponent(token)}`;
-  const safeLoginUrl = escapeHtml(loginUrl).replace(/"/g, "&quot;");
 
-  await deps.telegram.sendMessage(
-    command.telegramChatId,
-    [
-      "🌐 Notinn Web Dashboard",
-      "",
-      "Use this secure link to open your dashboard in a browser:",
-      `<a href="${safeLoginUrl}">Open Notinn Web Dashboard</a>`,
-      "",
-      "⚠️ This link is single-use and expires in 10 minutes.",
-      "Never share this link with anyone.",
-    ].join("\n"),
-    { parseMode: "HTML" },
-  );
+  // Telegram Bot API strictly forbids http:// or localhost in inline keyboard buttons.
+  // When running on localhost or non-https, route via the deployed Supabase Edge Function which redirects to the dashboard.
+  const supabaseUrl = deps.supabaseUrl ?? Deno.env.get("SUPABASE_URL");
+  const isHttps = baseUrl.startsWith("https://") && !baseUrl.includes("localhost") &&
+    !baseUrl.includes("127.0.0.1");
+  const buttonUrl = isHttps
+    ? loginUrl
+    : supabaseUrl
+    ? `${supabaseUrl.replace(/\/+$/, "")}/functions/v1/dashboard-auth?token=${
+      encodeURIComponent(token)
+    }`
+    : loginUrl;
+
+  const lines = [
+    "🌐 <b>Notinn Web Dashboard</b>",
+    "",
+    "Akses dashboard catatan Anda dengan menekan tombol wizard di bawah:",
+    "",
+    "ℹ️ <b>Catatan:</b> Akun Free memiliki akses Web Dashboard selama <b>14 hari</b> sejak pendaftaran. Pengguna Pro mendapatkan akses penuh selamanya.",
+    "",
+    "⚠️ Tautan tombol ini hanya dapat digunakan 1 kali dan berlaku selama 10 menit.",
+    "Jangan bagikan tautan ini kepada siapa pun.",
+  ];
+
+  try {
+    await deps.telegram.sendMessage(
+      command.telegramChatId,
+      lines.join("\n"),
+      {
+        parseMode: "HTML",
+        inlineKeyboard: {
+          inline_keyboard: [
+            [{ text: "🌐 Buka Web Dashboard", url: buttonUrl }],
+          ],
+        },
+      },
+    );
+  } catch {
+    // Graceful fallback to text URL if Telegram button rejected
+    await deps.telegram.sendMessage(
+      command.telegramChatId,
+      [
+        ...lines.slice(0, 2),
+        `Buka dashboard catatan Anda melalui tautan berikut:\n\n<a href="${loginUrl}">${loginUrl}</a>`,
+        ...lines.slice(3),
+      ].join("\n"),
+      { parseMode: "HTML" },
+    );
+  }
 }
 
 export function closedAlphaAccessMessage(status: ClosedAlphaAccessStatus | null): string {
@@ -771,6 +808,7 @@ export async function handleCommand(
       templates: deps.templates,
       quota: deps.quota,
       plans: deps.plans,
+      payments: deps.payments,
       userPlanKey: deps.userPlanKey,
     });
     return;

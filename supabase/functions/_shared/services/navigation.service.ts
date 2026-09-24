@@ -2,6 +2,7 @@ import type { InputType } from "../config/constants.ts";
 import type { NotesRepository } from "../repositories/notes.repository.ts";
 import type { QuotaRepository, UsageSummary } from "../repositories/quota.repository.ts";
 import type { PlanCatalogueEntry, PlanRepository } from "../repositories/plan.repository.ts";
+import type { PaymentRepository } from "../repositories/payment.repository.ts";
 import type { TemplatesRepository } from "../repositories/templates.repository.ts";
 import type {
   PreferenceSetting,
@@ -32,6 +33,7 @@ interface NavigationDataDependencies {
     & Partial<Pick<TemplatesRepository, "listAvailable">>;
   readonly quota?: Pick<QuotaRepository, "getSummary">;
   readonly plans?: Pick<PlanRepository, "getCatalogue">;
+  readonly payments?: Pick<PaymentRepository, "createUpgradeOrder" | "getUserSubscription">;
   readonly userPlanKey?: string;
 }
 
@@ -59,6 +61,10 @@ function navButton(
     ...(style === undefined ? {} : { style }),
     callback_data: encodeNavigationCallback({ action, value }),
   };
+}
+
+function urlButton(text: string, url: string): InlineKeyboardButton {
+  return { text, url };
 }
 
 function keyboard(rows: readonly (readonly InlineKeyboardButton[])[]): InlineKeyboardMarkup {
@@ -535,19 +541,118 @@ async function upgradeView(
   userId: string,
   deps: NavigationDataDependencies,
 ): Promise<NavigationView> {
-  if (deps.plans === undefined) {
-    return unavailableView("⬆️ Upgrade", "Plan information is not available yet.");
-  }
-
   let currentPlan = deps.userPlanKey;
   if (currentPlan === undefined && deps.quota !== undefined) {
     try {
       currentPlan = (await deps.quota.getSummary(userId))[0]?.planKey;
     } catch {
-      // The catalogue can still provide useful upgrade information below.
+      // The catalogue or payment order can still provide useful upgrade information below.
     }
   }
   currentPlan ??= "free";
+
+  // Check TipTap payment & subscription flow if payments repo is configured
+  if (deps.payments !== undefined) {
+    try {
+      const [order, subscription] = await Promise.all([
+        deps.payments.createUpgradeOrder(userId),
+        deps.payments.getUserSubscription(userId),
+      ]);
+
+      const formattedAmount = `Rp ${order.amountIdr.toLocaleString("id-ID")}`;
+      const tiptapUrl = "https://tiptap.gg/notinn";
+
+      if (currentPlan === "pro" || (subscription !== null && subscription.status === "active")) {
+        const expiryDate = subscription?.expiresAt
+          ? new Intl.DateTimeFormat("id-ID", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+            timeZone: "Asia/Jakarta",
+          }).format(new Date(subscription.expiresAt))
+          : "Aktif";
+
+        const lines = [
+          "✅ <b>Anda Sedang Berlangganan Notinn Pro!</b>",
+          "",
+          `📅 <b>Masa Aktif Hingga:</b> ${expiryDate}${
+            subscription ? ` (${subscription.daysRemaining} hari lagi)` : ""
+          }`,
+          "",
+          "🔄 <b>Perpanjang Masa Aktif:</b>",
+          "Pembayaran baru akan otomatis menambahkan <b>+30 hari</b> ke masa aktif Anda.",
+          "",
+          `🏷️ <b>Biaya:</b> ${formattedAmount} / bulan`,
+          `🔑 <b>Kode Pembayaran:</b> <code>${order.orderCode}</code>`,
+          "",
+          "💡 Masukkan kode di atas pada kolom pesan saat melakukan pembayaran di TipTap.",
+        ];
+
+        return {
+          text: lines.join("\n"),
+          keyboard: keyboard([
+            [urlButton(`💳 Perpanjang via TipTap (${formattedAmount})`, tiptapUrl)],
+            [navButton("🔄 Cek Status Pembayaran", "upgrade"), navButton("📊 My usage", "usage")],
+            [navButton("🏠 Main menu", "main", null, "primary")],
+          ]),
+        };
+      }
+
+      // Free user upgrading to Pro
+      const promoHeader = order.isEarlyBird
+        ? `🎉 <b>Promo Khusus:</b> ${formattedAmount} / bulan (diskon 50% dari harga normal)\n⚡ <i>Tersisa ${order.earlyBirdRemaining}/100 slot pengguna pertama!</i>`
+        : `💎 <b>Biaya Berlangganan:</b> ${formattedAmount} / bulan`;
+
+      const lines = [
+        "⬆️ <b>Upgrade ke Notinn Pro</b>",
+        "",
+        "Dapatkan akses penuh tanpa batas:",
+        "• Batas kuota catatan harian & bulanan lebih besar (1.000 catatan/bulan)",
+        "• Kecepatan pemrosesan AI prioritas & batas berkas lebih besar",
+        "• Pencarian semantik cerdas & ringkasan dokumen panjang",
+        "• <b>Akses Web Dashboard Penuh Selamanya</b>",
+        "  <i>(Akun Free hanya bisa akses Web Dashboard selama 14 hari pertama sejak pendaftaran)</i>",
+        "",
+        promoHeader,
+        "",
+        "🔑 <b>Kode Pembayaran Anda:</b>",
+        `<code>${order.orderCode}</code>`,
+        "<i>(Ketuk kode di atas untuk langsung menyalin ke clipboard)</i>",
+        "",
+        "📋 <b>Panduan Pembayaran via TipTap:</b>",
+        `1. Buka tautan TipTap: ${tiptapUrl}`,
+        `2. Masukkan nominal tepat <b>${formattedAmount}</b>`,
+        `3. <b>PENTING:</b> Masukkan kode pembayaran <code>${order.orderCode}</code> pada kolom <b>Pesan / Message</b> di TipTap`,
+        "4. Selesaikan pembayaran melalui QRIS atau E-Wallet (GoPay, OVO, Dana, ShopeePay)",
+        "5. Akun Pro Anda akan otomatis aktif dalam hitungan detik setelah pembayaran terverifikasi!",
+        "",
+        `🔄 <i>Status: Menunggu pembayaran (terakhir dicek: ${
+          new Intl.DateTimeFormat("id-ID", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            timeZone: "Asia/Jakarta",
+          }).format(new Date())
+        } WIB)</i>`,
+      ];
+
+      return {
+        text: lines.join("\n"),
+        keyboard: keyboard([
+          [urlButton(`💳 Bayar via TipTap (${formattedAmount})`, tiptapUrl)],
+          [navButton("🔄 Cek Status Pembayaran", "upgrade"), navButton("📊 My usage", "usage")],
+          [navButton("🏠 Main menu", "main", null, "primary")],
+        ]),
+      };
+    } catch {
+      // Fall through to plan catalogue display if payments error out
+    }
+  }
+
+  // Fallback to plan catalogue
+  if (deps.plans === undefined) {
+    return unavailableView("⬆️ Upgrade", "Plan information is not available yet.");
+  }
 
   let catalogue: readonly PlanCatalogueEntry[];
   try {
@@ -588,7 +693,7 @@ async function upgradeView(
       lines.push(`Price: $${pro.priceMonthlyUsd}/month`);
     }
     lines.push("");
-    lines.push("To upgrade, contact our operator.");
+    lines.push("To upgrade, visit https://tiptap.gg/notinn");
   } else if (pro !== undefined && pro.planKey === currentPlan) {
     lines.push("");
     lines.push("✅ You are already on the Pro plan!");
@@ -600,6 +705,7 @@ async function upgradeView(
   return {
     text: lines.join("\n"),
     keyboard: keyboard([
+      [urlButton("💳 Buka TipTap", "https://tiptap.gg/notinn")],
       [navButton("📊 My usage", "usage")],
       [navButton("🏠 Main menu", "main", null, "primary")],
     ]),
@@ -661,6 +767,7 @@ export async function sendNavigationCommand(
     : await viewFor(action, null, userId, deps);
   await deps.telegram.sendMessage(command.telegramChatId, view.text, {
     inlineKeyboard: view.keyboard,
+    parseMode: "HTML",
   });
 }
 
@@ -707,6 +814,7 @@ export async function handleNavigationCallback(
               view.text,
               {
                 inlineKeyboard: view.keyboard,
+                parseMode: "HTML",
               },
             );
             return;
@@ -721,5 +829,6 @@ export async function handleNavigationCallback(
   }
   await deps.telegram.editMessageText(callback.telegramChatId, callback.messageId, view.text, {
     inlineKeyboard: view.keyboard,
+    parseMode: "HTML",
   });
 }

@@ -56,3 +56,27 @@ export interface AdminKeyTestResult {
   latency_ms: number;
   error_message: string | null;
 }
+
+export interface AdminPaymentOrder {
+  id: string;
+  user_id: string;
+  telegram_user_id: number | null;
+  display_name: string | null;
+  order_code: string;
+  target_plan: string;
+  amount_idr: number;
+  is_early_bird: boolean;
+  status: "pending" | "completed" | "invalid" | "expired" | "cancelled";
+  tiptap_payment_id: string | null;
+  tiptap_payload: Record<string, unknown> | null;
+  expires_at: string;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface AdminTransactionStats {
+  total_revenue_idr: number;
+  completed_count: number;
+  problem_count: number;
+  active_pro_subscribers: number;
+}

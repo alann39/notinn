@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import {
   Ticket,
   Plus,
@@ -42,6 +42,7 @@ import {
   AlertDialogFooter,
   AlertDialogClose,
 } from "@/components/ui/alert-dialog";
+import { DataTablePagination } from "@/components/admin/data-table-pagination";
 import { toastManager } from "@/components/ui/toast";
 import { useAdmin, generateInviteCode } from "@/hooks/use-admin";
 import type { AdminInvite } from "@/types/admin";
@@ -62,6 +63,14 @@ export function AdminInvitesPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [newlyCreatedCode, setNewlyCreatedCode] = useState<string | null>(null);
+
+  const PAGE_SIZE = 10;
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(invites.length / PAGE_SIZE));
+  const paginatedInvites = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return invites.slice(start, start + PAGE_SIZE);
+  }, [invites, currentPage]);
 
   const fetchInvites = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -329,7 +338,8 @@ export function AdminInvitesPage() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -342,7 +352,7 @@ export function AdminInvitesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {invites.map((inv) => (
+                {paginatedInvites.map((inv) => (
                   <TableRow key={inv.id} className="hover:bg-muted/40 transition-colors">
                     <TableCell className="font-mono text-xs">
                       <span title={inv.code_sha256}>
@@ -419,8 +429,19 @@ export function AdminInvitesPage() {
               </TableBody>
             </Table>
           </div>
-        )}
-      </Card>
+
+          <DataTablePagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={invites.length}
+            pageSize={PAGE_SIZE}
+            onPageChange={setCurrentPage}
+            itemName="invite"
+            loading={loading}
+          />
+        </>
+      )}
+    </Card>
     </div>
   );
 }

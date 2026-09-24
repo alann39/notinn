@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import {
   Users,
   Search,
@@ -32,6 +32,7 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
+import { DataTablePagination } from "@/components/admin/data-table-pagination";
 import { toastManager } from "@/components/ui/toast";
 import { useAdmin } from "@/hooks/use-admin";
 import type { AdminUser } from "@/types/admin";
@@ -55,6 +56,20 @@ export function AdminUsersPage() {
   const [newPlan, setNewPlan] = useState<string>("free");
   const [newStatus, setNewStatus] = useState<string>("active");
   const [isUpdating, setIsUpdating] = useState(false);
+
+  const PAGE_SIZE = 10;
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Reset page when search term changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
+
+  const totalPages = Math.max(1, Math.ceil(users.length / PAGE_SIZE));
+  const paginatedUsers = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return users.slice(start, start + PAGE_SIZE);
+  }, [users, currentPage]);
 
   const fetchUsers = useCallback(async (search = "", isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -224,101 +239,113 @@ export function AdminUsersPage() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Telegram ID</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Plan</TableHead>
-                  <TableHead className="text-center">Notes</TableHead>
-                  <TableHead className="text-center">In-Flight / Failed</TableHead>
-                  <TableHead>Joined</TableHead>
-                  <TableHead className="text-right">Manage</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((u) => (
-                  <TableRow key={u.id} className="hover:bg-muted/40 transition-colors">
-                    <TableCell className="font-mono text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-foreground">{u.telegram_user_id}</span>
-                        {u.is_admin && (
-                          <Badge variant="secondary" className="gap-1 text-[9px] py-0 px-1.5 font-normal">
-                            <Shield className="size-2.5 text-blue-500" />
-                            <span>Admin</span>
-                          </Badge>
-                        )}
-                        <button
-                          onClick={() => handleCopy(u.id)}
-                          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                          title={`Copy Internal UUID: ${u.id}`}
-                        >
-                          {copiedId === u.id ? (
-                            <Check className="size-3 text-emerald-500" />
-                          ) : (
-                            <Copy className="size-3" />
-                          )}
-                        </button>
-                      </div>
-                    </TableCell>
-
-                    <TableCell>{getStatusBadge(u.status, u.alpha_access_status)}</TableCell>
-
-                    <TableCell>{getPlanBadge(u.plan_key)}</TableCell>
-
-                    <TableCell className="text-center font-mono text-xs">
-                      {u.notes_count}
-                    </TableCell>
-
-                    <TableCell className="text-center font-mono text-xs">
-                      <span className={u.active_jobs > 0 ? "text-blue-500 font-semibold" : "text-muted-foreground"}>
-                        {u.active_jobs}
-                      </span>
-                      {" / "}
-                      <span className={u.failed_jobs > 0 ? "text-destructive font-semibold" : "text-muted-foreground"}>
-                        {u.failed_jobs}
-                      </span>
-                    </TableCell>
-
-                    <TableCell className="text-xs text-muted-foreground">
-                      {formatDate(u.created_at)}
-                    </TableCell>
-
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setActiveDialog({ type: "plan", user: u });
-                            setNewPlan(u.plan_key);
-                          }}
-                          className="gap-1 text-[11px] h-7 px-2 cursor-pointer"
-                        >
-                          <CreditCard className="size-3" />
-                          <span>Plan</span>
-                        </Button>
-
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setActiveDialog({ type: "status", user: u });
-                            setNewStatus(u.alpha_access_status || u.status || "active");
-                          }}
-                          className="gap-1 text-[11px] h-7 px-2 cursor-pointer"
-                        >
-                          <UserCheck className="size-3" />
-                          <span>Status</span>
-                        </Button>
-                      </div>
-                    </TableCell>
+          <>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Telegram ID</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Plan</TableHead>
+                    <TableHead className="text-center">Notes</TableHead>
+                    <TableHead className="text-center">In-Flight / Failed</TableHead>
+                    <TableHead>Joined</TableHead>
+                    <TableHead className="text-right">Manage</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {paginatedUsers.map((u) => (
+                    <TableRow key={u.id} className="hover:bg-muted/40 transition-colors">
+                      <TableCell className="font-mono text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-foreground">{u.telegram_user_id}</span>
+                          {u.is_admin && (
+                            <Badge variant="secondary" className="gap-1 text-[9px] py-0 px-1.5 font-normal">
+                              <Shield className="size-2.5 text-blue-500" />
+                              <span>Admin</span>
+                            </Badge>
+                          )}
+                          <button
+                            onClick={() => handleCopy(u.id)}
+                            className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                            title={`Copy Internal UUID: ${u.id}`}
+                          >
+                            {copiedId === u.id ? (
+                              <Check className="size-3 text-emerald-500" />
+                            ) : (
+                              <Copy className="size-3" />
+                            )}
+                          </button>
+                        </div>
+                      </TableCell>
+
+                      <TableCell>{getStatusBadge(u.status, u.alpha_access_status)}</TableCell>
+
+                      <TableCell>{getPlanBadge(u.plan_key)}</TableCell>
+
+                      <TableCell className="text-center font-mono text-xs">
+                        {u.notes_count}
+                      </TableCell>
+
+                      <TableCell className="text-center font-mono text-xs">
+                        <span className={u.active_jobs > 0 ? "text-blue-500 font-semibold" : "text-muted-foreground"}>
+                          {u.active_jobs}
+                        </span>
+                        {" / "}
+                        <span className={u.failed_jobs > 0 ? "text-destructive font-semibold" : "text-muted-foreground"}>
+                          {u.failed_jobs}
+                        </span>
+                      </TableCell>
+
+                      <TableCell className="text-xs text-muted-foreground">
+                        {formatDate(u.created_at)}
+                      </TableCell>
+
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setActiveDialog({ type: "plan", user: u });
+                              setNewPlan(u.plan_key);
+                            }}
+                            className="gap-1 text-[11px] h-7 px-2 cursor-pointer"
+                          >
+                            <CreditCard className="size-3" />
+                            <span>Plan</span>
+                          </Button>
+
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setActiveDialog({ type: "status", user: u });
+                              setNewStatus(u.alpha_access_status || u.status || "active");
+                            }}
+                            className="gap-1 text-[11px] h-7 px-2 cursor-pointer"
+                          >
+                            <UserCheck className="size-3" />
+                            <span>Status</span>
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            <DataTablePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={users.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setCurrentPage}
+              itemName="pengguna"
+              loading={loading}
+            />
+          </>
         )}
       </Card>
 

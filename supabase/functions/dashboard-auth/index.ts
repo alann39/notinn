@@ -29,6 +29,23 @@ Deno.serve(async (req) => {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
 
+  // Handle GET request from Telegram inline keyboard button: redirect browser to dashboard
+  if (req.method === "GET") {
+    const url = new URL(req.url);
+    const token = url.searchParams.get("token");
+    if (!token) {
+      return new Response("Missing token parameter", { status: 400, headers: CORS_HEADERS });
+    }
+    const dashboardUrl = (Deno.env.get("DASHBOARD_URL") || "http://localhost:5173").replace(
+      /\/+$/,
+      "",
+    );
+    return Response.redirect(
+      `${dashboardUrl}/auth/callback?token=${encodeURIComponent(token)}`,
+      302,
+    );
+  }
+
   if (req.method !== "POST") {
     return new Response(null, { status: 405, headers: CORS_HEADERS });
   }
