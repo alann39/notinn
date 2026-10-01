@@ -35,6 +35,7 @@ import {
   buildNoteKeyboard,
   buildProcessingKeyboard,
   renderNoteOutput,
+  renderTranscriptPages,
 } from "./note-rendering.ts";
 import { type NoteExportFormat, renderNoteExport } from "./note-export.ts";
 import { withConsumedQuota } from "./quota.service.ts";
@@ -73,7 +74,7 @@ export interface CallbackDependencies {
     & Partial<Pick<TemplatesRepository, "listAvailable">>;
   readonly preferences?: Pick<UserPreferencesRepository, "get" | "update">;
   readonly usage: Pick<UsageRepository, "recordGeneration">;
-  readonly quota: Pick<QuotaRepository, "reserve" | "consume" | "getSummary">;
+  readonly quota: Pick<QuotaRepository, "reserve" | "consume" | "release" | "getSummary">;
   readonly access?: Pick<ClosedAlphaRepository, "getAccess">;
   readonly lifecycle?: Pick<AccountLifecycleRepository, "get">;
   readonly plans?: Pick<PlanRepository, "getCatalogue">;
@@ -337,63 +338,64 @@ async function regenerate(
   );
 
   try {
-    const generation = await withConsumedQuota(
+    return await withConsumedQuota(
       deps.quota,
       {
         userId,
         metric: "regeneration",
         reservationKey: `callback:${callback.updateId}:regeneration`,
       },
-      () =>
-        deps.provider.generateText({
+      async () => {
+        const generation = await deps.provider.generateText({
           sourceText,
           template,
           templateKey: selectedTemplateKey,
           reason,
           outputLanguage: source.language,
-        }),
+        });
+        const rendered = renderNoteOutput(generation.note);
+
+        await deps.usage.recordGeneration({
+          userId,
+          jobId: null,
+          provider: generation.provider,
+          model: generation.model,
+          inputTokens: generation.inputTokens,
+          outputTokens: generation.outputTokens,
+          providerRequestId: generation.providerRequestId,
+        });
+
+        const output = await deps.notes.regenerateNoteOutput({
+          userId,
+          noteId,
+          templateKey: selectedTemplateKey,
+          schemaVersion: STRUCTURED_NOTE_VERSION,
+          contentJson: generation.note,
+          renderedText: rendered.html,
+          provider: generation.provider,
+          model: generation.model,
+          generationReason: reason,
+        });
+        if (output.outcome !== "created" || output.outputId === null) {
+          throw AppError.internal("generated edit could not be staged");
+        }
+
+        const completed = await deps.workflow.completeDraft(userId, draftId, output.outputId);
+        if (completed !== "ready") {
+          throw AppError.internal("generated edit could not become a ready draft");
+        }
+
+        await replaceDeliveryPages(
+          callback,
+          userId,
+          noteId,
+          rendered.pages,
+          { inline_keyboard: buildDraftComparisonKeyboard(draftId, "after") },
+          deps,
+        );
+        return true;
+      },
     );
-    const rendered = renderNoteOutput(generation.note);
-
-    await deps.usage.recordGeneration({
-      userId,
-      jobId: null,
-      provider: generation.provider,
-      model: generation.model,
-      inputTokens: generation.inputTokens,
-      outputTokens: generation.outputTokens,
-      providerRequestId: generation.providerRequestId,
-    });
-
-    const output = await deps.notes.regenerateNoteOutput({
-      userId,
-      noteId,
-      templateKey: selectedTemplateKey,
-      schemaVersion: STRUCTURED_NOTE_VERSION,
-      contentJson: generation.note,
-      renderedText: rendered.html,
-      provider: generation.provider,
-      model: generation.model,
-      generationReason: reason,
-    });
-    if (output.outcome !== "created" || output.outputId === null) {
-      throw AppError.internal("generated edit could not be staged");
-    }
-
-    const completed = await deps.workflow.completeDraft(userId, draftId, output.outputId);
-    if (completed !== "ready") {
-      throw AppError.internal("generated edit could not become a ready draft");
-    }
-
-    await replaceDeliveryPages(
-      callback,
-      userId,
-      noteId,
-      rendered.pages,
-      { inline_keyboard: buildDraftComparisonKeyboard(draftId, "after") },
-      deps,
-    );
-    return true;
   } catch (thrown) {
     await deps.workflow.failDraft(userId, draftId);
     try {
@@ -652,6 +654,7 @@ export async function handleCallback(
     "export_md",
     "export_txt",
     "export_pdf",
+    "transcript",
   ]);
   await deps.telegram.answerCallbackQuery(
     callback.callbackQueryId,
@@ -739,8 +742,37 @@ export async function handleCallback(
         await deps.telegram.editMessageReplyMarkup(
           callback.telegramChatId,
           callback.messageId,
-          { inline_keyboard: buildEditKeyboard(noteId, source.sourceText !== null) },
+          {
+            inline_keyboard: buildEditKeyboard(
+              noteId,
+              source.sourceText !== null,
+              (display.sourceType === "voice" || display.sourceType === "audio") &&
+                source.sourceText !== null &&
+                source.sourceText.trim().length > 0,
+            ),
+          },
         );
+        break;
+      }
+      case "transcript": {
+        const source = await deps.notes.findNoteForRegeneration(userId, noteId);
+        if (
+          source === null ||
+          source.sourceText === null ||
+          source.sourceText.trim().length === 0
+        ) {
+          await deps.telegram.sendMessage(
+            callback.telegramChatId,
+            "Transkrip tidak tersedia untuk catatan ini.",
+          );
+          break;
+        }
+        const pages = renderTranscriptPages(source.sourceText);
+        for (const page of pages) {
+          await deps.telegram.sendMessage(callback.telegramChatId, page, {
+            parseMode: "HTML",
+          });
+        }
         break;
       }
       case "edit_export": {

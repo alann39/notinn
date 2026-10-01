@@ -4,12 +4,13 @@ import { AppError } from "../errors/app-error.ts";
 export interface QuotaGuard {
   readonly reserve: QuotaRepository["reserve"];
   readonly consume: QuotaRepository["consume"];
+  readonly release: QuotaRepository["release"];
 }
 
 /**
- * Reserve one logical provider operation and reconcile it once the provider
- * call has started. Callers validate and extract input before entering here, so
- * pre-provider failures consume no allowance.
+ * Reserve one logical operation and reconcile it: consume on success, release on failure.
+ * Callers validate and extract input before entering here, so pre-provider
+ * failures consume no allowance.
  */
 export async function withConsumedQuota<T>(
   quota: QuotaGuard,
@@ -19,15 +20,22 @@ export async function withConsumedQuota<T>(
     readonly reservationKey: string;
     readonly jobId?: string | null;
   },
-  providerCall: () => Promise<T>,
+  operation: () => Promise<T>,
 ): Promise<T> {
   const reservation = await quota.reserve(input);
   if (reservation.outcome === "existing_reserved") {
     throw AppError.rateLimited("duplicate quota reservation is still in flight");
   }
   try {
-    return await providerCall();
-  } finally {
+    const result = await operation();
     await quota.consume(input.userId, reservation.reservationId, 1);
+    return result;
+  } catch (error) {
+    try {
+      await quota.release(input.userId, reservation.reservationId);
+    } catch {
+      // Do not mask original failure
+    }
+    throw error;
   }
 }

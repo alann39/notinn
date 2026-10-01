@@ -20,6 +20,10 @@ function harness(reserveError?: AppError, outcome: "reserved" | "existing_reserv
         events.push(`consume:${userId}:${reservationId}:${units}`);
         return Promise.resolve();
       },
+      release: (userId: string, reservationId: string) => {
+        events.push(`release:${userId}:${reservationId}`);
+        return Promise.resolve();
+      },
     },
   };
 }
@@ -47,7 +51,7 @@ Deno.test("a successful provider operation reserves before it starts and then co
   ]);
 });
 
-Deno.test("a provider failure still consumes the logical operation", async () => {
+Deno.test("a provider failure releases the quota reservation", async () => {
   const test = harness();
   await assertRejects(() =>
     withConsumedQuota(
@@ -67,7 +71,7 @@ Deno.test("a provider failure still consumes the logical operation", async () =>
   assertEquals(test.events, [
     "reserve",
     "provider",
-    `consume:${USER_ID}:${RESERVATION_ID}:1`,
+    `release:${USER_ID}:${RESERVATION_ID}`,
   ]);
 });
 

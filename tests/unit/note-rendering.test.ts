@@ -486,6 +486,14 @@ Deno.test("Options progressively reveals regeneration, format, and export action
     ["🎨 Change format", "📤 Export"],
     ["⬅️ Back"],
   ]);
+
+  const withTranscript = buildEditKeyboard(NOTE_ID, true, true);
+  assertEquals(withTranscript.map((row) => row.map((item) => item.text)), [
+    ["✂️ Shorter", "📝 More detail"],
+    ["🎨 Change format", "📤 Export"],
+    ["📜 Lihat Transkrip"],
+    ["⬅️ Back"],
+  ]);
 });
 
 Deno.test("the export submenu offers all file types and a way back", () => {

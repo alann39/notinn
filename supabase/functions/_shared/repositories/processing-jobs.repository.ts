@@ -34,6 +34,7 @@ const ClaimedJobRowSchema = z.object({
   status_message_id: IdSchema.nullable(),
   input_type: z.enum(INPUT_TYPES).nullable(),
   telegram_file_id: z.string().nullable(),
+  storage_path: z.string().nullable(),
   source_text: z.string().nullable(),
   mime_type: z.string().nullable(),
   size_bytes: IdSchema.nullable(),
@@ -64,6 +65,7 @@ export interface ClaimedProcessingJob {
   readonly inputType: InputType | null;
   /** Secret-adjacent Telegram capability. Never log this value. */
   readonly telegramFileId: string | null;
+  readonly storagePath: string | null;
   /** User content. Never log this value. */
   readonly sourceText: string | null;
   readonly mimeType: string | null;
@@ -193,6 +195,7 @@ export class ProcessingJobsRepository {
         statusMessageId: row.status_message_id,
         inputType: row.input_type,
         telegramFileId: row.telegram_file_id,
+        storagePath: row.storage_path,
         sourceText: row.source_text,
         mimeType: row.mime_type,
         sizeBytes: row.size_bytes,

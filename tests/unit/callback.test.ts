@@ -166,7 +166,7 @@ Deno.test("an unsupported version is refused rather than reinterpreted", () => {
 Deno.test("an action outside the vocabulary is refused", () => {
   // Including the Phase 1 deferred actions: decode must refuse what it cannot
   // serve rather than accept a click and do nothing.
-  const notPhaseOne = ["retry", "report", "transcript", "format", "Save", ""];
+  const notPhaseOne = ["retry", "report", "unknown_action", "format", "Save", ""];
 
   for (const action of notPhaseOne) {
     const error = assertThrows(

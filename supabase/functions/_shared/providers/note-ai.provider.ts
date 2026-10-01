@@ -17,6 +17,7 @@ export interface AudioGenerationRequest {
   readonly template: GenerationTemplate;
   readonly templateKey: TemplateKey;
   readonly outputLanguage: string | null;
+  readonly timeoutMs?: number;
 }
 
 export interface ImageGenerationRequest {
@@ -66,6 +67,7 @@ export interface PdfGenerationResult extends NoteGenerationResult {
 export interface NoteAIProvider {
   generateText(request: TextGenerationRequest): Promise<NoteGenerationResult>;
   generateAudio(request: AudioGenerationRequest): Promise<AudioGenerationResult>;
+  generateLargeAudio?(request: AudioGenerationRequest): Promise<AudioGenerationResult>;
   generateImage(request: ImageGenerationRequest): Promise<ImageGenerationResult>;
   generatePdf(request: PdfGenerationRequest): Promise<PdfGenerationResult>;
 }

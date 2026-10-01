@@ -513,11 +513,16 @@ export function buildNoteKeyboard(options: NoteKeyboardOptions): InlineKeyboard 
 }
 
 /** The first level revealed after Options. Minimal-mode notes keep AI edits closed. */
-export function buildEditKeyboard(noteId: string, canRegenerate = true): InlineKeyboard {
+export function buildEditKeyboard(
+  noteId: string,
+  canRegenerate = true,
+  hasTranscript = false,
+): InlineKeyboard {
   if (!canRegenerate) {
     return [
       [disabledButton("🔒 AI edits unavailable — Minimal privacy")],
       [button("📤 Export", { kind: "edit_export" }, noteId)],
+      ...(hasTranscript ? [[button("📜 Lihat Transkrip", { kind: "transcript" }, noteId)]] : []),
       [button("⬅️ Back", { kind: "edit_back" }, noteId, 0, "primary")],
     ];
   }
@@ -530,6 +535,7 @@ export function buildEditKeyboard(noteId: string, canRegenerate = true): InlineK
       button("🎨 Change format", { kind: "edit_format" }, noteId),
       button("📤 Export", { kind: "edit_export" }, noteId),
     ],
+    ...(hasTranscript ? [[button("📜 Lihat Transkrip", { kind: "transcript" }, noteId)]] : []),
     [button("⬅️ Back", { kind: "edit_back" }, noteId, 0, "primary")],
   ];
 }

@@ -1,6 +1,6 @@
 import { loadWorkerConfig, type WorkerConfig } from "../_shared/config/env.ts";
 import { createServiceClient } from "../_shared/db/client.ts";
-import { toAppError } from "../_shared/errors/app-error.ts";
+import { AppError, toAppError } from "../_shared/errors/app-error.ts";
 import { emptyResponse } from "../_shared/errors/http.ts";
 import { createLogger } from "../_shared/observability/logger.ts";
 import { createNoteProvider } from "../_shared/providers/note-provider.factory.ts";
@@ -8,6 +8,7 @@ import { NotesRepository } from "../_shared/repositories/notes.repository.ts";
 import { NoteWorkflowRepository } from "../_shared/repositories/note-workflow.repository.ts";
 import { ProcessingJobsRepository } from "../_shared/repositories/processing-jobs.repository.ts";
 import { QuotaRepository } from "../_shared/repositories/quota.repository.ts";
+import { PlanRepository } from "../_shared/repositories/plan.repository.ts";
 import { TemplatesRepository } from "../_shared/repositories/templates.repository.ts";
 import { UsageRepository } from "../_shared/repositories/usage.repository.ts";
 import { resolveProviderConfig } from "../_shared/repositories/provider-config.repository.ts";
@@ -56,6 +57,24 @@ Deno.serve(async (request: Request): Promise<Response> => {
       templates: new TemplatesRepository(client),
       usage: new UsageRepository(client),
       quota: new QuotaRepository(client),
+      plans: new PlanRepository(client),
+      storage: {
+        download: async (bucket: string, path: string): Promise<Uint8Array> => {
+          const { data, error } = await client.storage.from(bucket).download(path);
+          if (error !== null || !data) {
+            throw AppError.fileUnavailable("storage file download failed");
+          }
+          return new Uint8Array(await data.arrayBuffer());
+        },
+        remove: async (bucket: string, paths: readonly string[]): Promise<void> => {
+          const { error } = await client.storage.from(bucket).remove([...paths]);
+          if (error !== null) {
+            logger.warn("worker.storage_remove_failed", {
+              error_code: error.name,
+            });
+          }
+        },
+      },
       provider: createNoteProvider(ai),
       telegram: createTelegramGateway(config.botToken),
       logger,

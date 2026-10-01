@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LARGE_AUDIO_TIMEOUT_MS } from "../config/constants.ts";
 import type { AiConfig } from "../config/env.ts";
 import { AppError } from "../errors/app-error.ts";
 import { parseStructuredNote } from "../schemas/structured-note.ts";
@@ -206,6 +207,7 @@ export class GeminiNoteProvider implements NoteAIProvider, LibraryAnswerProvider
         { type: "audio", mime_type: request.mimeType, data: bytesToBase64(request.audio) },
       ],
       responseJsonSchema,
+      { timeoutMs: request.timeoutMs },
     );
 
     const envelope = AudioEnvelopeSchema.safeParse(candidate.value);
@@ -227,6 +229,164 @@ export class GeminiNoteProvider implements NoteAIProvider, LibraryAnswerProvider
       inputTokens: candidate.inputTokens,
       outputTokens: candidate.outputTokens,
     };
+  }
+
+  async generateLargeAudio(request: AudioGenerationRequest): Promise<AudioGenerationResult> {
+    const responseJsonSchema = {
+      type: "object",
+      properties: {
+        transcript: { type: "string" },
+        note: request.template.responseJsonSchema,
+      },
+      required: ["transcript", "note"],
+      additionalProperties: false,
+    };
+
+    const uploaded = await this.#uploadFile(request.audio, request.mimeType);
+    try {
+      const candidate = await this.#generate(
+        audioSystemInstruction(request),
+        [
+          {
+            type: "text",
+            text: "Transcribe this audio and turn it into the requested structured note.",
+          },
+          {
+            type: "audio",
+            uri: uploaded.uri,
+            mime_type: request.mimeType,
+          },
+        ],
+        responseJsonSchema,
+        { timeoutMs: request.timeoutMs ?? LARGE_AUDIO_TIMEOUT_MS },
+      );
+
+      const envelope = AudioEnvelopeSchema.safeParse(candidate.value);
+      if (!envelope.success) {
+        throw AppError.outputValidationFailed("gemini large audio result had an invalid envelope");
+      }
+
+      const note = parseStructuredNote(envelope.data.note, AppError.outputValidationFailed);
+      if (note.template_key !== request.templateKey) {
+        throw AppError.outputValidationFailed("template_key did not match the requested template");
+      }
+
+      return {
+        transcript: envelope.data.transcript,
+        note,
+        provider: this.#config.provider,
+        model: candidate.model,
+        providerRequestId: candidate.providerRequestId,
+        inputTokens: candidate.inputTokens,
+        outputTokens: candidate.outputTokens,
+      };
+    } finally {
+      await this.#deleteFile(uploaded.name);
+    }
+  }
+
+  async #uploadFile(
+    bytes: Uint8Array,
+    mimeType: string,
+    timeoutMs = 120_000,
+  ): Promise<{ name: string; uri: string }> {
+    const apiKey = this.#config.apiKey.reveal();
+    const endpoint = `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${
+      encodeURIComponent(apiKey)
+    }`;
+    let initResponse: Response;
+    try {
+      initResponse = await this.#fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "x-goog-upload-protocol": "resumable",
+          "x-goog-upload-command": "start",
+          "x-goog-upload-header-content-length": String(bytes.byteLength),
+          "x-goog-upload-header-content-type": mimeType,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ file: { display_name: "audio_note" } }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (thrown) {
+      if (thrown instanceof DOMException && thrown.name === "TimeoutError") {
+        throw AppError.providerTimeout("gemini files upload start timed out", thrown);
+      }
+      throw AppError.providerError("gemini files upload start unreachable", thrown);
+    }
+
+    if (!initResponse.ok) {
+      throw AppError.providerError(`gemini files upload start returned ${initResponse.status}`);
+    }
+
+    const uploadUrl = initResponse.headers.get("x-goog-upload-url") ??
+      initResponse.headers.get("location");
+    if (uploadUrl === null || uploadUrl === "") {
+      throw AppError.providerError("gemini files upload did not return upload url");
+    }
+
+    let uploadResponse: Response;
+    try {
+      uploadResponse = await this.#fetch(uploadUrl, {
+        method: "POST",
+        headers: {
+          "x-goog-upload-offset": "0",
+          "x-goog-upload-command": "upload, finalize",
+          "content-length": String(bytes.byteLength),
+        },
+        body: bytes as BodyInit,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (thrown) {
+      if (thrown instanceof DOMException && thrown.name === "TimeoutError") {
+        throw AppError.providerTimeout("gemini files upload finalize timed out", thrown);
+      }
+      throw AppError.providerError("gemini files upload finalize unreachable", thrown);
+    }
+
+    if (!uploadResponse.ok) {
+      throw AppError.providerError(
+        `gemini files upload finalize returned ${uploadResponse.status}`,
+      );
+    }
+
+    let payload: unknown;
+    try {
+      payload = await uploadResponse.json();
+    } catch (thrown) {
+      throw AppError.generationFailed("gemini files upload response was not JSON", thrown);
+    }
+
+    const FileUploadResponseSchema = z.object({
+      file: z.object({
+        name: z.string().min(1),
+        uri: z.string().min(1),
+      }),
+    });
+    const parsed = FileUploadResponseSchema.safeParse(payload);
+    if (!parsed.success) {
+      throw AppError.generationFailed("gemini files upload response had invalid schema");
+    }
+
+    return {
+      name: parsed.data.file.name,
+      uri: parsed.data.file.uri,
+    };
+  }
+
+  async #deleteFile(name: string): Promise<void> {
+    try {
+      const apiKey = this.#config.apiKey.reveal();
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/${name}?key=${
+        encodeURIComponent(apiKey)
+      }`;
+      await this.#fetch(endpoint, {
+        method: "DELETE",
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch {
+      // Best-effort cleanup only
+    }
   }
 
   async generateImage(request: ImageGenerationRequest): Promise<ImageGenerationResult> {
@@ -387,6 +547,7 @@ export class GeminiNoteProvider implements NoteAIProvider, LibraryAnswerProvider
     instruction: string,
     parts: readonly Record<string, unknown>[],
     responseJsonSchema: unknown,
+    options: { timeoutMs?: number } = {},
   ): Promise<GeminiCandidate> {
     try {
       return await this.#generateWithModel(
@@ -394,6 +555,7 @@ export class GeminiNoteProvider implements NoteAIProvider, LibraryAnswerProvider
         instruction,
         parts,
         responseJsonSchema,
+        options,
       );
     } catch (thrown) {
       const fallbackModel = this.#config.fallbackModel;
@@ -404,17 +566,19 @@ export class GeminiNoteProvider implements NoteAIProvider, LibraryAnswerProvider
         instruction,
         parts,
         responseJsonSchema,
+        options,
       );
     }
   }
-
   async #generateWithModel(
     model: string,
     instruction: string,
     parts: readonly Record<string, unknown>[],
     responseJsonSchema: unknown,
+    options: { timeoutMs?: number } = {},
   ): Promise<GeminiCandidate> {
     let response: Response;
+    const timeoutMs = options.timeoutMs ?? this.#timeoutMs;
 
     try {
       response = await this.#fetch(GEMINI_INTERACTIONS_ENDPOINT, {
@@ -436,7 +600,7 @@ export class GeminiNoteProvider implements NoteAIProvider, LibraryAnswerProvider
           // interaction. This is explicit rather than relying on a default.
           store: false,
         }),
-        signal: AbortSignal.timeout(this.#timeoutMs),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (thrown) {
       if (thrown instanceof DOMException && thrown.name === "TimeoutError") {

@@ -1,21 +1,31 @@
 import {
+  AUDIO_DURATION_BY_PLAN,
   type JobState,
-  MAX_AUDIO_DURATION_SECONDS,
+  LARGE_AUDIO_SEGMENT_BYTES,
+  LARGE_AUDIO_SEGMENT_OVERLAP_BYTES,
+  LARGE_AUDIO_TIMEOUT_MS,
+  MAX_AUDIO_DURATION_SECONDS_FREE,
   MAX_DOCX_BYTES,
   MAX_INLINE_AUDIO_BYTES,
   MAX_INLINE_MEDIA_BYTES,
+  MAX_LARGE_AUDIO_BYTES,
+  MAX_LARGE_AUDIO_SEGMENTS,
   MAX_TEXT_DOCUMENT_BYTES,
+  MAX_WEB_AUDIO_BYTES,
+  SEGMENT_AUDIO_TIMEOUT_MS,
   TEMPLATE_KEY_PATTERN,
   type TemplateKey,
 } from "../config/constants.ts";
 import { AppError, toAppError } from "../errors/app-error.ts";
 import type { Logger } from "../observability/logger.ts";
 import type {
+  AudioGenerationRequest,
   AudioGenerationResult,
   ImageGenerationResult,
   NoteAIProvider,
   NoteGenerationResult,
 } from "../providers/note-ai.provider.ts";
+import { isTransientProviderFailure } from "../providers/provider-fallback.ts";
 import type { NotesRepository, PersistNoteInput } from "../repositories/notes.repository.ts";
 import type { NoteWorkflowRepository } from "../repositories/note-workflow.repository.ts";
 import type {
@@ -23,13 +33,17 @@ import type {
   ProcessingJobsRepository,
   ProcessingQueueMessage,
 } from "../repositories/processing-jobs.repository.ts";
+import type { PlanRepository } from "../repositories/plan.repository.ts";
 import type { QuotaRepository } from "../repositories/quota.repository.ts";
-import type { TemplatesRepository } from "../repositories/templates.repository.ts";
+import type {
+  GenerationTemplate,
+  TemplatesRepository,
+} from "../repositories/templates.repository.ts";
 import type { UsageRepository } from "../repositories/usage.repository.ts";
 import { parseStructuredNote, STRUCTURED_NOTE_VERSION } from "../schemas/structured-note.ts";
 import { sha256Hex } from "../security/hashing.ts";
 import type { TelegramGateway } from "../telegram/client.ts";
-import { buildNoteKeyboard, renderNoteOutput, renderTranscriptPages } from "./note-rendering.ts";
+import { buildNoteKeyboard, renderNoteOutput } from "./note-rendering.ts";
 import {
   extractDocxText,
   extractPlainText,
@@ -82,12 +96,17 @@ export interface JobWorkerDependencies {
   readonly workflow: Pick<NoteWorkflowRepository, "registerDelivery">;
   readonly templates: Pick<TemplatesRepository, "findForGeneration" | "listLabels">;
   readonly usage: Pick<UsageRepository, "recordGeneration">;
-  readonly quota: Pick<QuotaRepository, "reserve" | "consume">;
+  readonly quota: Pick<QuotaRepository, "reserve" | "consume" | "release">;
   readonly provider: NoteAIProvider;
   readonly telegram: Pick<
     TelegramGateway,
     "downloadFile" | "editMessageText" | "sendMessage" | "deleteMessages"
   >;
+  readonly plans?: Pick<PlanRepository, "getAudioLimit">;
+  readonly storage?: {
+    download(bucket: string, path: string): Promise<Uint8Array>;
+    remove(bucket: string, paths: readonly string[]): Promise<void>;
+  };
   readonly logger: Logger;
 }
 
@@ -122,15 +141,16 @@ function templateKeyOf(value: string | null): TemplateKey {
 
 function requiredClaim(job: ClaimedProcessingJob): asserts job is ClaimedProcessingJob & {
   readonly userId: string;
-  readonly chatId: number;
+  readonly chatId: number | null;
   readonly inputType: NonNullable<ClaimedProcessingJob["inputType"]>;
   readonly state: "ACQUIRING";
   readonly outputLanguage: NonNullable<ClaimedProcessingJob["outputLanguage"]>;
   readonly privacyMode: NonNullable<ClaimedProcessingJob["privacyMode"]>;
 } {
   if (
-    job.userId === null || job.chatId === null || job.inputType === null ||
-    job.state !== "ACQUIRING" || job.outputLanguage === null || job.privacyMode === null
+    job.userId === null || job.inputType === null ||
+    job.state !== "ACQUIRING" || job.outputLanguage === null || job.privacyMode === null ||
+    (job.storagePath === null && job.chatId === null && job.sourceText === null)
   ) {
     throw AppError.internal("claimed job omitted required worker metadata");
   }
@@ -150,10 +170,10 @@ async function advance(
 
 async function editStatusBestEffort(
   deps: JobWorkerDependencies,
-  job: ClaimedProcessingJob & { readonly chatId: number },
+  job: ClaimedProcessingJob & { readonly chatId: number | null },
   text: string,
 ): Promise<void> {
-  if (job.statusMessageId === null) return;
+  if (job.chatId === null || job.statusMessageId === null) return;
   try {
     await deps.telegram.editMessageText(job.chatId, job.statusMessageId, text);
   } catch (thrown) {
@@ -169,14 +189,11 @@ async function editStatusBestEffort(
 async function deliverPages(
   deps: JobWorkerDependencies,
   job: ClaimedProcessingJob & { readonly chatId: number },
-  transcript: string | null,
+  _transcript: string | null,
   notePages: readonly string[],
   keyboard: Parameters<TelegramGateway["sendMessage"]>[2],
 ): Promise<readonly number[]> {
-  const pages = [
-    ...(transcript === null ? [] : renderTranscriptPages(transcript)),
-    ...notePages,
-  ];
+  const pages = notePages;
 
   const messageIds: number[] = [];
   const sendFresh = async (fromIndex: number): Promise<void> => {
@@ -235,11 +252,16 @@ async function deliverPersistedNote(
   deps: JobWorkerDependencies,
   job: ClaimedProcessingJob & {
     readonly userId: string;
-    readonly chatId: number;
+    readonly chatId: number | null;
     readonly inputType: NonNullable<ClaimedProcessingJob["inputType"]>;
   },
   noteId: string,
 ): Promise<void> {
+  if (job.chatId === null) {
+    // Web-originated job: note is persisted and immediately visible in dashboard.
+    return;
+  }
+  const chatId = job.chatId;
   const [display, source] = await Promise.all([
     deps.notes.findNoteForDisplay(job.userId, noteId),
     deps.notes.findNoteForRegeneration(job.userId, noteId),
@@ -261,11 +283,17 @@ async function deliverPersistedNote(
     : null;
 
   try {
-    const messageIds = await deliverPages(deps, job, transcript, rendered.pages, keyboard);
+    const messageIds = await deliverPages(
+      deps,
+      { ...job, chatId },
+      transcript,
+      rendered.pages,
+      keyboard,
+    );
     const registered = await deps.workflow.registerDelivery(
       job.userId,
       noteId,
-      job.chatId,
+      chatId,
       messageIds,
     );
     if (registered.outcome !== "created") {
@@ -280,7 +308,7 @@ async function generateNewNote(
   deps: JobWorkerDependencies,
   job: ClaimedProcessingJob & {
     readonly userId: string;
-    readonly chatId: number;
+    readonly chatId: number | null;
     readonly inputType: NonNullable<ClaimedProcessingJob["inputType"]>;
     readonly outputLanguage: NonNullable<ClaimedProcessingJob["outputLanguage"]>;
   },
@@ -324,16 +352,27 @@ async function generateNewNote(
     return { generation, sourceText, operation: "generation", documentPages: null };
   }
 
-  if (job.telegramFileId === null) {
-    throw AppError.fileUnavailable("file job had no Telegram file id");
-  }
-
   if (job.inputType === "image") {
+    if (job.storagePath === null && job.telegramFileId === null) {
+      throw AppError.fileUnavailable("file job had no file source");
+    }
     if (job.sizeBytes !== null && job.sizeBytes > MAX_INLINE_MEDIA_BYTES) {
       throw AppError.inputTooLarge("image metadata exceeded the inline provider limit");
     }
     await editStatusBestEffort(deps, job, "Image received — extracting and organizing it.");
-    const image = await deps.telegram.downloadFile(job.telegramFileId, MAX_INLINE_MEDIA_BYTES);
+    let image: Uint8Array;
+    if (job.storagePath !== null) {
+      if (!deps.storage) {
+        throw AppError.internal("storage dependency missing for web image download");
+      }
+      image = await deps.storage.download("audio_uploads", job.storagePath);
+      if (image.byteLength > MAX_INLINE_MEDIA_BYTES) {
+        image.fill(0);
+        throw AppError.inputTooLarge("image download exceeded the inline provider limit");
+      }
+    } else {
+      image = await deps.telegram.downloadFile(job.telegramFileId!, MAX_INLINE_MEDIA_BYTES);
+    }
     try {
       const mimeType = validatedImageMime(image);
       await advance(deps, job, "ACQUIRING", "EXTRACTING");
@@ -357,15 +396,42 @@ async function generateNewNote(
       };
     } finally {
       image.fill(0);
+      if (job.storagePath !== null && deps.storage) {
+        try {
+          await deps.storage.remove("audio_uploads", [job.storagePath]);
+        } catch (cleanupThrown) {
+          const cleanupErr = toAppError(cleanupThrown);
+          deps.logger[cleanupErr.logLevel]("worker.storage_cleanup_failed", {
+            job_id: job.jobId,
+            error_code: cleanupErr.code,
+            error_detail: cleanupErr.internalDetail,
+          });
+        }
+      }
     }
   }
 
   if (job.inputType === "pdf") {
+    if (job.storagePath === null && job.telegramFileId === null) {
+      throw AppError.fileUnavailable("file job had no file source");
+    }
     if (job.sizeBytes !== null && job.sizeBytes > MAX_INLINE_MEDIA_BYTES) {
       throw AppError.inputTooLarge("PDF metadata exceeded the inline provider limit");
     }
     await editStatusBestEffort(deps, job, "PDF received — reading and organizing it.");
-    const pdf = await deps.telegram.downloadFile(job.telegramFileId, MAX_INLINE_MEDIA_BYTES);
+    let pdf: Uint8Array;
+    if (job.storagePath !== null) {
+      if (!deps.storage) {
+        throw AppError.internal("storage dependency missing for web pdf download");
+      }
+      pdf = await deps.storage.download("audio_uploads", job.storagePath);
+      if (pdf.byteLength > MAX_INLINE_MEDIA_BYTES) {
+        pdf.fill(0);
+        throw AppError.inputTooLarge("PDF download exceeded the inline provider limit");
+      }
+    } else {
+      pdf = await deps.telegram.downloadFile(job.telegramFileId!, MAX_INLINE_MEDIA_BYTES);
+    }
     try {
       validatePdf(pdf);
       await advance(deps, job, "ACQUIRING", "EXTRACTING");
@@ -388,16 +454,32 @@ async function generateNewNote(
       };
     } finally {
       pdf.fill(0);
+      if (job.storagePath !== null && deps.storage) {
+        try {
+          await deps.storage.remove("audio_uploads", [job.storagePath]);
+        } catch (cleanupThrown) {
+          const cleanupErr = toAppError(cleanupThrown);
+          deps.logger[cleanupErr.logLevel]("worker.storage_cleanup_failed", {
+            job_id: job.jobId,
+            error_code: cleanupErr.code,
+            error_detail: cleanupErr.internalDetail,
+          });
+        }
+      }
     }
   }
 
   if (job.inputType === "docx" || job.inputType === "txt" || job.inputType === "md") {
+    if (job.telegramFileId === null) {
+      throw AppError.fileUnavailable("file job had no Telegram file id");
+    }
+    const telegramFileId = job.telegramFileId;
     const maxBytes = job.inputType === "docx" ? MAX_DOCX_BYTES : MAX_TEXT_DOCUMENT_BYTES;
     if (job.sizeBytes !== null && job.sizeBytes > maxBytes) {
       throw AppError.inputTooLarge("document metadata exceeded its extraction limit");
     }
     await editStatusBestEffort(deps, job, "Document received — extracting and organizing it.");
-    const document = await deps.telegram.downloadFile(job.telegramFileId, maxBytes);
+    const document = await deps.telegram.downloadFile(telegramFileId, maxBytes);
     try {
       await advance(deps, job, "ACQUIRING", "EXTRACTING");
       state.value = "EXTRACTING";
@@ -424,11 +506,30 @@ async function generateNewNote(
   if (job.inputType !== "voice" && job.inputType !== "audio") {
     throw AppError.unsupportedInput("worker received an unknown input modality");
   }
-  if (job.sizeBytes !== null && job.sizeBytes > MAX_INLINE_AUDIO_BYTES) {
-    throw AppError.inputTooLarge("audio metadata exceeded the inline provider limit");
+
+  const audioLimit = deps.plans === undefined
+    ? { planKey: "free", maxAudioSeconds: MAX_AUDIO_DURATION_SECONDS_FREE }
+    : await deps.plans.getAudioLimit(job.userId);
+  const planKey = audioLimit.planKey;
+  const isProOrAlpha = planKey === "pro" || planKey === "alpha";
+  const maxAudioSeconds = isProOrAlpha
+    ? audioLimit.maxAudioSeconds
+    : (AUDIO_DURATION_BY_PLAN[planKey] ?? MAX_AUDIO_DURATION_SECONDS_FREE);
+  const isWebJob = job.storagePath !== null;
+  const maxAudioBytes = isProOrAlpha
+    ? (isWebJob ? MAX_WEB_AUDIO_BYTES : MAX_LARGE_AUDIO_BYTES)
+    : MAX_INLINE_AUDIO_BYTES;
+  if (job.sizeBytes !== null && job.sizeBytes > maxAudioBytes) {
+    const publicMessage = isProOrAlpha
+      ? "That is over the 2-hour limit — split it into parts under 2 hours each."
+      : "Voice notes over 30 minutes need Pro — send a shorter clip or split it.";
+    throw AppError.inputTooLarge("audio metadata exceeded size limit for plan", { publicMessage });
   }
-  if (job.durationSeconds !== null && job.durationSeconds > MAX_AUDIO_DURATION_SECONDS) {
-    throw AppError.inputTooLarge("audio duration exceeded the product limit");
+  if (job.durationSeconds !== null && job.durationSeconds > maxAudioSeconds) {
+    const publicMessage = isProOrAlpha
+      ? "That is over the 2-hour limit — split it into parts under 2 hours each."
+      : "Voice notes over 30 minutes need Pro — send a shorter clip or split it.";
+    throw AppError.inputTooLarge("audio duration exceeded plan limit", { publicMessage });
   }
 
   const reportedMimeType = job.mimeType?.split(";", 1)[0]?.trim().toLowerCase() ||
@@ -438,21 +539,94 @@ async function generateNewNote(
     throw AppError.unsupportedInput("audio MIME type is not accepted by the Gemini adapter");
   }
 
+  if (job.storagePath === null && job.telegramFileId === null) {
+    throw AppError.fileUnavailable("audio job had no file source");
+  }
+
   await editStatusBestEffort(deps, job, "Audio received — transcribing and organizing it.");
-  const audio = await deps.telegram.downloadFile(job.telegramFileId, MAX_INLINE_AUDIO_BYTES);
+  let audio: Uint8Array;
+  if (job.storagePath !== null) {
+    if (!deps.storage) {
+      throw AppError.internal("storage dependency missing for web audio download");
+    }
+    audio = await deps.storage.download("audio_uploads", job.storagePath);
+    if (audio.byteLength > maxAudioBytes) {
+      audio.fill(0);
+      const publicMessage = isProOrAlpha
+        ? "That is over the 2-hour limit — split it into parts under 2 hours each."
+        : "Voice notes over 30 minutes need Pro — send a shorter clip or split it.";
+      throw AppError.inputTooLarge("audio download exceeded size limit for plan", {
+        publicMessage,
+      });
+    }
+  } else {
+    audio = await deps.telegram.downloadFile(job.telegramFileId!, maxAudioBytes);
+  }
   try {
     await advance(deps, job, "ACQUIRING", "EXTRACTING");
     state.value = "EXTRACTING";
     await advance(deps, job, "EXTRACTING", "GENERATING");
     state.value = "GENERATING";
-    const generation: AudioGenerationResult = await generate(() =>
-      deps.provider.generateAudio({
-        audio,
-        mimeType,
-        template,
-        templateKey,
-        outputLanguage: job.outputLanguage === "mirror" ? null : job.outputLanguage,
-      })
+    const generation: AudioGenerationResult = await generate(
+      async (): Promise<AudioGenerationResult> => {
+        if (audio.byteLength <= MAX_INLINE_AUDIO_BYTES) {
+          return await deps.provider.generateAudio({
+            audio,
+            mimeType,
+            template,
+            templateKey,
+            outputLanguage: job.outputLanguage === "mirror" ? null : job.outputLanguage,
+          });
+        }
+
+        deps.logger.info("worker.large_audio_routed", {
+          job_id: job.jobId,
+          user_id: job.userId,
+          size_bytes: audio.byteLength,
+          duration_seconds: job.durationSeconds,
+          plan_key: planKey,
+          attempt_count: job.attemptCount,
+        });
+
+        if (typeof deps.provider.generateLargeAudio === "function") {
+          try {
+            return await deps.provider.generateLargeAudio({
+              audio,
+              mimeType,
+              template,
+              templateKey,
+              outputLanguage: job.outputLanguage === "mirror" ? null : job.outputLanguage,
+              timeoutMs: LARGE_AUDIO_TIMEOUT_MS,
+            });
+          } catch (thrown) {
+            const err = toAppError(thrown);
+            const isLargeRouteFailure = err.code === "provider_timeout" ||
+              err.code === "provider_rate_limited" ||
+              err.code === "output_validation_failed" ||
+              (err.code === "provider_error" && /returned 5\d\d/.test(err.internalDetail ?? ""));
+            if (!isLargeRouteFailure) {
+              throw thrown;
+            }
+            deps.logger.warn("worker.large_audio_chunk_fallback_triggered", {
+              job_id: job.jobId,
+              user_id: job.userId,
+              error_code: err.code,
+              error_detail: err.internalDetail,
+              plan_key: planKey,
+              attempt_count: job.attemptCount,
+            });
+          }
+        }
+
+        return await processSegmentedAudio(
+          deps,
+          job,
+          audio,
+          mimeType,
+          template,
+          templateKey,
+        );
+      },
     );
     return {
       generation,
@@ -464,13 +638,125 @@ async function generateNewNote(
     // Best-effort memory scrubbing. It does not replace the no-persistence rule,
     // but shortens the lifetime of raw audio inside a warm isolate.
     audio.fill(0);
+    if (job.storagePath !== null && deps.storage) {
+      try {
+        await deps.storage.remove("audio_uploads", [job.storagePath]);
+      } catch (cleanupThrown) {
+        const cleanupErr = toAppError(cleanupThrown);
+        deps.logger[cleanupErr.logLevel]("worker.storage_cleanup_failed", {
+          job_id: job.jobId,
+          error_code: cleanupErr.code,
+          error_detail: cleanupErr.internalDetail,
+        });
+      }
+    }
   }
+}
+async function generateAudioSegmentWithRetry(
+  deps: JobWorkerDependencies,
+  request: AudioGenerationRequest,
+): Promise<AudioGenerationResult> {
+  let attempt = 0;
+  while (true) {
+    attempt += 1;
+    try {
+      return await deps.provider.generateAudio(request);
+    } catch (thrown) {
+      const error = toAppError(thrown);
+      if (attempt === 1 && isTransientProviderFailure(error)) {
+        continue;
+      }
+      throw AppError.inputTooLarge("audio segment failed transcription validation", {
+        publicMessage: "That is over the 2-hour limit — split it into parts under 2 hours each.",
+      });
+    }
+  }
+}
+
+async function processSegmentedAudio(
+  deps: JobWorkerDependencies,
+  job: ClaimedProcessingJob & {
+    readonly userId: string;
+    readonly outputLanguage: NonNullable<ClaimedProcessingJob["outputLanguage"]>;
+  },
+  audio: Uint8Array,
+  mimeType: string,
+  template: GenerationTemplate,
+  templateKey: TemplateKey,
+): Promise<AudioGenerationResult> {
+  const segmentCount = Math.ceil(audio.byteLength / LARGE_AUDIO_SEGMENT_BYTES);
+  if (segmentCount > MAX_LARGE_AUDIO_SEGMENTS) {
+    throw AppError.inputTooLarge("audio segments exceeded maximum chunk count", {
+      publicMessage: "That is over the 2-hour limit — split it into parts under 2 hours each.",
+    });
+  }
+
+  const transcripts: string[] = [];
+  let totalInputTokens: number | null = null;
+  let totalOutputTokens: number | null = null;
+  let lastModel = "gemini";
+  let lastProvider = "gemini";
+  let lastRequestId: string | null = null;
+
+  for (let index = 0; index < segmentCount; index += 1) {
+    const start = Math.max(
+      0,
+      index * LARGE_AUDIO_SEGMENT_BYTES - (index > 0 ? LARGE_AUDIO_SEGMENT_OVERLAP_BYTES : 0),
+    );
+    const end = Math.min(audio.byteLength, (index + 1) * LARGE_AUDIO_SEGMENT_BYTES);
+    const segmentBytes = new Uint8Array(end - start);
+    segmentBytes.set(audio.subarray(start, end));
+
+    let segmentResult: AudioGenerationResult;
+    try {
+      segmentResult = await generateAudioSegmentWithRetry(deps, {
+        audio: segmentBytes,
+        mimeType,
+        template,
+        templateKey,
+        outputLanguage: job.outputLanguage === "mirror" ? null : job.outputLanguage,
+        timeoutMs: SEGMENT_AUDIO_TIMEOUT_MS,
+      });
+    } finally {
+      segmentBytes.fill(0);
+    }
+
+    transcripts.push(segmentResult.transcript.trim());
+    if (segmentResult.inputTokens !== null) {
+      totalInputTokens = (totalInputTokens ?? 0) + segmentResult.inputTokens;
+    }
+    if (segmentResult.outputTokens !== null) {
+      totalOutputTokens = (totalOutputTokens ?? 0) + segmentResult.outputTokens;
+    }
+    lastModel = segmentResult.model;
+    lastProvider = segmentResult.provider;
+    lastRequestId = segmentResult.providerRequestId;
+  }
+
+  const concatenatedTranscript = transcripts.filter(Boolean).join("\n\n");
+  const textResult = await deps.provider.generateText({
+    sourceText: concatenatedTranscript,
+    template,
+    templateKey,
+    reason: "initial",
+    outputLanguage: job.outputLanguage === "mirror" ? null : job.outputLanguage,
+  });
+
+  return {
+    transcript: concatenatedTranscript,
+    note: textResult.note,
+    provider: textResult.provider ?? lastProvider,
+    model: textResult.model ?? lastModel,
+    providerRequestId: textResult.providerRequestId ?? lastRequestId,
+    inputTokens: (totalInputTokens ?? 0) + (textResult.inputTokens ?? 0) || null,
+    outputTokens: (totalOutputTokens ?? 0) + (textResult.outputTokens ?? 0) || null,
+  };
 }
 
 async function handleFailure(
   deps: JobWorkerDependencies,
   message: ProcessingQueueMessage,
-  job: ClaimedProcessingJob & { readonly userId: string; readonly chatId: number },
+  job: ClaimedProcessingJob & { readonly userId: string; readonly chatId: number | null },
   state: JobState,
   thrown: unknown,
 ): Promise<ProcessOutcome> {
@@ -504,10 +790,24 @@ async function handleFailure(
     safeFailureDetail(error, state),
   );
   await deps.jobs.deleteQueueMessage(message.queueMessageId);
-  if (job.statusMessageId === null) {
-    await deps.telegram.sendMessage(job.chatId, error.publicMessage);
-  } else {
-    await editStatusBestEffort(deps, job, error.publicMessage);
+  if (job.chatId !== null) {
+    if (job.statusMessageId === null) {
+      await deps.telegram.sendMessage(job.chatId, error.publicMessage);
+    } else {
+      await editStatusBestEffort(deps, job, error.publicMessage);
+    }
+  }
+  if (job.storagePath !== null && deps.storage) {
+    try {
+      await deps.storage.remove("audio_uploads", [job.storagePath]);
+    } catch (cleanupThrown) {
+      const cleanupErr = toAppError(cleanupThrown);
+      deps.logger[cleanupErr.logLevel]("worker.storage_cleanup_failed", {
+        job_id: job.jobId,
+        error_code: cleanupErr.code,
+        error_detail: cleanupErr.internalDetail,
+      });
+    }
   }
   return "discarded";
 }

@@ -49,7 +49,7 @@
     "test:unit": "deno test --allow-read --allow-env tests/unit",
     "test:security": "deno test --allow-read --allow-env tests/security",
     "test:contract": "deno test --allow-read --allow-env tests/contract",
-    "test:integration": "deno test --allow-read --allow-env --allow-net tests/integration tests/e2e",
+    "test:integration": "deno test --env-file=.env --allow-read --allow-env --allow-net tests/integration tests/e2e",
     "verify-env": "deno run --env-file=.env --allow-read --allow-env scripts/verify-env.ts",
     "clear-test-data": "deno run --env-file=.env --allow-read --allow-env --allow-net scripts/clear-test-data.ts",
     "webhook:set": "deno run --env-file=.env --allow-read --allow-env --allow-net scripts/set-webhook.ts",

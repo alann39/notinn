@@ -425,7 +425,9 @@ Deno.test({
       return;
     }
 
-    const versions = (data ?? []).map((row) => row["version"] as string);
+    const versions = (data ?? []).map((row: { version: string; name: string | null }) =>
+      row["version"] as string
+    );
     assert(versions.length >= 9, `only ${versions.length} migrations are recorded`);
   },
 });

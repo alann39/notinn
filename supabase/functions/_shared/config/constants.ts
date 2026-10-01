@@ -175,6 +175,13 @@ export const PLAN_KEYS = ["alpha", "free", "pro"] as const;
 export type PlanKey = (typeof PLAN_KEYS)[number];
 
 /**
+ * Known quota cycles for plans. Mirrors the CHECK constraint on public.plans (quota_cycle IN ('monthly', 'lifetime')).
+ */
+export const QUOTA_CYCLES = ["monthly", "lifetime"] as const;
+
+export type QuotaCycle = (typeof QUOTA_CYCLES)[number];
+
+/**
  * Where in a source a claim came from (blueprint 12.4, `source_references`).
  *
  * A closed vocabulary because each kind is addressed a different way and a reader
@@ -284,9 +291,36 @@ export const MAX_DOCX_BYTES = 10 * 1024 * 1024;
 /** Plain-text document ceiling before strict UTF-8 decoding. */
 export const MAX_TEXT_DOCUMENT_BYTES = 2 * 1024 * 1024;
 
-/** Alpha product limit from blueprint 6.2: 30 minutes. */
-export const MAX_AUDIO_DURATION_SECONDS = 30 * 60;
+/** Audio duration product limits per plan. Free remains 30 min; Pro and Alpha get 2 hours. */
+export const MAX_AUDIO_DURATION_SECONDS_FREE = 1800;
+export const MAX_AUDIO_DURATION_SECONDS_PRO = 7200;
+export const MAX_AUDIO_DURATION_SECONDS_ALPHA = 7200;
 
+export const AUDIO_DURATION_BY_PLAN: Readonly<Record<string, number>> = {
+  free: MAX_AUDIO_DURATION_SECONDS_FREE,
+  pro: MAX_AUDIO_DURATION_SECONDS_PRO,
+  alpha: MAX_AUDIO_DURATION_SECONDS_ALPHA,
+};
+
+/** Telegram Bot API default cap; download ceiling for entitled large audio. */
+export const MAX_LARGE_AUDIO_BYTES = 20 * 1024 * 1024;
+
+/** Private storage ceiling for web dashboard audio uploads (100 MiB). */
+export const MAX_WEB_AUDIO_BYTES = 100 * 1024 * 1024;
+/** Timeout for single large audio provider calls (5 minutes). */
+export const LARGE_AUDIO_TIMEOUT_MS = 300_000;
+
+/** Segment chunk size for large audio fallback (~10 MiB). */
+export const LARGE_AUDIO_SEGMENT_BYTES = 10 * 1024 * 1024;
+
+/** Overlap between consecutive audio segments (~256 KiB) to mitigate frame boundary splits. */
+export const LARGE_AUDIO_SEGMENT_OVERLAP_BYTES = 256 * 1024;
+
+/** Maximum permitted segments for chunked transcription fallback (supports up to 100 MiB). */
+export const MAX_LARGE_AUDIO_SEGMENTS = 12;
+
+/** Timeout for individual segment transcription calls (2 minutes). */
+export const SEGMENT_AUDIO_TIMEOUT_MS = 120_000;
 /**
  * Phase 0 handles a single input category at a time. A Telegram update carrying
  * more than one of these is ambiguous and is not accepted. See

@@ -14,8 +14,8 @@ import type {
   PdfGenerationResult,
   TextGenerationRequest,
 } from "./note-ai.provider.ts";
+import { AppError } from "../errors/app-error.ts";
 import { isTransientProviderFailure } from "./provider-fallback.ts";
-
 /** Runs the secondary provider only for transient upstream failures. */
 export class FallbackNoteProvider implements NoteAIProvider, LibraryAnswerProvider {
   readonly #primary: NoteAIProvider & LibraryAnswerProvider;
@@ -43,6 +43,12 @@ export class FallbackNoteProvider implements NoteAIProvider, LibraryAnswerProvid
     );
   }
 
+  generateLargeAudio(request: AudioGenerationRequest): Promise<AudioGenerationResult> {
+    if (typeof this.#primary.generateLargeAudio === "function") {
+      return this.#primary.generateLargeAudio(request);
+    }
+    throw AppError.unsupportedInput("primary provider does not support large audio");
+  }
   generateImage(request: ImageGenerationRequest): Promise<ImageGenerationResult> {
     return this.#withFallback(
       () => this.#primary.generateImage(request),

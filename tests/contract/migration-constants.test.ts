@@ -1,5 +1,6 @@
 import { assert, assertEquals } from "@std/assert";
 import {
+  AUDIO_DURATION_BY_PLAN,
   GENERATION_REASONS,
   INPUT_TYPES,
   JOB_CREATION_STATES,
@@ -11,7 +12,6 @@ import {
   USAGE_OPERATIONS,
   USER_STATUSES,
 } from "../../supabase/functions/_shared/config/constants.ts";
-
 /**
  * Drift guard: the TypeScript mirrors against the migration SQL.
  *
@@ -133,7 +133,14 @@ const FILE_SUFFIXES = [
   "phase8c_admin_order_actions.sql",
   "phase8d_web_upgrade_orders.sql",
   "fix_web_upgrade_orders_linked_user.sql",
-] as const;
+  "phase8e_plan_audio_duration_limits.sql",
+  "phase8f_web_audio_upload.sql",
+  "phase8g_web_list_templates_and_sync.sql",
+  "phase8h_web_note_draft_actions.sql",
+  "phase8i_web_multimodal_ingestion.sql",
+  "fix_web_text_job_constraint.sql",
+  "free_starter_lifetime_quota.sql",
+];
 
 /** Read the one migration whose filename ends with `suffix`. */
 async function loadMigration(suffix: string): Promise<string> {
@@ -167,6 +174,9 @@ const PHASE6_ACCOUNT_LIFECYCLE_SQL = await loadMigration(
 const PHASE6D_OPS_SQL = await loadMigration("phase6d_ops_monitoring.sql");
 const PHASE6E_PLAN_SQL = await loadMigration("phase6e_plan_upgrade_mechanics.sql");
 const PHASE8_TIPTAP_SQL = await loadMigration("phase8_tiptap_subscriptions.sql");
+const PHASE8E_AUDIO_LIMIT_SQL = await loadMigration("phase8e_plan_audio_duration_limits.sql");
+const PHASE8F_AUDIO_UPLOAD_SQL = await loadMigration("phase8f_web_audio_upload.sql");
+const FREE_LIFETIME_QUOTA_SQL = await loadMigration("free_starter_lifetime_quota.sql");
 const ALL_MIGRATIONS = await loadMigrations();
 const ALL_SQL = ALL_MIGRATIONS.map((migration) => migration.sql).join("\n");
 
@@ -401,6 +411,44 @@ Deno.test("phase 6e change_user_plan returns only documented outcomes", () => {
   assert(sql.includes("'plan_inactive'"));
 });
 
+Deno.test("phase 8e adds max_audio_duration_seconds column and mirrors AUDIO_DURATION_BY_PLAN", () => {
+  const sql = normalise(PHASE8E_AUDIO_LIMIT_SQL);
+  assert(sql.includes("max_audio_duration_seconds integer"));
+  assert(sql.includes("where plan_key in ('pro', 'alpha')"));
+  assert(sql.includes("get_user_audio_limit(p_user_id uuid)"));
+  assert(
+    sql.includes("grant execute on function public.get_user_audio_limit(uuid) to service_role"),
+  );
+  assert(
+    sql.includes(
+      "revoke all on function public.get_user_audio_limit(uuid) from public, anon, authenticated",
+    ),
+  );
+  assertEquals(AUDIO_DURATION_BY_PLAN.free, 1800);
+  assertEquals(AUDIO_DURATION_BY_PLAN.pro, 7200);
+  assertEquals(AUDIO_DURATION_BY_PLAN.alpha, 7200);
+});
+
+Deno.test("free starter lifetime quota migration configures lifetime cycle and entitlements", () => {
+  const sql = normalise(FREE_LIFETIME_QUOTA_SQL);
+  assert(sql.includes("quota_cycle text not null default 'monthly'"));
+  assert(sql.includes("quota_cycle in ('monthly', 'lifetime')"));
+  assert(sql.includes("set quota_cycle = 'lifetime'"));
+  assert(sql.includes("where plan_key = 'free'"));
+  assert(sql.includes("set monthly_limit = 30, daily_limit = 5"));
+  assert(sql.includes("where plan_key = 'free' and metric = 'note_generation'"));
+  assert(sql.includes("set monthly_limit = 30, daily_limit = 30"));
+  assert(sql.includes("where plan_key = 'free' and metric = 'regeneration'"));
+  assert(sql.includes("where plan_key = 'free' and metric = 'semantic_answer'"));
+  assert(sql.includes("v_period_start := '1970-01-01'::date"));
+  assert(sql.includes("v_period_end := '2099-12-31'::date"));
+  assert(sql.includes("revoke all on function public.reserve_plan_quota"));
+  assert(sql.includes("grant execute on function public.reserve_plan_quota"));
+  assert(sql.includes("revoke all on function public.get_user_usage_summary"));
+  assert(sql.includes("grant execute on function public.get_user_usage_summary"));
+  assert(sql.includes("revoke all on function public.web_get_usage_summary"));
+  assert(sql.includes("grant execute on function public.web_get_usage_summary"));
+});
 // --- Extracting values from SQL --------------------------------------------
 
 /**
@@ -792,6 +840,12 @@ const WEB_RPC_FUNCTIONS = new Set([
   "admin_resolve_payment_order",
   "web_create_upgrade_order",
   "web_get_upgrade_order_status",
+  "web_submit_audio_job",
+  "web_list_templates",
+  "web_set_note_saved",
+  "web_delete_note",
+  "web_get_job_status",
+  "web_submit_job",
 ]);
 
 Deno.test("no function is executable by anon, and only web RPCs are executable by authenticated", () => {
@@ -979,10 +1033,10 @@ const RPC_CONTRACTS = [
   [PROCESSING_JOBS_REPOSITORY, "claim_processing_job", PHASE5_PREFERENCES_SQL],
   [USER_PREFERENCES_REPOSITORY, "get_user_preferences", PHASE5_PREFERENCES_SQL],
   [USER_PREFERENCES_REPOSITORY, "update_user_preference", PHASE5_CUSTOM_TEMPLATES_SQL],
-  [QUOTA_REPOSITORY, "reserve_plan_quota", PHASE6_CLOSED_ALPHA_SQL],
+  [QUOTA_REPOSITORY, "reserve_plan_quota", FREE_LIFETIME_QUOTA_SQL],
   [QUOTA_REPOSITORY, "consume_plan_quota", PHASE6_CLOSED_ALPHA_SQL],
   [QUOTA_REPOSITORY, "release_plan_quota", PHASE6_QUOTA_SQL],
-  [QUOTA_REPOSITORY, "get_user_usage_summary", PHASE6_CLOSED_ALPHA_SQL],
+  [QUOTA_REPOSITORY, "get_user_usage_summary", FREE_LIFETIME_QUOTA_SQL],
   [CLOSED_ALPHA_REPOSITORY, "get_closed_alpha_access", PHASE6_CLOSED_ALPHA_SQL],
   [CLOSED_ALPHA_REPOSITORY, "redeem_closed_alpha_invite", PHASE6_CLOSED_ALPHA_SQL],
   [ACCOUNT_LIFECYCLE_REPOSITORY, "get_account_lifecycle", PHASE6_ACCOUNT_LIFECYCLE_SQL],
@@ -1008,6 +1062,8 @@ const RPC_CONTRACTS = [
   [PAYMENT_REPOSITORY, "create_upgrade_order", PHASE8_TIPTAP_SQL],
   [PAYMENT_REPOSITORY, "process_tiptap_payment", PHASE8_TIPTAP_SQL],
   [PAYMENT_REPOSITORY, "get_user_subscription", PHASE8_TIPTAP_SQL],
+  [PLAN_REPOSITORY, "get_user_audio_limit", PHASE8E_AUDIO_LIMIT_SQL],
+  [PLAN_REPOSITORY, "web_submit_audio_job", PHASE8F_AUDIO_UPLOAD_SQL],
 ] as const;
 
 for (const [repository, name, sql] of RPC_CONTRACTS) {

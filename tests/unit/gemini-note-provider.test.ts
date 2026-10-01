@@ -357,3 +357,72 @@ Deno.test("Gemini receives a PDF as a document and reports its page count", asyn
   assertEquals(properties["extracted_text"]?.["maxLength"], 12_000);
   assertEquals(String(input[1]?.["text"]).includes("Do not transcribe"), true);
 });
+
+Deno.test("Gemini generates large audio via Files API upload and interaction reference", async () => {
+  const calls: { url: string; method: string; body: unknown }[] = [];
+  const note = structuredNoteFixture({ summary: "Large audio summary." });
+  const mockFetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    const body = init?.body ? String(init.body) : null;
+    calls.push({ url, method, body });
+
+    if (url.includes("/upload/v1beta/files")) {
+      return Promise.resolve(
+        new Response(null, {
+          status: 200,
+          headers: { "x-goog-upload-url": "https://upload.test/session-456" },
+        }),
+      );
+    }
+    if (url === "https://upload.test/session-456") {
+      return Promise.resolve(
+        Response.json({
+          file: {
+            name: "files/audio-synthetic-456",
+            uri: "https://generativelanguage.googleapis.com/v1beta/files/audio-synthetic-456",
+          },
+        }),
+      );
+    }
+    if (url.includes("/v1beta/interactions")) {
+      return Promise.resolve(
+        interactionResponse({ transcript: "Synthetic large transcript.", note }),
+      );
+    }
+    if (url.includes("files/audio-synthetic-456") && method === "DELETE") {
+      return Promise.resolve(new Response(null, { status: 200 }));
+    }
+    throw new Error(`unexpected fetch: ${method} ${url}`);
+  }) as typeof fetch;
+
+  const provider = new GeminiNoteProvider(
+    {
+      provider: "gemini",
+      apiKey: new Secret("synthetic-api-key"),
+      model: "gemini-synthetic-flash",
+      fallbackModel: null,
+      embeddingModel: null,
+      openRouter: null,
+    },
+    { fetch: mockFetch },
+  );
+
+  const result = await provider.generateLargeAudio({
+    audio: new Uint8Array([1, 2, 3, 4]),
+    mimeType: "audio/ogg",
+    template,
+    templateKey: "clean_note",
+    outputLanguage: null,
+  });
+
+  assertEquals(result.transcript, "Synthetic large transcript.");
+  assertEquals(result.note.summary, "Large audio summary.");
+  assertEquals(calls.length, 4);
+  assertEquals(calls[0]!.method, "POST");
+  assertEquals(calls[0]!.url.includes("/upload/v1beta/files"), true);
+  assertEquals(calls[1]!.url, "https://upload.test/session-456");
+  assertEquals(calls[2]!.url.includes("/v1beta/interactions"), true);
+  assertEquals(calls[3]!.method, "DELETE");
+  assertEquals(calls[3]!.url.includes("files/audio-synthetic-456"), true);
+});

@@ -39,21 +39,21 @@ export class AppError extends Error {
 
   constructor(
     code: ErrorCode,
-    options: { internalDetail?: string; cause?: unknown } = {},
+    options: { internalDetail?: string; cause?: unknown; publicMessage?: string } = {},
   ) {
     const definition = definitionFor(code);
+    const publicMessage = options.publicMessage ?? definition.publicMessage;
 
     super(
-      definition.publicMessage,
+      publicMessage,
       options.cause === undefined ? undefined : { cause: options.cause },
     );
 
     this.code = code;
     this.retryable = definition.retryable;
     this.httpStatus = definition.httpStatus;
-    this.publicMessage = definition.publicMessage;
+    this.publicMessage = publicMessage;
     this.logLevel = definition.logLevel;
-
     // Installed as non-enumerable. `JSON.stringify(error)`, `{ ...error }`,
     // `Object.assign` and structured clone all walk enumerable own properties,
     // so an enumerable internalDetail would ride along into a crash report or a
@@ -89,10 +89,15 @@ export class AppError extends Error {
   }
 
   /** Input exceeds a documented limit. */
-  static inputTooLarge(internalDetail?: string): AppError {
-    return new AppError(ERROR_CODES.INPUT_TOO_LARGE, { internalDetail });
+  static inputTooLarge(
+    internalDetail?: string,
+    options: { publicMessage?: string } = {},
+  ): AppError {
+    return new AppError(ERROR_CODES.INPUT_TOO_LARGE, {
+      internalDetail,
+      publicMessage: options.publicMessage,
+    });
   }
-
   /** Text exceeds blueprint 5.1's pasted-text limit. */
   static inputTooLong(internalDetail?: string): AppError {
     return new AppError(ERROR_CODES.INPUT_TOO_LONG, { internalDetail });
@@ -119,13 +124,16 @@ export class AppError extends Error {
   }
 
   /** The active plan has no remaining allowance for this operation. */
-  static quotaExceeded(internalDetail?: string): AppError {
-    return new AppError(ERROR_CODES.QUOTA_EXCEEDED, { internalDetail });
+  static quotaExceeded(internalDetail?: string, options?: { publicMessage?: string }): AppError {
+    return new AppError(ERROR_CODES.QUOTA_EXCEEDED, { internalDetail, ...options });
   }
 
   /** The active plan has no remaining daily allowance for this operation. */
-  static dailyQuotaExceeded(internalDetail?: string): AppError {
-    return new AppError(ERROR_CODES.DAILY_QUOTA_EXCEEDED, { internalDetail });
+  static dailyQuotaExceeded(
+    internalDetail?: string,
+    options?: { publicMessage?: string },
+  ): AppError {
+    return new AppError(ERROR_CODES.DAILY_QUOTA_EXCEEDED, { internalDetail, ...options });
   }
 
   /** The durable worker has used every configured attempt. */

@@ -112,11 +112,23 @@ export class QuotaRepository {
       if (row.outcome === "daily_exceeded") {
         throw AppError.dailyQuotaExceeded(
           `${row.metric} daily limit exhausted for ${row.plan_key ?? "unknown plan"}`,
+          row.plan_key === "free"
+            ? {
+              publicMessage:
+                "You've reached your plan's limit for today (Free Starter includes 5 notes/day). It resets at 00:00 UTC.",
+            }
+            : undefined,
         );
       }
       if (row.outcome === "exceeded") {
         throw AppError.quotaExceeded(
-          `${row.metric} monthly limit exhausted for ${row.plan_key ?? "unknown plan"}`,
+          `${row.metric} limit exhausted for ${row.plan_key ?? "unknown plan"}`,
+          row.plan_key === "free"
+            ? {
+              publicMessage:
+                "You've reached your plan's limit (Free Starter includes 30 lifetime notes). Upgrade to Pro to continue.",
+            }
+            : undefined,
         );
       }
       if (row.outcome === "user_not_active") {

@@ -1,8 +1,8 @@
 import { z } from "zod";
+import { MAX_AUDIO_DURATION_SECONDS_FREE } from "../config/constants.ts";
 import type { ServiceClient } from "../db/client.ts";
 import { AppError } from "../errors/app-error.ts";
 import { classifyPostgresError, toDatabaseError } from "./postgres-errors.ts";
-
 // --- Schemas ----------------------------------------------------------------
 
 const PlanCatalogueRowSchema = z.object({
@@ -13,6 +13,15 @@ const PlanCatalogueRowSchema = z.object({
   display_order: z.coerce.number().int(),
 });
 
+const UserAudioLimitRowSchema = z.object({
+  plan_key: z.string(),
+  max_audio_duration_seconds: z.coerce.number().int().positive(),
+});
+
+const AudioLimitResponseSchema = z.union([
+  z.array(UserAudioLimitRowSchema),
+  UserAudioLimitRowSchema.transform((row) => [row]),
+]);
 // --- Exported types ---------------------------------------------------------
 
 export interface PlanCatalogueEntry {
@@ -89,6 +98,60 @@ export class PlanRepository {
         throw AppError.internal(`change_user_plan returned unexpected outcome: ${outcome}`);
       }
       return outcome as ChangePlanOutcome;
+    } catch (thrown) {
+      if (thrown instanceof AppError) throw thrown;
+      throw toDatabaseError(thrown);
+    }
+  }
+
+  async getAudioLimit(userId: string): Promise<{ planKey: string; maxAudioSeconds: number }> {
+    try {
+      const { data, error } = await this.#client.rpc("get_user_audio_limit", {
+        p_user_id: userId,
+      });
+      if (error !== null) throw classifyPostgresError(error);
+
+      const parsed = AudioLimitResponseSchema.safeParse(data);
+      if (!parsed.success || parsed.data.length === 0) {
+        return {
+          planKey: "free",
+          maxAudioSeconds: MAX_AUDIO_DURATION_SECONDS_FREE,
+        };
+      }
+      const row = parsed.data[0]!;
+      return {
+        planKey: row.plan_key,
+        maxAudioSeconds: row.max_audio_duration_seconds,
+      };
+    } catch (thrown) {
+      if (thrown instanceof AppError) throw thrown;
+      throw toDatabaseError(thrown);
+    }
+  }
+
+  async submitAudioJob(input: {
+    storagePath: string;
+    mimeType: string;
+    sizeBytes: number;
+    durationSeconds?: number | null;
+    templateKey?: string;
+  }): Promise<{ jobId: string; status: string }> {
+    try {
+      const { data, error } = await this.#client.rpc("web_submit_audio_job", {
+        p_storage_path: input.storagePath,
+        p_mime_type: input.mimeType,
+        p_size_bytes: input.sizeBytes,
+        p_duration_seconds: input.durationSeconds ?? null,
+        p_template_key: input.templateKey ?? "clean_note",
+      });
+      if (error !== null) throw classifyPostgresError(error);
+
+      const rows = Array.isArray(data) ? data : [data];
+      const row = rows[0] as { job_id?: string; status?: string } | undefined;
+      return {
+        jobId: String(row?.job_id ?? ""),
+        status: String(row?.status ?? "QUEUED"),
+      };
     } catch (thrown) {
       if (thrown instanceof AppError) throw thrown;
       throw toDatabaseError(thrown);

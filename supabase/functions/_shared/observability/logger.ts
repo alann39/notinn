@@ -55,6 +55,7 @@ export const ALLOWED_LOG_FIELDS = [
 
   // --- Job and routing -----------------------------------------------------
   "template_key",
+  "plan_key",
   "input_type",
   "job_state",
   "from_state",

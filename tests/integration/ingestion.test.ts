@@ -239,7 +239,7 @@ Deno.test({
 
     assertEquals(error, null);
 
-    const keys = (data ?? []).map((row) => row["key"] as string);
+    const keys = (data ?? []).map((row: { key: string; status: string }) => row["key"] as string);
     for (const expected of SYSTEM_TEMPLATE_KEYS) {
       assert(keys.includes(expected), `the catalogue is missing ${expected}`);
     }

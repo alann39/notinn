@@ -122,3 +122,37 @@ Deno.test("changePlan throws on database error", async () => {
     AppError,
   );
 });
+
+// --- getAudioLimit tests ----------------------------------------------------
+
+Deno.test("getAudioLimit returns user plan limit when found", async () => {
+  const { repo, calls } = harness([
+    {
+      plan_key: "pro",
+      max_audio_duration_seconds: 7200,
+    },
+  ]);
+
+  const limit = await repo.getAudioLimit(PRO_UUID);
+
+  assertEquals(calls.length, 1);
+  assertEquals(calls[0]!.fn, "get_user_audio_limit");
+  assertEquals(calls[0]!.args, { p_user_id: PRO_UUID });
+  assertEquals(limit.planKey, "pro");
+  assertEquals(limit.maxAudioSeconds, 7200);
+});
+
+Deno.test("getAudioLimit falls back to free limit when user not found or empty", async () => {
+  const { repo } = harness([]);
+
+  const limit = await repo.getAudioLimit(PRO_UUID);
+
+  assertEquals(limit.planKey, "free");
+  assertEquals(limit.maxAudioSeconds, 1800);
+});
+
+Deno.test("getAudioLimit throws on database error", async () => {
+  const { repo } = harness(null, dbError());
+
+  await assertRejects(() => repo.getAudioLimit(PRO_UUID), AppError);
+});

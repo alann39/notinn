@@ -304,7 +304,7 @@ Deno.test("ask remains safely unavailable until the embedding model is configure
   assertEquals(sent[0]?.includes("not enabled"), true);
 });
 
-Deno.test("ask stops before every provider when the monthly quota is exhausted", async () => {
+Deno.test("ask stops before every provider when the quota is exhausted", async () => {
   const test = harness();
   let providerCalls = 0;
   await handleCommand(command("ask", "What changed?"), {
@@ -339,7 +339,10 @@ Deno.test("ask stops before every provider when the monthly quota is exhausted",
   });
 
   assertEquals(providerCalls, 0);
-  assertEquals(test.sent[0]?.text, "You've reached your plan's limit for this month.");
+  assertEquals(
+    test.sent[0]?.text,
+    "You've reached your plan's limit (Free Starter includes 30 lifetime notes). Upgrade to Pro to continue.",
+  );
 });
 
 Deno.test("usage shows the active plan and each monthly allowance", async () => {

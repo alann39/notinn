@@ -75,6 +75,9 @@ function harness() {
       consume: () => {
         throw new Error("quota must not run in an empty batch");
       },
+      release: () => {
+        throw new Error("quota must not run in an empty batch");
+      },
     },
     provider: {
       generateText: () => {

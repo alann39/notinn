@@ -564,7 +564,6 @@ async function handleAsk(
     throw thrown;
   }
 
-  let providerStarted = false;
   try {
     const embeddingModel = deps.embeddings.model;
     const pending = await deps.notes.listSavedNotesForEmbedding(
@@ -573,7 +572,6 @@ async function handleAsk(
       EMBEDDING_BATCH_LIMIT,
     );
     if (pending.length > 0) {
-      providerStarted = true;
       const indexed = await deps.embeddings.embedDocuments(
         pending.map((note) => ({
           title: note.title,
@@ -600,10 +598,12 @@ async function handleAsk(
       }
     }
 
-    providerStarted = true;
     const query = await deps.embeddings.embedQuestion(question);
     const queryVector = query.vectors[0];
-    if (queryVector === undefined) return;
+    if (queryVector === undefined) {
+      await deps.quota.release(userId, reservation.reservationId);
+      return;
+    }
     await deps.usage.recordEmbedding({
       userId,
       provider: query.provider,
@@ -636,6 +636,7 @@ async function handleAsk(
           },
         },
       );
+      await deps.quota.consume(userId, reservation.reservationId, 1);
       return;
     }
 
@@ -673,6 +674,7 @@ async function handleAsk(
           },
         },
       );
+      await deps.quota.consume(userId, reservation.reservationId, 1);
       return;
     }
 
@@ -707,12 +709,14 @@ async function handleAsk(
         },
       },
     );
-  } finally {
-    if (providerStarted) {
-      await deps.quota.consume(userId, reservation.reservationId, 1);
-    } else {
+    await deps.quota.consume(userId, reservation.reservationId, 1);
+  } catch (thrown) {
+    try {
       await deps.quota.release(userId, reservation.reservationId);
+    } catch {
+      // Keep original failure authoritative
     }
+    throw thrown;
   }
 }
 

@@ -40,7 +40,8 @@ function payload(
     | "delete_confirm"
     | "export_md"
     | "export_txt"
-    | "export_pdf",
+    | "export_pdf"
+    | "transcript",
 ): string {
   return encodeCallbackPayload({ action: { kind }, resourceId: NOTE_ID, revision: 0 });
 }
@@ -223,6 +224,10 @@ function harness(
       },
       consume: () => {
         events.push("quota_consume");
+        return Promise.resolve();
+      },
+      release: () => {
+        events.push("quota_release");
         return Promise.resolve();
       },
       getSummary: () => Promise.resolve([]),
@@ -534,6 +539,14 @@ Deno.test("an export callback cannot read or send another user's note", async ()
   await handleCallback(callback(payload("export_md")), test.deps);
 
   assertEquals(test.documents.length, 0);
+  assertEquals(test.providerCalls(), 0);
+  assertEquals(test.events.includes("send"), true);
+});
+
+Deno.test("transcript callback delivers transcript without calling provider", async () => {
+  const test = harness();
+  await handleCallback(callback(payload("transcript")), test.deps);
+
   assertEquals(test.providerCalls(), 0);
   assertEquals(test.events.includes("send"), true);
 });

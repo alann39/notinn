@@ -194,13 +194,15 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = {
   [ERROR_CODES.QUOTA_EXCEEDED]: {
     httpStatus: 402,
     retryable: false,
-    publicMessage: "You've reached your plan's limit for this month.",
+    publicMessage:
+      "You've reached your plan's limit (Free Starter includes 30 lifetime notes). Upgrade to Pro to continue.",
     logLevel: "info",
   },
   [ERROR_CODES.DAILY_QUOTA_EXCEEDED]: {
     httpStatus: 402,
     retryable: false,
-    publicMessage: "You've reached your plan's limit for today. It resets at 00:00 UTC.",
+    publicMessage:
+      "You've reached your plan's limit for today (Free Starter includes 5 notes/day). It resets at 00:00 UTC.",
     logLevel: "info",
   },
   [ERROR_CODES.RETRIES_EXHAUSTED]: {
