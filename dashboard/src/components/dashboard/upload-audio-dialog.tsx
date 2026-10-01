@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabase";
 import * as tus from "tus-js-client";
+import { FFmpeg } from "@ffmpeg/ffmpeg";
+import { fetchFile, toBlobURL } from "@ffmpeg/util";
 import { useAuth } from "@/hooks/use-auth";
 import {
   Dialog,
@@ -180,6 +182,39 @@ function detectModality(file: File): { modality: ModalityType; mimeType: string 
     return { modality: "image", mimeType: file.type || IMAGE_EXTENSIONS[ext] || "image/jpeg" };
   }
   return null;
+}
+
+// Singleton FFmpeg instance (loaded once per session)
+let ffmpegInstance: FFmpeg | null = null;
+
+async function compressAudioIfNeeded(file: File): Promise<File> {
+  const FIFTY_MB = 50 * 1024 * 1024;
+  if (file.size <= FIFTY_MB) return file; // already small enough
+
+  const ffmpeg = ffmpegInstance ?? (ffmpegInstance = new FFmpeg());
+  if (!ffmpeg.loaded) {
+    const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd";
+    await ffmpeg.load({
+      coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
+      wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
+    });
+  }
+
+  const inputName = "input.m4a";
+  const outputName = "output.m4a";
+  await ffmpeg.writeFile(inputName, await fetchFile(file));
+  await ffmpeg.exec([
+    "-i", inputName,
+    "-c:a", "aac",
+    "-b:a", "48k",
+    "-ac", "1",
+    outputName,
+  ]);
+  const data = await ffmpeg.readFile(outputName);
+  const blob = new Blob([data], { type: "audio/mp4" });
+  return new File([blob], file.name.replace(/\.m4a$/i, "_compressed.m4a"), {
+    type: "audio/mp4",
+  });
 }
 
 export interface UploadAudioDialogProps {
@@ -486,12 +521,20 @@ export function UploadAudioDialog({
         throw new Error("Invalid session. Please sign in again.");
       }
 
+      // Compress audio if file exceeds Supabase 50MB limit
+      let fileToUpload = selectedFile;
+      if (selectedFile.size > 50 * 1024 * 1024) {
+        setStatusText("Compressing audio (this may take a moment)...");
+        setUploadProgress(3);
+        fileToUpload = await compressAudioIfNeeded(selectedFile);
+      }
+
       setStatusText(`Uploading ${modalityName.toLowerCase()} to secure storage...`);
 
       // TUS resumable upload (no 50MB cap on Supabase free tier)
       const tusEndpoint = `${SUPABASE_URL}/storage/v1/upload/resumable`;
       await new Promise<void>((resolve, reject) => {
-        const upload = new tus.Upload(selectedFile, {
+        const upload = new tus.Upload(fileToUpload, {
           endpoint: tusEndpoint,
           retryDelays: [0, 1000, 3000, 5000],
           chunkSize: 2 * 1024 * 1024, // 2MB chunks (Supabase Kong gateway limit)
