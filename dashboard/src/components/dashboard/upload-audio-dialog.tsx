@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabase";
+import * as tus from "tus-js-client";
 import { useAuth } from "@/hooks/use-auth";
 import {
   Dialog,
@@ -487,58 +488,40 @@ export function UploadAudioDialog({
 
       setStatusText(`Uploading ${modalityName.toLowerCase()} to secure storage...`);
 
-      // Realtime XHR upload with progress
-      const uploadUrl = `${SUPABASE_URL}/storage/v1/object/audio_uploads/${storagePath}`;
+      // TUS resumable upload (no 50MB cap on Supabase free tier)
+      const tusEndpoint = `${SUPABASE_URL}/storage/v1/upload/resumable`;
       await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-
-        xhr.upload.onprogress = (event) => {
-          if (event.lengthComputable && event.total > 0) {
-            setBytesProgress({ loaded: event.loaded, total: event.total });
-            const filePercent = event.loaded / event.total;
+        const upload = new tus.Upload(selectedFile, {
+          endpoint: tusEndpoint,
+          retryDelays: [0, 1000, 3000, 5000],
+          chunkSize: 6 * 1024 * 1024, // 6MB chunks
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            apikey: SUPABASE_ANON_KEY,
+          },
+          metadata: {
+            bucketName: "audio_uploads",
+            objectName: storagePath,
+            contentType: mimeType,
+            cacheControl: "3600",
+          },
+          onProgress: (bytesUploaded, bytesTotal) => {
+            setBytesProgress({ loaded: bytesUploaded, total: bytesTotal });
+            const filePercent = bytesTotal > 0 ? bytesUploaded / bytesTotal : 0;
             setUploadProgress(Math.min(85, Math.round(5 + filePercent * 80)));
-          }
-        };
-
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
+          },
+          onSuccess: () => {
             resolve();
-          } else {
-            console.error("[Storage Upload Error Details]", {
-              status: xhr.status,
-              statusText: xhr.statusText,
-              responseText: xhr.responseText,
-              allHeaders: xhr.getAllResponseHeaders(),
-              mimeTypeSent: mimeType,
-              storagePathSent: storagePath,
-              fileSize: selectedFile.size
-            });
-            let errMsg = `Upload failed with status ${xhr.status}`;
-            try {
-              const body = JSON.parse(xhr.responseText);
-              if (body?.message) errMsg = body.message;
-              else if (body?.error) errMsg = body.error;
-            } catch {
-              // fallback
-            }
-            reject(new Error(errMsg));
-          }
-        };
-
-        xhr.onerror = () => {
-          reject(new Error("Network connection lost during upload. Please check your network and retry."));
-        };
-
-        xhr.onabort = () => {
-          reject(new Error("Upload aborted."));
-        };
-
-        xhr.open("POST", uploadUrl, true);
-        xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
-        xhr.setRequestHeader("apikey", SUPABASE_ANON_KEY);
-        xhr.setRequestHeader("x-upsert", "false");
-        xhr.setRequestHeader("Content-Type", mimeType);
-        xhr.send(selectedFile);
+          },
+          onError: (err) => {
+            const msg =
+              err instanceof tus.DetailedError
+                ? (err.originalResponse?.getBody() ?? err.message)
+                : String(err);
+            reject(new Error(msg));
+          },
+        });
+        upload.start();
       });
 
       // Submit processing job via Edge Function
