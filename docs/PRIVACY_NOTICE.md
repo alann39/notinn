@@ -1,6 +1,6 @@
 # Notinn privacy notice
 
-Last reviewed: 2026-09-21. This notice describes the Closed Alpha. It is a
+Last reviewed: 2026-09-26. This notice describes the Closed Alpha. It is a
 product disclosure, not a promise that third-party policies will never change.
 
 ## Data Notinn receives
@@ -21,6 +21,15 @@ content you do not have the right to process.
 | Content-free usage events                                               | Retained after account deletion for security, billing, and operations, linked only to an internal UUID |
 | Content-free lifecycle audit                                            | Retained after deletion: internal UUID, event type, and timestamps only                                |
 | Application logs                                                        | Must contain no note content, transcript, file, Telegram profile label, or credential                  |
+
+## Public website video
+
+The landing page requests a self-hosted decorative video from the Notinn
+website when playback starts. This media request does not send Telegram
+messages or generated notes. With JavaScript disabled, reduced motion
+requested, or playback unavailable, the hero shows a solid dark background
+instead of the video. The visitor's browser does not contact the original
+video source to display this page.
 
 ## Telegram retention is separate
 

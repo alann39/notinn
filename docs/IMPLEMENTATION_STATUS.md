@@ -1,11 +1,35 @@
 # Implementation status
 
-**Phase:** 8 — TipTap Automated Subscriptions, Admin Transactions & Web Upgrade
-**Date:** 2026-09-24
+**Phase:** 9 — Public Landing Page, Static Prerender, Legal Routes & Browser Suite
+**Date:** 2026-09-27
 **Last verified:** the commands in [Verification](#verification) were run and their
 output is recorded below.
 
-## Phase 8 TipTap subscriptions, admin transactions & web upgrade snapshot
+## Phase 9 public landing page, static prerender & legal routes snapshot
+
+The Phase 9 public web slice is implemented and verified locally.
+
+- **Public landing page (`/`)**:
+  - Implemented inside `dashboard/` with zero authentication requirement.
+  - Prisma-inspired hero with oversized Notinn wordmark and sticky adaptive notch navigation (three desktop islands; native disclosure on mobile). A source-derived cream logo marks the notch. The approved video is self-hosted at `dashboard/public/landing/notinn-hero-pingpong.mp4` (483,081 bytes, 190 frames, 7.92 seconds); it plays muted and looping after hydration. Before playback, without JavaScript, with reduced motion, or on media failure, the frame remains solid `#262925`. The hero's `Mulai Mencatat` link opens the Telegram bot; the notch has one `Masuk ke web` action to `/notes`.
+  - Remaining sections use warm paper (`#F7F3EA`), ink typography, Newsreader display serif, and yellow highlights.
+  - Fully responsive from 320px upward with inset controls, no page-level horizontal overflow, semantic landmarks, and skip-link keyboard access.
+- **Authenticated route preservation**:
+  - `/notes`, `/notes/:id`, `/usage`, and `/settings` remain protected under `DashboardLayout` and redirect signed-out visitors to `/login`.
+  - The authenticated root alias is removed; all in-app navigation already targeted `/notes`.
+  - Providers (`ThemeProvider`, `SearchProvider`, `AuthProvider`, `ToastProvider`) are isolated beneath a pathless `DashboardAppLayout` route shell so public routes never touch Supabase or auth sessions.
+- **Public legal routes (`/privacy`, `/terms`)**:
+  - Rendered directly from source Markdown (`docs/PRIVACY_NOTICE.md`, `docs/TERMS_OF_SERVICE.md`) without runtime fetch or content duplication.
+  - Pre-rendered at build time with strict HTML sanitization (`sanitize-html`), preserving tables, headings, and allowlisted external HTTPS links while mapping internal relative references to `/privacy`.
+- **Prerender and deployment infrastructure**:
+  - Multi-stage build (`build:client` -> `build:ssr` -> `prerender`) generates static HTML for `/`, `/privacy`, and `/terms`, an isolated `app.html` shell for authenticated SPA routes, `robots.txt`, and `sitemap.xml`.
+  - `vercel.json` and local `serve-dist.mjs` serve static public pages directly and rewrite only app routes to `/app.html`.
+  - `notinn-social.png` generated at 1200x630 using approved monochrome brand lockup.
+- **Verification**:
+  - 57 browser tests pass across desktop Chromium, Firefox, WebKit, mobile Chromium (Pixel 7), mobile WebKit (iPhone 14), and no-JS Chromium (`npx playwright test --workers=2` from `dashboard/`).
+  - Automated accessibility passes with zero critical/serious violations (`@axe-core/playwright`); mobile disclosure and reduced-motion solid fallback are included.
+  - TypeScript/prerender build (`npm run build:test` from `dashboard/`), `npx deno task check`, and ESLint succeed (0 errors; 15 Fast Refresh warnings).
+  - Real browser inspection confirmed a local 7.92-second video loop with no CloudFront runtime request, solid dark fallback when media is blocked, selected section changes with hash history, and no horizontal overflow at 320px. The local server returned `206` with two bytes for `Range: bytes=0-1` and `416` for an unsatisfiable range.
 
 The Phase 8 slice is implemented, verified, and deployed to development.
 

@@ -1,2 +1,13 @@
 [mcp_servers.supabase]
 url = "https://mcp.supabase.com/mcp?project_ref=neqfilxouhowuyynntdh&features=docs%2Caccount%2Cdatabase%2Cdebugging%2Cdevelopment%2Cfunctions%2Cbranching"
+
+[mcp_servers.github]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-github"]
+
+[mcp_servers.vercel]
+url = "https://mcp.vercel.com"
+
+[mcp_servers.awwwards]
+command = "npx"
+args = ["-y", "awwwards-mcp"]

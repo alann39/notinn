@@ -200,6 +200,7 @@ scripts/                     operator tooling
 tests/                       unit · contract · security · integration · e2e
 docs/                        ARCHITECTURE · API_CONTRACTS · DATA_PRIVACY · TEST_PLAN
                              IMPLEMENTATION_STATUS · ADR/
+dashboard/                     Vite + React 19 web app: public landing (/), legal (/privacy, /terms), notes (/notes)
 ```
 
 ## Documentation

@@ -234,7 +234,7 @@ recorded under [The replay](IMPLEMENTATION_STATUS.md#the-replay).
   getters, and it is not the property that matters. The suites are organised by
   _claim_ — each file's header names the claim it proves — and the exit criteria
   are mapped to tests in the report rather than to a number.
-- **No browser or UI tests.** Telegram is the MVP interface; no browser UI exists.
+- **Browser / UI testing lives in `dashboard/`.** Playwright covers public landing and legal routing, actual no-JavaScript document availability (the `no-js` project is enabled), native mobile notch links, the self-hosted hero poster, reduced-motion video fallback and Telegram CTA, skip-link focus, native FAQ keyboard state, smallest-width reflow (320px), and automated WCAG critical/serious rules through `@axe-core/playwright` across desktop Chromium, Firefox, WebKit, and mobile emulations. Playback was separately observed in a browser; physical hardware touch behaviour, third-party video transfer/Core Web Vitals, Telegram app handoff, and Lighthouse audits remain deployment/manual verification.
 - **No load or concurrency testing.** The `update_id` race is covered at the
   constraint level (a second insert is refused), which is the correctness
   property. Worker throughput and queue-depth testing require an applied PGMQ

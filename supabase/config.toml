@@ -40,10 +40,9 @@ port = 54324
 
 [storage]
 enabled = true
-# Telegram's Bot API caps downloads at 20 MB, so nothing Notinn stores can
-# exceed that. A per-object limit well above it would be capacity Notinn cannot
-# fill; this bounds the damage from a misconfigured or hostile upload instead.
-file_size_limit = "25MiB"
+# Telegram Bot API caps downloads at 20 MB, but dashboard direct uploads to
+# the private audio_uploads bucket support files up to 100 MB for Pro and Alpha plans.
+file_size_limit = "100MiB"
 
 [auth]
 enabled = true
@@ -95,3 +94,12 @@ verify_jwt = false
 # Authenticates via TIPTAP_WEBHOOK_SECRET if configured.
 verify_jwt = false
 
+[functions.web-regenerate-note]
+# Web note template realtime regeneration.
+# Caller authenticates with Supabase user JWT; verified internally via get_linked_user_id.
+verify_jwt = false
+
+[functions.web-submit-audio-job]
+# Web audio job submission with immediate queue worker invocation.
+# Caller authenticates with Supabase user JWT; verified internally via get_linked_user_id.
+verify_jwt = false

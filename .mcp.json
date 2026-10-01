@@ -1,8 +1,17 @@
 {
+  "$schema": "https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json",
   "mcpServers": {
     "supabase": {
       "type": "http",
       "url": "https://mcp.supabase.com/mcp?project_ref=neqfilxouhowuyynntdh&features=docs%2Caccount%2Cdatabase%2Cdebugging%2Cdevelopment%2Cfunctions%2Cbranching"
+    },
+    "vercel": {
+      "type": "http",
+      "url": "https://mcp.vercel.com"
+    },
+    "awwwards": {
+      "command": "npx",
+      "args": ["-y", "awwwards-mcp"]
     }
   }
 }
