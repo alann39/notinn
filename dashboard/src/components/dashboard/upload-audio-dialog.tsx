@@ -636,7 +636,6 @@ export function UploadAudioDialog({
         }, 500);
       }
     } catch (err) {
-      console.error("[Upload Error Caught Full Details]:", err);
       const msg = err instanceof Error ? err.message : "An error occurred while uploading file";
       setFileError(msg);
       toastManager.add({
