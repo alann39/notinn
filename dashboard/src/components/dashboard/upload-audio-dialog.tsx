@@ -504,6 +504,15 @@ export function UploadAudioDialog({
           if (xhr.status >= 200 && xhr.status < 300) {
             resolve();
           } else {
+            console.error("[Storage Upload Error Details]", {
+              status: xhr.status,
+              statusText: xhr.statusText,
+              responseText: xhr.responseText,
+              allHeaders: xhr.getAllResponseHeaders(),
+              mimeTypeSent: mimeType,
+              storagePathSent: storagePath,
+              fileSize: selectedFile.size
+            });
             let errMsg = `Upload failed with status ${xhr.status}`;
             try {
               const body = JSON.parse(xhr.responseText);
