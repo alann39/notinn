@@ -342,7 +342,7 @@ export function AdminUsersPage() {
               totalItems={users.length}
               pageSize={PAGE_SIZE}
               onPageChange={setCurrentPage}
-              itemName="pengguna"
+              itemName="user"
               loading={loading}
             />
           </>

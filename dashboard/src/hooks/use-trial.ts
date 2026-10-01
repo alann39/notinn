@@ -9,7 +9,7 @@ export interface TrialStatus {
   daysRemaining: number;
   /** Calculated expiration date of the 14-day trial. */
   expiryDate: Date | null;
-  /** Formatted expiration date string in Indonesian locale. */
+  /** Formatted expiration date string in British English locale. */
   formattedExpiryDate: string;
 }
 
@@ -47,7 +47,7 @@ export function useTrial(): TrialStatus {
   const daysRemaining = Math.max(0, Math.ceil(diffMs / (24 * 60 * 60 * 1000)));
   const isTrialExpired = diffMs <= 0;
 
-  const formattedExpiryDate = new Intl.DateTimeFormat("id-ID", {
+  const formattedExpiryDate = new Intl.DateTimeFormat("en-GB", {
     day: "numeric",
     month: "long",
     year: "numeric",

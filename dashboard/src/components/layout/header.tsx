@@ -91,10 +91,10 @@ export function Header({ title, description, actions }: HeaderProps) {
               target="_blank"
               rel="noreferrer"
               className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition-colors"
-              title="Akses Web Dashboard untuk akun Free adalah 14 hari sejak pendaftaran. Klik untuk upgrade ke Pro!"
+              title="Free accounts get 14 days of web dashboard access from sign-up. Select to upgrade to Pro!"
             >
               <Sparkles className="size-3" />
-              <span>Trial: {daysRemaining} hari</span>
+              <span>Trial: {daysRemaining} days</span>
             </a>
           )}
 

@@ -9,6 +9,7 @@ export interface Note {
   tags: string[];
   template_key: string;
   summary?: string;
+  transcript?: string | null;
   output_id?: string;
   output_content_json?: StructuredNote;
   output_rendered_text?: string;

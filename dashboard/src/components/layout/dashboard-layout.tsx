@@ -47,10 +47,10 @@ function DashboardContent() {
 }
 
 export function DashboardLayout() {
-  const { session, loading } = useAuth();
+  const { session, loading, isSigningOut } = useAuth();
   const { isTrialExpired } = useTrial();
 
-  if (loading) {
+  if (loading || isSigningOut) {
     return (
       <div
         className="flex h-screen flex-col items-center justify-center gap-3 bg-background text-foreground"
@@ -58,7 +58,9 @@ export function DashboardLayout() {
         aria-live="polite"
       >
         <Spinner className="size-6 text-foreground" />
-        <span className="text-sm font-medium text-muted-foreground">Loading your notes…</span>
+        <span className="text-sm font-medium text-muted-foreground">
+          {isSigningOut ? "Signing out…" : "Loading your notes…"}
+        </span>
       </div>
     );
   }

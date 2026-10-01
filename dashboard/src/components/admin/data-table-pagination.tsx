@@ -33,7 +33,7 @@ export function DataTablePagination({
   return (
     <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 border-t border-border">
       <div className="text-xs text-muted-foreground text-center sm:text-left">
-        Menampilkan {start}–{end} dari {totalItems} {itemName}
+        Showing {start}–{end} of {totalItems} {itemName}
       </div>
 
       <Pagination className="mx-0 w-auto">

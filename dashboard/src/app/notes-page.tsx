@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   Bookmark,
   BookmarkCheck,
   ChevronLeft,
   ChevronRight,
+  FileEdit,
   FileIcon,
   FileText,
   Image,
@@ -12,13 +13,17 @@ import {
   List,
   Mic,
   PlusCircle,
+  Plus,
   Search,
   X,
+  Sparkles,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Header } from "@/components/layout/header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { UploadAudioDialog } from "@/components/dashboard/upload-audio-dialog";
+import { NotePreviewDrawer } from "@/components/dashboard/note-preview-drawer";
 import {
   Card,
   CardHeader,
@@ -62,19 +67,30 @@ const SOURCE_ICONS: Record<string, typeof FileText> = {
   md: FileText,
 };
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10;
 
 export function NotesPage() {
   const [notes, setNotes] = useState<readonly Note[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [savedOnly, setSavedOnly] = useState(false);
+  const [savedOnly, setSavedOnly] = useState(true);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [previewDrawerOpen, setPreviewDrawerOpen] = useState(false);
+  const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
   const navigate = useNavigate();
 
+  const handleNoteClick = (note: Note) => {
+    if (note.is_saved) {
+      navigate(`/notes/${note.id}`);
+    } else {
+      setSelectedDraftId(note.id);
+      setPreviewDrawerOpen(true);
+    }
+  };
   // Debounce search query by 300ms
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -161,75 +177,88 @@ export function NotesPage() {
             </div>
           </div>
 
-          {/* Action Controls: Filter & View Mode Toggle */}
-          <div className="flex items-center justify-between sm:justify-end gap-2.5">
-            {/* Saved Filter Toggle */}
+          {/* Action Controls: Upload Audio on left, Filter & View Mode Switcher grouped on right */}
+          <div className="flex items-center justify-between gap-2.5">
+            {/* Multimodal Capture Trigger Button */}
             <Button
-              variant={savedOnly ? "default" : "outline"}
+              variant="default"
               size="sm"
-              onClick={() => {
-                setSavedOnly(!savedOnly);
-                setPage(0);
-              }}
-              className="gap-1.5 text-xs font-medium"
-              aria-pressed={savedOnly}
+              onClick={() => setUploadOpen(true)}
+              className="gap-1.5 text-xs font-medium cursor-pointer"
             >
-              {savedOnly ? (
-                <>
-                  <BookmarkCheck className="size-3.5" strokeWidth={2.2} />
-                  <span>Saved</span>
-                </>
-              ) : (
-                <>
-                  <Bookmark className="size-3.5" strokeWidth={2} />
-                  <span>All</span>
-                </>
-              )}
+              <Plus className="size-3.5" />
+              <span>New Note</span>
             </Button>
 
-            {/* Coss Segmented Control for Grid vs List */}
-            <div
-              className="flex items-center p-0.5 rounded-lg bg-muted border border-border"
-              role="radiogroup"
-              aria-label="View mode switcher"
-            >
-              <button
-                type="button"
-                role="radio"
-                aria-checked={viewMode === "grid"}
-                onClick={() => setViewMode("grid")}
-                className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-150 cursor-pointer",
-                  viewMode === "grid"
-                    ? "bg-card text-foreground shadow-xs font-semibold"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-                title="Grid View"
+            {/* Grouped Controls: Filter Toggle + Grid/Table View Switcher */}
+            <div className="flex items-center gap-2">
+              {/* Saved Filter Toggle */}
+              <Button
+                variant={savedOnly ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setSavedOnly(!savedOnly);
+                  setPage(0);
+                }}
+                className="gap-1.5 text-xs font-medium"
+                aria-pressed={savedOnly}
               >
-                <LayoutGrid className="size-3.5" strokeWidth={2} />
-                <span className="hidden sm:inline">Grid</span>
-              </button>
+                {savedOnly ? (
+                  <>
+                    <BookmarkCheck className="size-3.5" strokeWidth={2.2} />
+                    <span>Saved</span>
+                  </>
+                ) : (
+                  <>
+                    <Bookmark className="size-3.5" strokeWidth={2} />
+                    <span>All</span>
+                  </>
+                )}
+              </Button>
 
-              <button
-                type="button"
-                role="radio"
-                aria-checked={viewMode === "list"}
-                onClick={() => setViewMode("list")}
-                className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-150 cursor-pointer",
-                  viewMode === "list"
-                    ? "bg-card text-foreground shadow-xs font-semibold"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-                title="Table View"
+              {/* Coss Segmented Control for Grid vs List */}
+              <div
+                className="flex items-center p-0.5 rounded-lg bg-muted border border-border"
+                role="radiogroup"
+                aria-label="View mode switcher"
               >
-                <List className="size-3.5" strokeWidth={2} />
-                <span className="hidden sm:inline">Table</span>
-              </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={viewMode === "grid"}
+                  onClick={() => setViewMode("grid")}
+                  className={cn(
+                    "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-150 cursor-pointer",
+                    viewMode === "grid"
+                      ? "bg-card text-foreground shadow-xs font-semibold"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                  title="Grid View"
+                >
+                  <LayoutGrid className="size-3.5" strokeWidth={2} />
+                  <span className="hidden sm:inline">Grid</span>
+                </button>
+
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={viewMode === "list"}
+                  onClick={() => setViewMode("list")}
+                  className={cn(
+                    "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-150 cursor-pointer",
+                    viewMode === "list"
+                      ? "bg-card text-foreground shadow-xs font-semibold"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                  title="Table View"
+                >
+                  <List className="size-3.5" strokeWidth={2} />
+                  <span className="hidden sm:inline">Table</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
-
         {/* Content Section */}
         {loading ? (
           /* Coss Skeleton Loading State */
@@ -336,15 +365,26 @@ export function NotesPage() {
                   Reset search & filters
                 </Button>
               ) : (
+              <div className="flex flex-wrap items-center justify-center gap-2">
                 <Button
                   variant="default"
                   size="sm"
+                  onClick={() => setUploadOpen(true)}
+                  className="gap-1.5 text-xs cursor-pointer"
+                >
+                  <Plus className="size-3.5" />
+                  <span>New Note</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => window.open("https://t.me/NotinnBot", "_blank")}
-                  className="gap-2 text-xs"
+                  className="gap-1.5 text-xs cursor-pointer"
                 >
                   <PlusCircle className="size-3.5" />
-                  <span>Open Notinn on Telegram</span>
+                  <span>Open on Telegram</span>
                 </Button>
+                </div>
               )}
             </EmptyContent>
           </Empty>
@@ -355,10 +395,18 @@ export function NotesPage() {
               const SourceIcon = SOURCE_ICONS[note.source_type] ?? FileText;
 
               return (
-                <Link
+                <div
                   key={note.id}
-                  to={`/notes/${note.id}`}
-                  className="group block outline-none focus-visible:ring-1 focus-visible:ring-foreground rounded-2xl transition-transform active:scale-[0.99]"
+                  onClick={() => handleNoteClick(note)}
+                  className="group block outline-none focus-visible:ring-1 focus-visible:ring-foreground rounded-2xl transition-transform active:scale-[0.99] cursor-pointer"
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleNoteClick(note);
+                    }
+                  }}
                   aria-label={`Open note: ${note.title}`}
                 >
                   <Card className="p-5 flex flex-col justify-between h-full space-y-4 hover:border-foreground/30 transition-all">
@@ -373,13 +421,36 @@ export function NotesPage() {
                             <CardTitle className="text-sm sm:text-base font-semibold text-foreground tracking-tight group-hover:underline underline-offset-2 transition-colors line-clamp-1">
                               {note.title}
                             </CardTitle>
-                            {note.is_saved && (
+                            {note.is_saved ? (
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedDraftId(note.id);
+                                    setPreviewDrawerOpen(true);
+                                  }}
+                                  className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
+                                  title="Quick actions (change template, delete, etc.)"
+                                  aria-label="Quick Actions"
+                                >
+                                  <Sparkles className="size-3.5 text-primary/80" />
+                                </button>
+                                <span
+                                  className="inline-flex items-center gap-1 text-xs text-foreground font-medium shrink-0"
+                                  title="Saved Note"
+                                >
+                                  <BookmarkCheck className="size-4" strokeWidth={2.2} />
+                                  <span className="sr-only">Saved note</span>
+                                </span>
+                              </div>
+                            ) : (
                               <span
-                                className="inline-flex items-center gap-1 text-xs text-foreground font-medium shrink-0"
-                                title="Saved Note"
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-amber-500/10 text-amber-500 border border-amber-500/20 shrink-0"
+                                title="Draft Note"
                               >
-                                <BookmarkCheck className="size-4" strokeWidth={2.2} />
-                                <span className="sr-only">Saved note</span>
+                                <FileEdit className="size-3" />
+                                <span>Draft</span>
                               </span>
                             )}
                           </div>
@@ -428,7 +499,7 @@ export function NotesPage() {
                       </CardFooter>
                     )}
                   </Card>
-                </Link>
+                </div>
               );
             })}
           </div>
@@ -443,10 +514,16 @@ export function NotesPage() {
                 return (
                   <div
                     key={note.id}
-                    onClick={() => navigate(`/notes/${note.id}`)}
+                    onClick={() => handleNoteClick(note)}
                     className="p-3.5 space-y-1.5 active:bg-muted/60 hover:bg-muted/40 transition-colors cursor-pointer"
                     role="button"
                     tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        handleNoteClick(note);
+                      }
+                    }}
                     aria-label={`Open note: ${note.title}`}
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -457,8 +534,28 @@ export function NotesPage() {
                         <span className="font-semibold text-sm text-foreground truncate">
                           {note.title}
                         </span>
-                        {note.is_saved && (
-                          <BookmarkCheck className="size-3.5 text-foreground shrink-0" strokeWidth={2} />
+                        {note.is_saved ? (
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedDraftId(note.id);
+                                setPreviewDrawerOpen(true);
+                              }}
+                              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                              title="Quick Actions"
+                              aria-label="Quick Actions"
+                            >
+                              <Sparkles className="size-3 text-primary/80" />
+                            </button>
+                            <BookmarkCheck className="size-3.5 text-foreground shrink-0" strokeWidth={2} />
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-amber-500/10 text-amber-500 border border-amber-500/20 shrink-0">
+                            <FileEdit className="size-2.5" />
+                            <span>Draft</span>
+                          </span>
                         )}
                       </div>
                       <span className="text-[11px] text-muted-foreground shrink-0 whitespace-nowrap tabular-nums">
@@ -509,7 +606,7 @@ export function NotesPage() {
                     return (
                       <TableRow
                         key={note.id}
-                        onClick={() => navigate(`/notes/${note.id}`)}
+                        onClick={() => handleNoteClick(note)}
                         className="cursor-pointer group hover:bg-muted/40 transition-colors"
                       >
                         <TableCell className="py-3 px-4">
@@ -522,8 +619,28 @@ export function NotesPage() {
                                 <span className="font-semibold text-sm text-foreground group-hover:underline underline-offset-2 truncate">
                                   {note.title}
                                 </span>
-                                {note.is_saved && (
-                                  <BookmarkCheck className="size-3.5 text-foreground shrink-0" strokeWidth={2} />
+                                {note.is_saved ? (
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedDraftId(note.id);
+                                        setPreviewDrawerOpen(true);
+                                      }}
+                                      className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors opacity-70 group-hover:opacity-100"
+                                      title="Quick actions (change template, delete, etc.)"
+                                      aria-label="Quick Actions"
+                                    >
+                                      <Sparkles className="size-3 text-primary/80" />
+                                    </button>
+                                    <BookmarkCheck className="size-3.5 text-foreground shrink-0" strokeWidth={2} />
+                                  </div>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-amber-500/10 text-amber-500 border border-amber-500/20 shrink-0">
+                                    <FileEdit className="size-2.5" />
+                                    <span>Draft</span>
+                                  </span>
                                 )}
                               </div>
                               {note.summary && (
@@ -609,6 +726,26 @@ export function NotesPage() {
           </div>
         )}
       </div>
+
+      <UploadAudioDialog
+        open={uploadOpen}
+        onOpenChange={setUploadOpen}
+        onSuccess={fetchNotes}
+        onNoteReady={(newNoteId) => {
+          fetchNotes();
+          setSelectedDraftId(newNoteId);
+          setPreviewDrawerOpen(true);
+        }}
+      />
+
+      <NotePreviewDrawer
+        open={previewDrawerOpen}
+        onOpenChange={setPreviewDrawerOpen}
+        noteId={selectedDraftId}
+        onSaved={() => fetchNotes()}
+        onDeleted={() => fetchNotes()}
+        onRegenerated={() => fetchNotes()}
+      />
     </>
   );
 }

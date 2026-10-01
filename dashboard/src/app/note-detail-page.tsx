@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import { supabase } from "@/lib/supabase";
+import { supabase, SUPABASE_URL } from "@/lib/supabase";
 import { Header } from "@/components/layout/header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +33,32 @@ import {
   ToggleGroupItem,
 } from "@/components/ui/toggle-group";
 import {
+  Dialog,
+  DialogPopup,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogPopup,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+} from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { toastManager } from "@/components/ui/toast";
+import type { TemplateOption } from "@/components/dashboard/note-preview-drawer";
+import {
   AlertCircle,
   AlignCenter,
   AlignJustify,
@@ -43,7 +69,6 @@ import {
   Calendar,
   Check,
   CheckCircle2,
-  ChevronDown,
   Copy,
   Download,
   FileIcon,
@@ -54,6 +79,8 @@ import {
   Tag,
   CheckSquare,
   List,
+  Sparkles,
+  Trash2,
 } from "lucide-react";
 import { formatDate, formatRelativeTime } from "@/lib/utils";
 import type { Note, StructuredNote } from "@/types/notes";
@@ -99,30 +126,125 @@ export function NoteDetailPage() {
   const [copiedType, setCopiedType] = useState<"markdown" | null>(null);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [checkedItems, setCheckedItems] = useState<Record<number, boolean>>({});
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+  const [templates, setTemplates] = useState<TemplateOption[]>([]);
+  const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>("clean_note");
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const fetchNote = useCallback(async () => {
+    if (!id) return;
+    try {
+      const { data, error: rpcError } = await supabase.rpc("web_get_note", {
+        p_note_id: id,
+      });
+      if (rpcError) throw rpcError;
+      if (!data || (Array.isArray(data) && data.length === 0)) {
+        setError("Could not load note");
+        return;
+      }
+      const loadedNote = Array.isArray(data) ? data[0] : data;
+      setNote(loadedNote);
+      if (loadedNote.template_key) {
+        setSelectedTemplateKey(loadedNote.template_key);
+      }
+    } catch {
+      setError("Could not load note");
+    }
+  }, [id]);
 
   useEffect(() => {
     if (!id) return;
-    async function loadNote() {
-      setLoading(true);
-      try {
-        const { data, error: rpcError } = await supabase.rpc("web_get_note", {
-          p_note_id: id,
-        });
-        if (rpcError) throw rpcError;
-        if (!data || (Array.isArray(data) && data.length === 0)) {
-          setError("Note not found");
-          return;
-        }
-        const loadedNote = Array.isArray(data) ? data[0] : data;
-        setNote(loadedNote);
-      } catch {
-        setError("Failed to load note");
-      } finally {
-        setLoading(false);
-      }
+    setLoading(true);
+    fetchNote().finally(() => setLoading(false));
+  }, [id, fetchNote]);
+
+  const fetchTemplates = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.rpc("web_list_templates", {
+        p_input_type: note?.source_type === "audio" ? "audio" : "text",
+      });
+      if (error) return;
+      setTemplates((data as TemplateOption[]) || []);
+    } catch {
+      // ignore
     }
-    loadNote();
-  }, [id]);
+  }, [note?.source_type]);
+
+  const handleRegenerate = async () => {
+    if (!id || !selectedTemplateKey) return;
+    setIsRegenerating(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) {
+        throw new Error("Session expired. Sign in again.");
+      }
+
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/web-regenerate-note`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          note_id: id,
+          template_key: selectedTemplateKey,
+        }),
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json.error || "Could not change template");
+      }
+
+      toastManager.add({
+        title: "Template updated",
+        description: "Note updated with the new template format.",
+        type: "success",
+      });
+
+      setTemplateDialogOpen(false);
+      await fetchNote();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Something went wrong while processing the template";
+      toastManager.add({
+        title: "Could not change template",
+        description: msg,
+        type: "error",
+      });
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
+
+  const handleDeleteNote = async () => {
+    if (!id) return;
+    setIsDeleting(true);
+    try {
+      const { data, error } = await supabase.rpc("web_delete_note", { p_note_id: id });
+      if (error) throw error;
+      if (data) {
+        toastManager.add({
+          title: "Note deleted",
+          description: "Note permanently deleted.",
+          type: "success",
+        });
+        setDeleteDialogOpen(false);
+        navigate("/notes");
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Could not delete note";
+      toastManager.add({
+        title: "Could not delete note",
+        description: msg,
+        type: "error",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const noteRecord = note as (Note & {
     output_content_json?: StructuredNote;
@@ -330,100 +452,124 @@ export function NoteDetailPage() {
         </ToggleGroup>
       )}
 
+      {/* Compact Coss Switch for Raw View Toggle */}
+      <div
+        className="flex items-center gap-1.5 px-2 py-1 h-8 rounded-lg border border-border bg-muted/40"
+        title={isRawView ? "Back to note view" : "View raw Markdown"}
+      >
+        <FileText className="size-3.5 text-muted-foreground" />
+        <Switch
+          checked={isRawView}
+          onCheckedChange={(checked) => setIsRawView(checked)}
+          aria-label="Toggle raw markdown view"
+        />
+      </div>
+
+      {/* Change Template Button (Icon-Only) */}
       <Button
         variant="outline"
         size="sm"
-        onClick={() => setIsRawView(!isRawView)}
-        className="gap-1.5 text-xs font-mono"
+        onClick={() => {
+          if (note.template_key) setSelectedTemplateKey(note.template_key);
+          fetchTemplates();
+          setTemplateDialogOpen(true);
+        }}
+        title="Change template"
+        aria-label="Change template"
+        className="size-8 p-0"
       >
-        {isRawView ? (
-          <>
-            <List className="size-3.5" />
-            <span>Notion View</span>
-          </>
-        ) : (
-          <>
-            <FileText className="size-3.5" />
-            <span>Raw View</span>
-          </>
-        )}
+        <Sparkles className="size-3.5 text-primary" />
       </Button>
 
-      {/* Coss Menu Component for Export Actions */}
-      <Menu>
-        <MenuTrigger
-          render={
-            <Button
-              variant="default"
-              size="sm"
+      {/* Delete Note Button (Icon-Only) */}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setDeleteDialogOpen(true)}
+        title="Delete note"
+        aria-label="Delete note"
+        className="size-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+      >
+        <Trash2 className="size-3.5" />
+      </Button>
+
+      {/* Coss Menu Component for Export Actions (Icon-Only Menu Trigger) */}
+      {note.is_saved && (
+        <Menu>
+          <MenuTrigger
+            render={
+              <Button
+                variant="default"
+                size="sm"
+                disabled={isExportingPdf}
+                title="Export note"
+                aria-label="Export note"
+                className="size-8 p-0"
+              >
+                {isExportingPdf ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Download className="size-3.5" />
+                )}
+              </Button>
+            }
+          />
+          <MenuPopup align="end" className="w-52">
+            <MenuItem
+              onClick={handleDownloadPdf}
               disabled={isExportingPdf}
-              className="gap-1.5 text-xs font-medium"
+              className="cursor-pointer gap-2.5 text-xs py-2"
             >
-              {isExportingPdf ? (
-                <Loader2 className="size-3.5 animate-spin" />
+              <FileIcon className="size-4 text-muted-foreground" />
+              <div className="flex flex-col">
+                <span className="font-medium">Export PDF Document</span>
+                <span className="text-[10px] text-muted-foreground">Formatted printable .pdf</span>
+              </div>
+            </MenuItem>
+
+            <MenuItem
+              onClick={() => handleDownloadText("markdown")}
+              className="cursor-pointer gap-2.5 text-xs py-2"
+            >
+              <FileText className="size-4 text-muted-foreground" />
+              <div className="flex flex-col">
+                <span className="font-medium">Download Markdown</span>
+                <span className="text-[10px] text-muted-foreground">Formatted .md file</span>
+              </div>
+            </MenuItem>
+
+            <MenuItem
+              onClick={() => handleDownloadText("text")}
+              className="cursor-pointer gap-2.5 text-xs py-2"
+            >
+              <FileText className="size-4 text-muted-foreground" />
+              <div className="flex flex-col">
+                <span className="font-medium">Download Plain Text</span>
+                <span className="text-[10px] text-muted-foreground">Standard .txt file</span>
+              </div>
+            </MenuItem>
+
+            <MenuSeparator />
+
+            <MenuItem
+              onClick={handleCopyMarkdown}
+              className="cursor-pointer gap-2.5 text-xs py-2"
+            >
+              {copiedType === "markdown" ? (
+                <>
+                  <Check className="size-4 text-foreground" />
+                  <span className="font-medium">Copied to Clipboard!</span>
+                </>
               ) : (
-                <Download className="size-3.5" />
+                <>
+                  <Copy className="size-4 text-muted-foreground" />
+                  <span className="font-medium">Copy Markdown</span>
+                </>
               )}
-              <span>Export</span>
-              <ChevronDown className="size-3 opacity-70 ml-0.5" />
-            </Button>
-          }
-        />
-        <MenuPopup align="end" className="w-52">
-          <MenuItem
-            onClick={handleDownloadPdf}
-            disabled={isExportingPdf}
-            className="cursor-pointer gap-2.5 text-xs py-2"
-          >
-            <FileIcon className="size-4 text-muted-foreground" />
-            <div className="flex flex-col">
-              <span className="font-medium">Export PDF Document</span>
-              <span className="text-[10px] text-muted-foreground">Formatted printable .pdf</span>
-            </div>
-          </MenuItem>
-
-          <MenuItem
-            onClick={() => handleDownloadText("markdown")}
-            className="cursor-pointer gap-2.5 text-xs py-2"
-          >
-            <FileText className="size-4 text-muted-foreground" />
-            <div className="flex flex-col">
-              <span className="font-medium">Download Markdown</span>
-              <span className="text-[10px] text-muted-foreground">Formatted .md file</span>
-            </div>
-          </MenuItem>
-
-          <MenuItem
-            onClick={() => handleDownloadText("text")}
-            className="cursor-pointer gap-2.5 text-xs py-2"
-          >
-            <FileText className="size-4 text-muted-foreground" />
-            <div className="flex flex-col">
-              <span className="font-medium">Download Plain Text</span>
-              <span className="text-[10px] text-muted-foreground">Standard .txt file</span>
-            </div>
-          </MenuItem>
-
-          <MenuSeparator />
-
-          <MenuItem
-            onClick={handleCopyMarkdown}
-            className="cursor-pointer gap-2.5 text-xs py-2"
-          >
-            {copiedType === "markdown" ? (
-              <>
-                <Check className="size-4 text-foreground" />
-                <span className="font-medium">Copied to Clipboard!</span>
-              </>
-            ) : (
-              <>
-                <Copy className="size-4 text-muted-foreground" />
-                <span className="font-medium">Copy Markdown</span>
-              </>
-            )}
-          </MenuItem>
-        </MenuPopup>
-      </Menu>
+            </MenuItem>
+          </MenuPopup>
+        </Menu>
+      )}
     </>
   );
 
@@ -852,6 +998,123 @@ export function NoteDetailPage() {
           </article>
         )}
       </div>
+
+      {/* Change Template Dialog */}
+      <Dialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen}>
+        <DialogPopup className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="size-4 text-primary" />
+              <span>Change note template</span>
+            </DialogTitle>
+            <DialogDescription>
+              Choose a new template to restructure this note. The original transcript will be reprocessed by AI.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-6 pt-2 space-y-4">
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-foreground">Choose template</label>
+              <Select
+                value={selectedTemplateKey}
+                onValueChange={(val) => val && setSelectedTemplateKey(val)}
+                disabled={isRegenerating}
+              >
+                <SelectTrigger className="w-full text-xs">
+                  <SelectValue>
+                    {templates.find((t) => t.template_key === selectedTemplateKey)?.template_name || selectedTemplateKey}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup className="max-h-60">
+                  {templates.map((t) => (
+                    <SelectItem key={t.template_key} value={t.template_key}>
+                      <div className="flex flex-col py-0.5">
+                        <span className="font-medium text-xs">{t.template_name}</span>
+                        {t.description && (
+                          <span className="text-[10px] text-muted-foreground line-clamp-1">{t.description}</span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter className="p-4 border-t border-border flex justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setTemplateDialogOpen(false)}
+              disabled={isRegenerating}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleRegenerate}
+              disabled={isRegenerating}
+              className="gap-1.5"
+            >
+              {isRegenerating ? (
+                <>
+                  <Spinner className="size-3.5" />
+                  <span>Processing…</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="size-3.5" />
+                  <span>Regenerate</span>
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
+
+      {/* Delete Note Alert Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogPopup className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="size-4" />
+              <span>Delete this note?</span>
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This cannot be undone. The note and its full generation and export history will be permanently deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDeleteDialogOpen(false)}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleDeleteNote}
+              disabled={isDeleting}
+              className="gap-1.5"
+            >
+              {isDeleting ? (
+                <>
+                  <Spinner className="size-3.5" />
+                  <span>Deleting…</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 className="size-3.5" />
+                  <span>Delete note</span>
+                </>
+              )}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
     </>
   );
 }

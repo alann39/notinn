@@ -108,7 +108,7 @@ export function SettingsPage() {
                   </Badge>
                   {!isPro && profile.plan_key === "free" && (
                     <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
-                      (Web Trial: {daysRemaining} hari lagi)
+                      (Web trial: {daysRemaining} days left)
                     </span>
                   )}
                 </dd>
@@ -117,10 +117,10 @@ export function SettingsPage() {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between py-3 gap-2 bg-amber-500/5 -mx-6 px-6 border-y border-amber-500/10">
                   <div className="space-y-0.5">
                     <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
-                      Masa Percobaan Web Dashboard
+                      Web dashboard trial
                     </p>
                     <p className="text-[11px] text-muted-foreground">
-                      Akses Web Dashboard untuk akun Free adalah 14 hari sejak pendaftaran. Upgrade ke Pro untuk akses selamanya seharga Rp 10.000 / bulan.
+                      Free accounts get 14 days of web dashboard access from sign-up. Upgrade to Pro for permanent access at Rp 10,000 / month.
                     </p>
                   </div>
                   <Button
@@ -129,7 +129,7 @@ export function SettingsPage() {
                     className="shrink-0 gap-1.5 text-xs font-medium self-start sm:self-center"
                   >
                     <Sparkles className="size-3.5" />
-                    <span>Upgrade Pro (Rp 10.000)</span>
+                    <span>Upgrade to Pro (Rp 10,000)</span>
                     <ExternalLink className="size-3" />
                   </Button>
                 </div>

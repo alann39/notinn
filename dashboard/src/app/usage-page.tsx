@@ -181,14 +181,14 @@ export function UsagePage() {
                     <div className="flex items-center gap-2">
                       <Sparkles className="size-4 text-primary" />
                       <h3 className="text-base font-semibold text-foreground tracking-tight">
-                        Upgrade ke Notinn Pro
+                        Upgrade to Notinn Pro
                       </h3>
                       <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium border border-primary/20">
-                        Promo Rp 10.000 / bln
+                        Promo Rp 10,000 / mo
                       </span>
                     </div>
                     <p className="text-sm text-muted-foreground leading-relaxed">
-                      Akses Web Dashboard penuh selamanya (Free plan terbatas 14 hari), kuota 1.000 catatan/bulan, dan pemrosesan AI prioritas.
+                      Full web dashboard access forever (free plan limited to 14 days), 1,000 notes per month, and priority AI processing.
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -199,7 +199,7 @@ export function UsagePage() {
                       className="gap-1.5 text-xs font-medium cursor-pointer"
                     >
                       <Sparkles className="size-3.5" />
-                      <span>Bayar via TipTap</span>
+                      <span>Pay with TipTap</span>
                     </Button>
                     <Button
                       variant="outline"
@@ -207,7 +207,7 @@ export function UsagePage() {
                       onClick={() => window.open("https://t.me/NotinnBot", "_blank")}
                       className="gap-1.5 text-xs font-medium cursor-pointer"
                     >
-                      <span>Buka Bot</span>
+                      <span>Open bot</span>
                     </Button>
                   </div>
                 </div>

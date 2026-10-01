@@ -80,13 +80,13 @@ import { formatDate, formatRelativeTime } from "@/lib/utils";
 type FilterStatus = "all" | "completed" | "problematic" | "pending" | "invalid" | "expired" | "cancelled";
 
 const STATUS_LABELS: Record<FilterStatus, string> = {
-  all: "Semua Status",
-  completed: "Completed (Berhasil)",
-  problematic: "Needs Attention (Bermasalah)",
+  all: "All statuses",
+  completed: "Completed",
+  problematic: "Needs attention",
   pending: "Pending",
   invalid: "Underpaid / Invalid",
-  expired: "Expired (Kadaluarsa)",
-  cancelled: "Cancelled (Dibatalkan)",
+  expired: "Expired",
+  cancelled: "Cancelled",
 };
 
 const PAGE_SIZE = 10;
@@ -681,7 +681,7 @@ export function AdminTransactionsPage() {
             {/* Mobile View: Select Dropdown Filter (displays Indonesian label) */}
             <div className="block sm:hidden w-full space-y-1.5">
               <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1">
-                <Filter className="size-3" /> Filter Status Transaksi:
+                <Filter className="size-3" /> Filter transaction status:
               </span>
               <Select
                 value={filter}
@@ -691,13 +691,13 @@ export function AdminTransactionsPage() {
                   <SelectValue>{STATUS_LABELS[filter]}</SelectValue>
                 </SelectTrigger>
                 <SelectPopup>
-                  <SelectItem value="all">Semua Status</SelectItem>
-                  <SelectItem value="completed">Completed (Berhasil)</SelectItem>
-                  <SelectItem value="problematic">Needs Attention (Bermasalah)</SelectItem>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="problematic">Needs attention</SelectItem>
                   <SelectItem value="pending">Pending</SelectItem>
                   <SelectItem value="invalid">Underpaid / Invalid</SelectItem>
-                  <SelectItem value="expired">Expired (Kadaluarsa)</SelectItem>
-                  <SelectItem value="cancelled">Cancelled (Dibatalkan)</SelectItem>
+                  <SelectItem value="expired">Expired</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
                 </SelectPopup>
               </Select>
             </div>
@@ -977,7 +977,7 @@ export function AdminTransactionsPage() {
                 totalItems={orders.length}
                 pageSize={PAGE_SIZE}
                 onPageChange={setCurrentPage}
-                itemName="transaksi"
+                itemName="transaction"
                 loading={loading}
               />
             </>
@@ -1143,7 +1143,7 @@ export function AdminTransactionsPage() {
               </label>
               <Input
                 id="cancel-notes-input"
-                placeholder="e.g. Pembayaran dibatalkan karena batas waktu habis atau kesalahan user"
+                placeholder="e.g. Payment cancelled because the time limit expired or a user error"
                 value={cancelNotes}
                 onChange={(e) => setCancelNotes(e.target.value)}
                 className="text-xs h-9"
@@ -1158,7 +1158,7 @@ export function AdminTransactionsPage() {
                 onCheckedChange={(checked) => setCancelNotifyUser(Boolean(checked))}
               />
               <label htmlFor="notify-cancel-user" className="text-xs text-foreground cursor-pointer select-none">
-                Kirim notifikasi pembatalan ke Telegram user
+                Send the cancellation notice to the user's Telegram
               </label>
             </div>
           </div>
@@ -1223,7 +1223,7 @@ export function AdminTransactionsPage() {
               </label>
               <Input
                 id="expire-notes-input"
-                placeholder="e.g. Ditandai kadaluarsa oleh admin karena tidak ada konfirmasi transfer"
+                placeholder="e.g. Marked expired by an admin because no transfer confirmation arrived"
                 value={expireNotes}
                 onChange={(e) => setExpireNotes(e.target.value)}
                 className="text-xs h-9"
@@ -1238,7 +1238,7 @@ export function AdminTransactionsPage() {
                 onCheckedChange={(checked) => setExpireNotifyUser(Boolean(checked))}
               />
               <label htmlFor="notify-expire-user" className="text-xs text-foreground cursor-pointer select-none">
-                Kirim notifikasi kadaluarsa ke Telegram user
+                Send the expiry notice to the user's Telegram
               </label>
             </div>
           </div>

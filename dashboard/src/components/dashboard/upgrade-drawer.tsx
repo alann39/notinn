@@ -67,8 +67,8 @@ export function UpgradeDrawer({
     navigator.clipboard.writeText(text);
     setCopiedKey(key);
     toastManager.add({
-      title: "Tersalin!",
-      description: `"${text}" berhasil disalin ke clipboard.`,
+      title: "Copied",
+      description: `"${text}" copied to clipboard.`,
       type: "success",
     });
     setTimeout(() => setCopiedKey(null), 2000);
@@ -104,10 +104,10 @@ export function UpgradeDrawer({
           }
         }
       } else {
-        throw new Error("Gagal membuat kode transaksi upgrade");
+        throw new Error("Could not prepare order");
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Terjadi kesalahan saat memuat order";
+      const msg = err instanceof Error ? err.message : "Something went wrong while loading the transaction data";
       setError(msg);
     } finally {
       setLoading(false);
@@ -133,8 +133,8 @@ export function UpgradeDrawer({
             setIsCompleted(true);
             onUpgraded?.();
             toastManager.add({
-              title: "Pembayaran Dikonfirmasi!",
-              description: "Selamat, akun Anda telah aktif sebagai Notinn Pro!",
+              title: "Payment confirmed",
+              description: "Your account is now active as Notinn Pro.",
               type: "success",
             });
             if (pollingRef.current) {
@@ -145,17 +145,17 @@ export function UpgradeDrawer({
             setIsExpired(true);
           } else if (!silent) {
             toastManager.add({
-              title: "Status: Menunggu Pembayaran",
-              description: "Pembayaran belum terdeteksi. Silakan transfer di TipTap dan masukkan kode order.",
+              title: "Status: Waiting for payment",
+              description: "No payment detected yet. Transfer in TipTap and enter the order code.",
               type: "default",
             });
           }
         }
       } catch (err: unknown) {
         if (!silent) {
-          const msg = err instanceof Error ? err.message : "Gagal memeriksa status";
+          const msg = err instanceof Error ? err.message : "Could not check status";
           toastManager.add({
-            title: "Gagal Cek Status",
+            title: "Could not check status",
             description: msg,
             type: "error",
           });
@@ -211,7 +211,7 @@ export function UpgradeDrawer({
       return (
         <div className="flex flex-col items-center justify-center py-24 space-y-3">
           <Spinner className="size-6 text-foreground" />
-          <p className="text-xs text-muted-foreground font-medium">Menyiapkan kode transaksi…</p>
+          <p className="text-xs text-muted-foreground font-medium">Preparing the transaction code…</p>
         </div>
       );
     }
@@ -223,12 +223,12 @@ export function UpgradeDrawer({
             <AlertTriangle className="size-5" />
           </div>
           <div className="space-y-1">
-            <h4 className="font-semibold text-sm text-foreground">Gagal Menyiapkan Order</h4>
-            <p className="text-xs text-muted-foreground">{error || "Terjadi kendala memuat data transaksi"}</p>
+            <h4 className="font-semibold text-sm text-foreground">Could not prepare order</h4>
+            <p className="text-xs text-muted-foreground">{error || "Something went wrong while loading the transaction data"}</p>
           </div>
           <Button size="sm" variant="outline" onClick={initOrder} className="gap-1.5 text-xs">
             <RefreshCw className="size-3.5" />
-            <span>Coba Lagi</span>
+            <span>Try again</span>
           </Button>
         </div>
       );
@@ -243,27 +243,27 @@ export function UpgradeDrawer({
           </div>
           <div className="space-y-1.5">
             <Badge variant="outline" className="border-success/30 text-success bg-success/10 text-xs font-semibold px-2.5 py-0.5">
-              Pro Aktif 30 Hari
+              Pro active for 30 days
             </Badge>
             <h3 className="text-xl font-bold text-foreground tracking-tight">
-              Pembayaran Berhasil Dikonfirmasi!
+              Payment confirmed.
             </h3>
             <p className="text-xs text-muted-foreground leading-relaxed max-w-sm mx-auto">
-              Akun Anda telah diupgrade ke <span className="font-semibold text-foreground">Notinn Pro</span>. Kuota 1.000 catatan/bulan dan akses Web Dashboard penuh telah aktif seketika.
+              Your account has been upgraded to <span className="font-semibold text-foreground">Notinn Pro</span>. 1,000 notes per month and full web dashboard access are active now.
             </p>
           </div>
 
           <div className="p-4 rounded-xl border border-border bg-card/60 text-xs space-y-2 text-left">
             <div className="flex justify-between items-center text-muted-foreground">
-              <span>Kode Transaksi:</span>
+              <span>Transaction code:</span>
               <span className="font-mono font-semibold text-foreground">{order.order_code}</span>
             </div>
             <div className="flex justify-between items-center text-muted-foreground">
-              <span>Paket:</span>
-              <span className="font-semibold text-foreground">Notinn Pro (30 Hari)</span>
+              <span>Plan:</span>
+              <span className="font-semibold text-foreground">Notinn Pro (30 days)</span>
             </div>
             <div className="flex justify-between items-center text-muted-foreground">
-              <span>Nominal:</span>
+              <span>Payment amount:</span>
               <span className="font-semibold text-foreground">{formatIDR(order.amount_idr)}</span>
             </div>
           </div>
@@ -273,7 +273,7 @@ export function UpgradeDrawer({
             className="w-full text-xs font-medium cursor-pointer"
             onClick={() => onOpenChange(false)}
           >
-            Selesai
+            Done
           </Button>
         </div>
       );
@@ -287,14 +287,14 @@ export function UpgradeDrawer({
             <Clock className="size-5" />
           </div>
           <div className="space-y-1">
-            <h4 className="font-semibold text-sm text-foreground">Kode Order Kadaluarsa</h4>
+            <h4 className="font-semibold text-sm text-foreground">Order code expired</h4>
             <p className="text-xs text-muted-foreground">
-              Masa berlaku 24 jam untuk kode transaksi {order.order_code} telah habis. Silakan buat kode transaksi baru.
+              The 24-hour validity for this transaction code has passed. Create a new transaction code.
             </p>
           </div>
           <Button size="sm" variant="default" onClick={initOrder} className="gap-1.5 text-xs">
             <RefreshCw className="size-3.5" />
-            <span>Buat Order Baru</span>
+            <span>Create a new order</span>
           </Button>
         </div>
       );
@@ -308,7 +308,7 @@ export function UpgradeDrawer({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <Sparkles className="size-4 text-primary" />
-              <span className="font-bold text-foreground text-sm">Notinn Pro (30 Hari)</span>
+              <span className="font-bold text-foreground text-sm">Notinn Pro (30 days)</span>
             </div>
             {order.is_early_bird && (
               <Badge variant="outline" size="sm" className="bg-primary/10 text-primary border-primary/25 font-semibold text-[10px]">
@@ -320,7 +320,7 @@ export function UpgradeDrawer({
           {/* Amount Box */}
           <div className="p-3 rounded-lg bg-muted/40 border border-border/80 flex items-center justify-between">
             <div className="space-y-0.5">
-              <span className="text-[11px] text-muted-foreground block font-medium">Nominal Pembayaran</span>
+              <span className="text-[11px] text-muted-foreground block font-medium">Payment amount</span>
               <span className="font-bold text-lg text-foreground font-mono">
                 {formatIDR(order.amount_idr)}
               </span>
@@ -336,7 +336,7 @@ export function UpgradeDrawer({
               ) : (
                 <Copy className="size-3.5" />
               )}
-              <span>{copiedKey === "amount" ? "Tersalin" : "Salin Nominal"}</span>
+              <span>{copiedKey === "amount" ? "Copied" : "Copy amount"}</span>
             </Button>
           </div>
 
@@ -344,7 +344,7 @@ export function UpgradeDrawer({
           <div className="p-3 rounded-lg bg-primary/5 border border-primary/20 flex items-center justify-between">
             <div className="space-y-0.5">
               <span className="text-[11px] text-primary font-medium flex items-center gap-1">
-                <Zap className="size-3" /> Kode Catatan Transaksi (Wajib)
+                <Zap className="size-3" /> Transaction note code (required)
               </span>
               <span className="font-bold text-base text-foreground font-mono tracking-wider">
                 {order.order_code}
@@ -361,17 +361,17 @@ export function UpgradeDrawer({
               ) : (
                 <Copy className="size-3.5" />
               )}
-              <span>{copiedKey === "code" ? "Tersalin" : "Salin Kode"}</span>
+              <span>{copiedKey === "code" ? "Copied" : "Copy code"}</span>
             </Button>
           </div>
 
           <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
             <span className="flex items-center gap-1">
-              <Clock className="size-3" /> Berlaku 24 jam
+              <Clock className="size-3" /> Valid for 24 hours
             </span>
             {order.is_early_bird && (
               <span className="text-primary font-medium">
-                Sisa {order.early_bird_remaining} kuota promo
+                {order.early_bird_remaining} promo quota left
               </span>
             )}
           </div>
@@ -380,7 +380,7 @@ export function UpgradeDrawer({
         {/* Step-by-Step Payment Instructions */}
         <div className="space-y-2.5">
           <span className="font-semibold text-foreground text-xs block">
-            Panduan Pembayaran via TipTap:
+            How to pay with TipTap:
           </span>
           <div className="space-y-2 rounded-xl border border-border bg-card/40 p-3.5 text-[11px] leading-relaxed">
             <div className="flex items-start gap-2.5">
@@ -388,7 +388,7 @@ export function UpgradeDrawer({
                 1
               </span>
               <p className="text-muted-foreground pt-0.5">
-                Klik tombol <span className="font-semibold text-foreground">Bayar Sekarang di TipTap</span> di bawah untuk membuka halaman checkout TipTap.
+                Select <span className="font-semibold text-foreground">Pay now in TipTap</span> below to open the TipTap checkout page.
               </p>
             </div>
 
@@ -397,7 +397,7 @@ export function UpgradeDrawer({
                 2
               </span>
               <p className="text-muted-foreground pt-0.5">
-                Masukkan nominal tepat <span className="font-semibold text-foreground font-mono">{formatIDR(order.amount_idr)}</span>.
+                Enter the exact amount <span className="font-semibold text-foreground font-mono">{formatIDR(order.amount_idr)}</span>.
               </p>
             </div>
 
@@ -406,7 +406,7 @@ export function UpgradeDrawer({
                 3
               </span>
               <p className="text-muted-foreground pt-0.5">
-                <span className="font-semibold text-foreground text-primary">Sangat Penting:</span> Pada kolom <span className="font-semibold text-foreground">Pesan / Catatan</span>, tempelkan kode <code className="font-mono font-bold bg-muted px-1 py-0.2 rounded border border-border text-foreground">{order.order_code}</code> agar pembayaran terverifikasi otomatis.
+                <span className="font-semibold text-foreground text-primary">Very important:</span> in the <span className="font-semibold text-foreground">Message / Note</span> field, paste the code <code className="font-mono font-bold bg-muted px-1 py-0.2 rounded border border-border text-foreground">{order.order_code}</code> so the payment verifies automatically.
               </p>
             </div>
 
@@ -415,7 +415,7 @@ export function UpgradeDrawer({
                 4
               </span>
               <p className="text-muted-foreground pt-0.5">
-                Pilih metode pembayaran (QRIS, GoPay, OVO, Dana, VA) dan selesaikan transaksi di TipTap.
+                Choose a payment method (QRIS, GoPay, OVO, Dana, VA) and complete the transaction in TipTap.
               </p>
             </div>
 
@@ -424,7 +424,7 @@ export function UpgradeDrawer({
                 5
               </span>
               <p className="text-muted-foreground pt-0.5">
-                Setelah pembayaran berhasil di TipTap, halaman ini akan mendeteksi dan mengaktifkan akun Pro Anda secara otomatis.
+                After TipTap payment succeeds, this page detects it and activates your Pro account automatically.
               </p>
             </div>
           </div>
@@ -437,7 +437,7 @@ export function UpgradeDrawer({
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
               <span className="relative inline-flex rounded-full size-2 bg-primary"></span>
             </span>
-            <span className="text-muted-foreground">Pemeriksaan otomatis aktif (setiap 5 detik)</span>
+            <span className="text-muted-foreground">Auto-check is on (every 5 seconds)</span>
           </div>
           <Button
             variant="ghost"
@@ -447,7 +447,7 @@ export function UpgradeDrawer({
             className="h-6 text-[11px] gap-1 px-2 cursor-pointer"
           >
             <RefreshCw className={`size-3 ${isChecking ? "animate-spin" : ""}`} />
-            <span>Cek Manual</span>
+            <span>Check manually</span>
           </Button>
         </div>
 
@@ -458,7 +458,7 @@ export function UpgradeDrawer({
             className="w-full gap-2 text-xs font-medium h-10 cursor-pointer shadow-xs"
             onClick={() => window.open("https://tiptap.gg/notinn", "_blank")}
           >
-            <span>Bayar Sekarang di TipTap</span>
+            <span>Pay now in TipTap</span>
             <ArrowUpRight className="size-4" />
           </Button>
 
@@ -469,7 +469,7 @@ export function UpgradeDrawer({
             disabled={isChecking}
           >
             <RefreshCw className={`size-3.5 ${isChecking ? "animate-spin" : ""}`} />
-            <span>{isChecking ? "Memeriksa Pembayaran…" : "Cek Status Pembayaran"}</span>
+            <span>{isChecking ? "Checking payment…" : "Check payment status"}</span>
           </Button>
         </div>
       </div>
@@ -483,10 +483,10 @@ export function UpgradeDrawer({
           <SheetHeader className="px-6 pt-5 pb-3 border-b border-border">
             <SheetTitle className="flex items-center gap-2 text-base">
               <Sparkles className="size-4 text-primary" />
-              <span>Upgrade ke Notinn Pro</span>
+              <span>Upgrade to Notinn Pro</span>
             </SheetTitle>
             <SheetDescription className="text-xs">
-              Dapatkan kuota 1.000 catatan/bulan dan akses Web Dashboard penuh.
+              Get 1,000 notes per month and full web dashboard access.
             </SheetDescription>
           </SheetHeader>
           <SheetPanel className="p-6 overflow-y-auto">
@@ -503,10 +503,10 @@ export function UpgradeDrawer({
         <DrawerHeader className="px-5 pt-4 pb-3 border-b border-border">
           <DrawerTitle className="flex items-center gap-2 text-base">
             <Sparkles className="size-4 text-primary" />
-            <span>Upgrade ke Notinn Pro</span>
+            <span>Upgrade to Notinn Pro</span>
           </DrawerTitle>
           <DrawerDescription className="text-xs">
-            Dapatkan kuota 1.000 catatan/bulan dan akses Web Dashboard penuh.
+            Get 1,000 notes per month and full web dashboard access.
           </DrawerDescription>
         </DrawerHeader>
         <DrawerPanel className="p-5 overflow-y-auto">
