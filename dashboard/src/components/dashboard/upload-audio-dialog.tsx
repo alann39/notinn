@@ -494,7 +494,7 @@ export function UploadAudioDialog({
         const upload = new tus.Upload(selectedFile, {
           endpoint: tusEndpoint,
           retryDelays: [0, 1000, 3000, 5000],
-          chunkSize: 6 * 1024 * 1024, // 6MB chunks
+          chunkSize: 2 * 1024 * 1024, // 2MB chunks (Supabase Kong gateway limit)
           headers: {
             Authorization: `Bearer ${accessToken}`,
             apikey: SUPABASE_ANON_KEY,
