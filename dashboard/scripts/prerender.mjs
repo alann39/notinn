@@ -17,8 +17,12 @@ const repoRoot = resolve(dashboardRoot, "..");
 const distRoot = resolve(dashboardRoot, "dist");
 const ssrBundle = resolve(dashboardRoot, "dist-ssr", "entry-server.js");
 const clientIndex = resolve(distRoot, "index.html");
-const privacySource = resolve(repoRoot, "docs/PRIVACY_NOTICE.md");
-const termsSource = resolve(repoRoot, "docs/TERMS_OF_SERVICE.md");
+const privacySource = existsSync(resolve(dashboardRoot, "docs/PRIVACY_NOTICE.md"))
+  ? resolve(dashboardRoot, "docs/PRIVACY_NOTICE.md")
+  : resolve(repoRoot, "docs/PRIVACY_NOTICE.md");
+const termsSource = existsSync(resolve(dashboardRoot, "docs/TERMS_OF_SERVICE.md"))
+  ? resolve(dashboardRoot, "docs/TERMS_OF_SERVICE.md")
+  : resolve(repoRoot, "docs/TERMS_OF_SERVICE.md");
 const require = createRequire(import.meta.url);
 const markedModule = require("marked");
 const sanitizeModule = require("sanitize-html");
@@ -265,6 +269,15 @@ async function main() {
   appShell = replaceMeta(appShell, "robots", "noindex, nofollow");
   appShell = appShell.replace(/<div id=\"root\"><\/div>/, "<div id=\"root\"></div>");
   writeFileSync(resolve(distRoot, "app.html"), appShell);
+
+  // Static SPA routes fallback
+  const spaRoutes = ["notes", "login", "auth", "auth/callback", "usage", "settings", "admin"];
+  for (const route of spaRoutes) {
+    const dir = resolve(distRoot, route);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(resolve(dir, "index.html"), appShell);
+  }
+
 
   const socialImage = absoluteUrl(config.siteUrl, "/notinn-social.png");
   const landingBody = renderLanding();
