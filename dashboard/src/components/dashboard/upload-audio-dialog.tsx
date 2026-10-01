@@ -189,27 +189,41 @@ let ffmpegInstance: FFmpeg | null = null;
 
 async function compressAudioIfNeeded(file: File): Promise<File> {
   const FIFTY_MB = 50 * 1024 * 1024;
-  if (file.size <= FIFTY_MB) return file; // already small enough
+  if (file.size <= FIFTY_MB) return file;
 
+  console.log("[FFmpeg] Starting compression for:", file.name, file.size);
   const ffmpeg = ffmpegInstance ?? (ffmpegInstance = new FFmpeg());
+  
+  ffmpeg.on("log", ({ message }) => {
+    console.log("[FFmpeg Core]:", message);
+  });
+
   if (!ffmpeg.loaded) {
+    console.log("[FFmpeg] Loading wasm core...");
     const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd";
     await ffmpeg.load({
       coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
       wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
     });
+    console.log("[FFmpeg] Core loaded successfully!");
   }
 
   const inputName = "input.m4a";
   const outputName = "output.m4a";
+  console.log("[FFmpeg] Writing input file to virtual FS...");
   await ffmpeg.writeFile(inputName, await fetchFile(file));
-  await ffmpeg.exec([
+  console.log("[FFmpeg] Running exec...");
+  const exitCode = await ffmpeg.exec([
     "-i", inputName,
     "-c:a", "aac",
     "-b:a", "48k",
     "-ac", "1",
     outputName,
   ]);
+  console.log("[FFmpeg] Exec finished with exitCode:", exitCode);
+  if (exitCode !== 0) {
+    throw new Error(`FFmpeg transcoding failed with exit code ${exitCode}`);
+  }
   const data = await ffmpeg.readFile(outputName);
   const blob = new Blob([data], { type: "audio/mp4" });
   return new File([blob], file.name.replace(/\.m4a$/i, "_compressed.m4a"), {
