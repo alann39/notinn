@@ -55,7 +55,21 @@
 
 /* Base Body Styles */
 html {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
   transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+button,
+a,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+input,
+textarea,
+select {
+  font-size: 16px;
 }
 
 html.light {
@@ -218,8 +232,9 @@ a:active {
   --animate-toast-error-odd: toast-error-odd 0.28s cubic-bezier(0.5, 1, 0.89, 1);
   --animate-toast-error-even: toast-error-even 0.28s cubic-bezier(0.5, 1, 0.89, 1);
   --font-heading: 'Inter', sans-serif;
-  --font-mono: 'Geist Mono', monospace;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --font-sans: 'Inter', sans-serif;
+  --font-serif: "Newsreader Variable", "Newsreader", Georgia, serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
