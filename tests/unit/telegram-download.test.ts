@@ -82,6 +82,30 @@ Deno.test("an expired Telegram file handle becomes a permanent resend request", 
   assert(!String(error.internalDetail).includes(TOKEN));
 });
 
+Deno.test("a file the Bot API refuses as too big is reported as large, not as lost", async () => {
+  // Both of these arrive as HTTP 400 from getFile, and the remedies are opposite:
+  // "file is too big" means the upload is intact and no retry will help, whereas
+  // "wrong file identifier" means the handle is dead. Reporting the first as the
+  // second tells the user their file vanished, which is exactly the confusion a
+  // 27 MB upload used to cause.
+  const fetchImpl = (() =>
+    Promise.resolve(Response.json({
+      ok: false,
+      error_code: 400,
+      description: "Bad Request: file is too big",
+    }))) as typeof fetch;
+
+  const error = await assertRejects(
+    () => downloadFile(new Secret(TOKEN), "oversized-file-id", 8, { fetch: fetchImpl }),
+    AppError,
+  );
+
+  assertEquals(error.code, "input_too_large");
+  assertEquals(error.retryable, false);
+  assert(error.publicMessage.includes("20 MB"));
+  assert(!String(error.internalDetail).includes(TOKEN));
+});
+
 Deno.test("Telegram document upload uses multipart data with the requested filename", async () => {
   const capture: { received: FormData | null } = { received: null };
   const fetchImpl = ((_input: RequestInfo | URL, init?: RequestInit) => {

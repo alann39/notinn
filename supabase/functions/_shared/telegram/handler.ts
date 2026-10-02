@@ -1,4 +1,4 @@
-import { MAX_WEBHOOK_BODY_BYTES } from "../config/constants.ts";
+import { MAX_TELEGRAM_DOWNLOAD_BYTES, MAX_WEBHOOK_BODY_BYTES } from "../config/constants.ts";
 import type { WebhookConfig } from "../config/env.ts";
 import { AppError, toAppError } from "../errors/app-error.ts";
 import { acceptedResponse, errorResponse } from "../errors/http.ts";
@@ -96,6 +96,27 @@ function methodGuard(request: Request): void {
   if (request.method !== "POST") {
     throw AppError.validation(`method ${request.method} is not accepted`);
   }
+}
+
+/**
+ * The reply for a message the Bot API can never hand over.
+ *
+ * It names the bound and, when the dashboard is configured, points at the one
+ * transport that can carry the file. Without that pointer the user has no move
+ * left, which is what made the old outcome a dead end.
+ */
+function tooLargeAudioReply(sizeBytes: number | null, dashboardUrl: string | null): string {
+  const limitMb = Math.round(MAX_TELEGRAM_DOWNLOAD_BYTES / (1024 * 1024));
+  const sizeMb = sizeBytes === null ? null : (sizeBytes / (1024 * 1024)).toFixed(1);
+  const breach = sizeMb === null
+    ? `That audio is larger than the ${limitMb} MB Telegram lets bots download.`
+    : `That audio is ${sizeMb} MB — Telegram only lets bots download up to ${limitMb} MB.`;
+
+  return dashboardUrl === null
+    ? `${breach} Send a shorter clip, or split it into parts.`
+    : `${breach} Send a shorter clip, or upload it from the dashboard: ${
+      dashboardUrl.replace(/\/+$/, "")
+    }/notes`;
 }
 
 /**
@@ -197,6 +218,49 @@ export async function handleWebhookRequest(
         chat_id: classification.chat.telegramChatId,
         reason: "non_private_chat",
         source: classification.chat.chatType,
+      });
+      return acceptedResponse();
+    }
+
+    if (classification.kind === "too_large") {
+      // Registration happens first so that a first-ever message which happens to
+      // be oversized does not leave the sender unknown to Notinn. `ensureUser` is
+      // idempotent, so this cannot double-write an existing user.
+      await repository.ensureUser(classification.message);
+
+      if (deps.phase1 !== undefined) {
+        try {
+          await deps.phase1.telegram.sendMessage(
+            classification.message.telegramChatId,
+            tooLargeAudioReply(
+              classification.message.sizeBytes,
+              deps.config.dashboard?.url ?? null,
+            ),
+          );
+        } catch (thrown) {
+          // Nothing is queued and nothing is reserved, so a failed reply is a
+          // messaging problem, not a lost job. Answering 2xx anyway is deliberate:
+          // a non-2xx would make Telegram redeliver the same oversized file, and
+          // every redelivery would fail here for the same reason.
+          const error = toAppError(thrown);
+          log[error.logLevel]("webhook.too_large_reply_failed", {
+            update_id: classification.message.updateId,
+            chat_id: classification.message.telegramChatId,
+            error_code: error.code,
+            error_detail: error.internalDetail,
+          });
+        }
+      }
+
+      log.info("webhook.too_large", {
+        update_id: classification.message.updateId,
+        chat_id: classification.message.telegramChatId,
+        input_type: classification.message.inputType,
+        size_bytes: classification.message.sizeBytes,
+        // The ceiling itself is a compile-time constant and is deliberately not a
+        // log field: `ALLOWED_LOG_FIELDS` is a privacy allowlist, not a place to
+        // widen for a value that never varies.
+        reason: "telegram_bot_api_download_ceiling",
       });
       return acceptedResponse();
     }

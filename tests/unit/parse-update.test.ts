@@ -1,5 +1,8 @@
 import { assertEquals } from "@std/assert";
-import { MAX_PASTED_TEXT_CHARS } from "../../supabase/functions/_shared/config/constants.ts";
+import {
+  MAX_PASTED_TEXT_CHARS,
+  MAX_TELEGRAM_DOWNLOAD_BYTES,
+} from "../../supabase/functions/_shared/config/constants.ts";
 import { classifyUpdate } from "../../supabase/functions/_shared/telegram/parse-update.ts";
 import { TelegramUpdateSchema } from "../../supabase/functions/_shared/telegram/schema.ts";
 import {
@@ -407,4 +410,62 @@ Deno.test("a sender with no name at all yields a null display name", () => {
   if (result.kind !== "accepted") return;
 
   assertEquals(result.message.displayName, null);
+});
+
+// --- The Bot API's own download ceiling ------------------------------------
+
+Deno.test("audio above the Bot API download ceiling is refused at classification", () => {
+  // The Bot API will not hand this file over, so a job for it could only ever
+  // fail — after reserving quota and messaging the user. Refusing it here is what
+  // keeps the refusal free.
+  const result = classify(voiceUpdate({ fileSize: 27 * 1024 * 1024 }));
+
+  assertEquals(result.kind, "too_large");
+  if (result.kind !== "too_large") return;
+
+  assertEquals(result.message.sizeBytes, 27 * 1024 * 1024);
+  assertEquals(result.message.inputType, "voice");
+  assertEquals(result.message.telegramChatId, SYNTHETIC_ID_BASE + 10);
+});
+
+Deno.test("audio exactly at the ceiling is accepted", () => {
+  // The bound is inclusive. A file the Bot API will serve must not be refused for
+  // being exactly the size it advertises as its maximum.
+  const result = classify(audioUpdate({ fileSize: MAX_TELEGRAM_DOWNLOAD_BYTES }));
+
+  assertEquals(result.kind, "accepted");
+});
+
+Deno.test("an audio file just under the ceiling is accepted", () => {
+  const result = classify(audioUpdate({ fileSize: MAX_TELEGRAM_DOWNLOAD_BYTES - 1 }));
+
+  assertEquals(result.kind, "accepted");
+  if (result.kind !== "accepted") return;
+
+  assertEquals(result.message.inputType, "audio");
+});
+
+Deno.test("a document is not subject to the audio ceiling", () => {
+  // Documents have their own extractor and their own bound, and are fetched by a
+  // different path. Applying the audio rule to them would refuse valid uploads.
+  const result = classify(documentUpdate());
+
+  assertEquals(result.kind, "accepted");
+});
+
+Deno.test("a recording with no reported size is accepted", () => {
+  // `file_size` is optional in the Bot API. Absence is not a breach: treating an
+  // unknown size as too large would refuse files that would have worked, and the
+  // worker still holds the ceiling for the case where the size is discovered
+  // during download instead.
+  const raw = voiceUpdate();
+  const message = raw["message"] as Record<string, unknown>;
+  delete (message["voice"] as Record<string, unknown>)["file_size"];
+
+  const result = classify(raw);
+
+  assertEquals(result.kind, "accepted");
+  if (result.kind !== "accepted") return;
+
+  assertEquals(result.message.sizeBytes, null);
 });

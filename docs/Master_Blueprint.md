@@ -137,7 +137,10 @@ Early validation should prioritize users who regularly:
 
 These are product safeguards, not provider maxima, and must be centrally configurable:
 
-- Telegram file: maximum 20 MB.
+- Telegram file: maximum 20 MB. This is the Bot API's own `getFile` ceiling, not a
+  product choice — no bot on the hosted API can download more. Audio above it is
+  refused at ingestion with a pointer to the dashboard; it is not queued only to
+  fail in the worker.
 - Pasted text: maximum 60,000 characters.
 - Voice/audio: maximum 30 minutes during alpha.
 - PDF: maximum 100 pages during alpha.
@@ -1685,6 +1688,25 @@ The agent must not:
 - Disable RLS or bypass user scoping for convenience.
 - Swallow errors or report a job as completed before delivery and persistence succeed.
 - Add a new dependency without explaining why built-in capabilities are insufficient.
+
+---
+
+## 29b. Audio Size Bounds, Layered
+
+Audio is bounded in three places, and which one fires decides what the user is
+told. Keeping them apart is what stops a byte breach being reported as a duration
+breach, which is what a 27 MB upload used to get.
+
+| Bound | Constant | Value | Applies to | Fires when |
+|---|---|---|---|---|
+| Bot API download ceiling | `MAX_TELEGRAM_DOWNLOAD_BYTES` | 20 MiB | Any Telegram chat upload, every plan | Ingestion — before a job exists |
+| Plan audio ceiling | `MAX_TELEGRAM_FREE_AUDIO_BYTES`, `MAX_LARGE_AUDIO_BYTES`, `MAX_WEB_AUDIO_BYTES` | 14 MiB free · 20 MiB pro/alpha chat · 100 MiB web | The sender's plan and transport | Worker, before download |
+| Provider inline ceiling | `MAX_INLINE_AUDIO_BYTES` | 14 MiB | The Gemini adapter | Worker, routing inline vs segmented |
+
+`MAX_INLINE_AUDIO_BYTES` is a *transport* bound: 14 MiB of bytes is roughly 18.7 MB
+after base64, which keeps one provider call inside its 20 MB request limit. It must
+not be raised to follow a plan decision, which is why the Free plan has its own
+constant even though the two values currently match.
 
 ---
 

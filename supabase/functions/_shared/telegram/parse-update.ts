@@ -1,4 +1,8 @@
-import { type InputType, MAX_PASTED_TEXT_CHARS } from "../config/constants.ts";
+import {
+  type InputType,
+  MAX_PASTED_TEXT_CHARS,
+  MAX_TELEGRAM_DOWNLOAD_BYTES,
+} from "../config/constants.ts";
 import type { SystemTemplateKey } from "../config/constants.ts";
 import { documentInputType, routeInput, type RoutingReason } from "../services/input-routing.ts";
 import { normaliseSourceText } from "../services/text-normalisation.ts";
@@ -95,6 +99,12 @@ export type UpdateClassification =
   | { readonly kind: "command"; readonly message: CommandMessage }
   | { readonly kind: "callback"; readonly callback: CallbackActionRequest }
   | { readonly kind: "rejected"; readonly chat: RejectedChat }
+  /**
+   * A well-formed message Notinn refuses because the Bot API could never hand
+   * the file over. Classification still describes it in full — the reply path
+   * needs the chat and the size — but no job may be created for it.
+   */
+  | { readonly kind: "too_large"; readonly message: AcceptedMessage }
   | {
     readonly kind: "ignored";
     readonly reason: IgnoreReason;
@@ -423,22 +433,29 @@ export function classifyUpdate(update: TelegramUpdate): UpdateClassification {
   const inputType: InputType = isVoice ? "voice" : "audio";
   const decision = routeInput(inputType, forwarded);
 
-  return {
-    kind: "accepted",
-    message: {
-      updateId,
-      ...sender,
-      inputType: decision.inputType,
-      templateKey: decision.templateKey,
-      routingReason: decision.reason,
-      forwarded,
-      sourceText: null,
-      telegramFileId: recording.file_id,
-      telegramFileUniqueId: recording.file_unique_id,
-      originalFilename: null,
-      mimeType: recording.mime_type ?? null,
-      sizeBytes: recording.file_size ?? null,
-      durationSeconds: recording.duration ?? null,
-    },
+  const candidate: AcceptedMessage = {
+    updateId,
+    ...sender,
+    inputType: decision.inputType,
+    templateKey: decision.templateKey,
+    routingReason: decision.reason,
+    forwarded,
+    sourceText: null,
+    telegramFileId: recording.file_id,
+    telegramFileUniqueId: recording.file_unique_id,
+    originalFilename: null,
+    mimeType: recording.mime_type ?? null,
+    sizeBytes: recording.file_size ?? null,
+    durationSeconds: recording.duration ?? null,
   };
+
+  // The Bot API refuses to serve a file above its own download ceiling. A job
+  // created for one would be queued, reserve quota, and then die in the worker
+  // with no remedy available to the user — so it is refused here, where the reply
+  // can still say why and point at the dashboard, and where nothing is spent.
+  if (candidate.sizeBytes !== null && candidate.sizeBytes > MAX_TELEGRAM_DOWNLOAD_BYTES) {
+    return { kind: "too_large", message: candidate };
+  }
+
+  return { kind: "accepted", message: candidate };
 }

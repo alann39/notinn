@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_TELEGRAM_DOWNLOAD_BYTES } from "../config/constants.ts";
 import type { Secret } from "../config/env.ts";
 import { AppError } from "../errors/app-error.ts";
 import { ERROR_CODES } from "../errors/taxonomy.ts";
@@ -127,6 +128,25 @@ export async function callTelegram<T>(
       return true as T;
     }
     if (options.fileUnavailableOn400 === true && envelope.error_code === 400) {
+      // A 400 from getFile carries two different meanings, and the remedies
+      // differ. "file is too big" means the upload is intact but permanently out
+      // of the Bot API's reach — the handle has not expired and no retry can help
+      // — whereas any other description means the handle is dead. Reporting the
+      // first as the second tells the user their file vanished.
+      const description = envelope.description?.toLowerCase() ?? "";
+      if (description.includes("too big")) {
+        throw AppError.inputTooLarge(
+          "telegram getFile refused the download because the file exceeds the Bot API ceiling",
+          {
+            // Explicit rather than inherited from the taxonomy: this path cannot
+            // reach the dashboard configuration, and the worker rewrites this
+            // message with the plan's own bound when it catches the code.
+            publicMessage: `That audio is over the ${
+              Math.round(MAX_TELEGRAM_DOWNLOAD_BYTES / (1024 * 1024))
+            } MB Telegram lets bots download — send a shorter clip, or upload it from the dashboard.`,
+          },
+        );
+      }
       throw AppError.fileUnavailable("telegram getFile no longer recognises the file id");
     }
     throw new AppError(ERROR_CODES.TELEGRAM_ERROR, {

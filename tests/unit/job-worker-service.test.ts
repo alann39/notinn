@@ -620,6 +620,172 @@ Deno.test("alpha audio mirrors pro limits (7199 s passes, 7201 s rejected with s
   );
 });
 
+Deno.test("free audio above the byte ceiling is reported as a size breach, not a duration one", async () => {
+  // This is the case that produced the original bug report: a 27 MB recording
+  // failed the *byte* check and was answered with the *duration* sentence, sending
+  // the user to shorten a clip that was already short.
+  const test = harness(
+    claimed({
+      inputType: "audio",
+      sourceText: null,
+      telegramFileId: "synthetic-file-id",
+      mimeType: "audio/mpeg",
+      sizeBytes: 27 * 1024 * 1024,
+      durationSeconds: 600,
+    }),
+    { planKey: "free", maxAudioSeconds: 1800 },
+  );
+
+  const outcome = await processQueueMessage(
+    { queueMessageId: 9, readCount: 1, jobId: JOB_ID },
+    test.deps,
+  );
+
+  assertEquals(outcome, "discarded");
+  assertEquals(test.providerCalls(), { text: 0, audio: 0, image: 0, pdf: 0 });
+  assertEquals(test.largeAudioCalls(), 0);
+  assertEquals(test.failed, ["ACQUIRING"]);
+  assertEquals(test.deleted, [9]);
+
+  const texts = [...test.edits, ...test.sends];
+  assert(
+    texts.some((text) => text.includes("14 MB Telegram lets bots download")),
+    "the size breach did not name the byte ceiling",
+  );
+  assert(
+    !texts.some((text) => text.includes("30 minutes")),
+    "a size breach was reported with the duration remedy",
+  );
+});
+
+Deno.test("pro audio above the Bot API ceiling names the download bound", async () => {
+  // Pro's Telegram ceiling tracks the Bot API's own limit, so the sentence must
+  // quote that rather than the plan's duration allowance.
+  const test = harness(
+    claimed({
+      inputType: "voice",
+      sourceText: null,
+      telegramFileId: "synthetic-file-id",
+      mimeType: "audio/ogg",
+      sizeBytes: 27 * 1024 * 1024,
+      durationSeconds: 600,
+    }),
+    { planKey: "pro", maxAudioSeconds: 7200 },
+  );
+
+  const outcome = await processQueueMessage(
+    { queueMessageId: 10, readCount: 1, jobId: JOB_ID },
+    test.deps,
+  );
+
+  assertEquals(outcome, "discarded");
+  const texts = [...test.edits, ...test.sends];
+  assert(texts.some((text) => text.includes("20 MB Telegram lets bots download")));
+  assert(!texts.some((text) => text.includes("2-hour limit")));
+});
+
+Deno.test("web audio above the dashboard ceiling names the dashboard bound", async () => {
+  // The web path is bounded by the dashboard's own limit, so quoting the Telegram
+  // bound at a dashboard user would be a second, quieter version of the same lie.
+  const test = harness(
+    claimed({
+      inputType: "audio",
+      sourceText: null,
+      telegramFileId: null,
+      storagePath: `${"11111111-1111-4111-8111-111111111111"}/synthetic.mp3`,
+      mimeType: "audio/mpeg",
+      // The dashboard's own ceiling is 100 MiB; the 45 MB the frontend enforces is
+      // a client-side headroom below Supabase's cap, not this bound.
+      sizeBytes: 120 * 1024 * 1024,
+      durationSeconds: 600,
+    }),
+    { planKey: "pro", maxAudioSeconds: 7200 },
+  );
+
+  const outcome = await processQueueMessage(
+    { queueMessageId: 11, readCount: 1, jobId: JOB_ID },
+    test.deps,
+  );
+
+  assertEquals(outcome, "discarded");
+  const texts = [...test.edits, ...test.sends];
+  assert(texts.some((text) => text.includes("100 MB the dashboard accepts")));
+  assert(!texts.some((text) => text.includes("Telegram lets bots download")));
+});
+
+Deno.test("a download refused as too big is re-sent with the plan's bound, not the client's", async () => {
+  // When Telegram sends no `file_size`, the metadata check is skipped and the
+  // ceiling is discovered by the download itself. The client can only state the
+  // Bot API wall; the worker knows the sender's plan, so the sentence the user
+  // reads must be the worker's. This is the one branch where the two meet.
+  const test = harness(
+    claimed({
+      inputType: "voice",
+      sourceText: null,
+      telegramFileId: "synthetic-file-id",
+      mimeType: "audio/ogg",
+      sizeBytes: null,
+      durationSeconds: 600,
+    }),
+    {
+      planKey: "pro",
+      maxAudioSeconds: 7200,
+      fileError: AppError.inputTooLarge("telegram getFile refused the download", {
+        publicMessage: "the client's generic sentence, which must not reach the user",
+      }),
+    },
+  );
+
+  const outcome = await processQueueMessage(
+    { queueMessageId: 12, readCount: 1, jobId: JOB_ID },
+    test.deps,
+  );
+
+  assertEquals(outcome, "discarded");
+  assertEquals(test.failed, ["ACQUIRING"]);
+  const texts = [...test.edits, ...test.sends];
+  assert(
+    texts.some((text) => text.includes("20 MB Telegram lets bots download")),
+    "the plan-aware bound did not replace the client's sentence",
+  );
+  assert(
+    !texts.some((text) => text.includes("the client's generic sentence")),
+    "the client's sentence reached the user unchanged",
+  );
+});
+
+Deno.test("a download refused for any other reason keeps its own meaning", async () => {
+  // The rewrite must be narrow. A dead handle is not a size problem and must not
+  // be reported as one.
+  const test = harness(
+    claimed({
+      inputType: "voice",
+      sourceText: null,
+      telegramFileId: "synthetic-file-id",
+      mimeType: "audio/ogg",
+      sizeBytes: null,
+      durationSeconds: 600,
+    }),
+    {
+      planKey: "pro",
+      maxAudioSeconds: 7200,
+      fileError: AppError.fileUnavailable("telegram getFile no longer recognises the file id"),
+    },
+  );
+
+  const outcome = await processQueueMessage(
+    { queueMessageId: 13, readCount: 1, jobId: JOB_ID },
+    test.deps,
+  );
+
+  assertEquals(outcome, "discarded");
+  const texts = [...test.edits, ...test.sends];
+  assert(
+    !texts.some((text) => text.includes("Telegram lets bots download")),
+    "a dead file handle was reported as a size breach",
+  );
+});
+
 Deno.test("audio under inline ceiling (<= 14 MiB) uses inline generateAudio", async () => {
   const test = harness(
     claimed({

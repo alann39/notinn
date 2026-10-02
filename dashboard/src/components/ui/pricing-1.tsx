@@ -43,7 +43,7 @@ const plans: PricingPlan[] = [
     features: [
       "30 notes lifetime allowance",
       "Up to 5 note generations per day",
-      "Voice notes up to 30 minutes",
+      "Voice notes up to 30 minutes (14 MB via chat)",
       "30 regenerations & Ask queries",
       "Notes remain saved & exportable forever",
       "Clean Markdown & PDF export",
@@ -62,7 +62,7 @@ const plans: PricingPlan[] = [
     period: "/month",
     features: [
       "1,000 notes per month",
-      "Voice notes up to 2 hours",
+      "Voice notes up to 2 hours (20 MB via chat)",
       "300 regenerations & Ask queries/mo",
       "Web audio upload up to 45 MB (2 hours)",
       "Extended document & image upload limits",

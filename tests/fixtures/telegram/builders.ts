@@ -121,7 +121,7 @@ export function voiceUpdate(options: {
 
 /** An audio file in a private chat. */
 export function audioUpdate(
-  options: { updateId?: number; userId?: number } = {},
+  options: { updateId?: number; userId?: number; fileSize?: number } = {},
 ): Record<string, unknown> {
   const updateId = options.updateId ?? SYNTHETIC_ID_BASE + 11;
   const userId = options.userId ?? SYNTHETIC_ID_BASE + 11;
@@ -133,7 +133,7 @@ export function audioUpdate(
     file_unique_id: "synthetic-audio-unique-id",
     duration: 180,
     mime_type: "audio/mpeg",
-    file_size: 2_000_000,
+    file_size: options.fileSize ?? 2_000_000,
     file_name: "synthetic-recording.mp3",
   };
 

@@ -279,8 +279,24 @@ export const MAX_WEBHOOK_BODY_BYTES = 1_048_576;
 /** Telegram Bot API's default maximum downloadable file size (20 MiB). */
 export const MAX_TELEGRAM_DOWNLOAD_BYTES = 20 * 1024 * 1024;
 
-/** Raw audio ceiling that stays below Gemini's 20 MB total request limit after base64. */
+/**
+ * Raw audio ceiling that stays below the provider's 20 MB total request limit
+ * after base64 encoding.
+ *
+ * This is a transport bound, not a plan limit: it decides whether audio can be
+ * inlined into one provider call or must be segmented. Raising it to follow a
+ * product decision would push the encoded request past the provider's ceiling.
+ */
 export const MAX_INLINE_AUDIO_BYTES = 14 * 1024 * 1024;
+
+/**
+ * Raw audio the Telegram chat path accepts on the Free plan.
+ *
+ * A product bound, deliberately separate from `MAX_INLINE_AUDIO_BYTES`. The two
+ * values coincide today but answer different questions, and a future plan change
+ * must not silently move the provider's transport threshold with it.
+ */
+export const MAX_TELEGRAM_FREE_AUDIO_BYTES = 14 * 1024 * 1024;
 
 /** Raw image/PDF ceiling that remains below Gemini's 20 MB request limit after base64. */
 export const MAX_INLINE_MEDIA_BYTES = 14 * 1024 * 1024;

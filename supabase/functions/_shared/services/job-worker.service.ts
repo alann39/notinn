@@ -10,6 +10,7 @@ import {
   MAX_INLINE_MEDIA_BYTES,
   MAX_LARGE_AUDIO_BYTES,
   MAX_LARGE_AUDIO_SEGMENTS,
+  MAX_TELEGRAM_FREE_AUDIO_BYTES,
   MAX_TEXT_DOCUMENT_BYTES,
   MAX_WEB_AUDIO_BYTES,
   SEGMENT_AUDIO_TIMEOUT_MS,
@@ -17,6 +18,7 @@ import {
   type TemplateKey,
 } from "../config/constants.ts";
 import { AppError, toAppError } from "../errors/app-error.ts";
+import { ERROR_CODES } from "../errors/taxonomy.ts";
 import type { Logger } from "../observability/logger.ts";
 import type {
   AudioGenerationRequest,
@@ -304,6 +306,34 @@ async function deliverPersistedNote(
   }
 }
 
+/**
+ * The user-facing sentence for an audio limit breach.
+ *
+ * Size and duration are separate checks with separate remedies, so they must not
+ * share a sentence. Reporting a byte breach as "over the 2-hour limit" sends the
+ * user to fix the wrong thing — which is exactly what a 27 MB upload used to get.
+ *
+ * `limit` is the bound that was actually applied: bytes for a size breach, seconds
+ * for a duration breach.
+ */
+function audioLimitMessage(
+  reason: "size" | "duration",
+  isProOrAlpha: boolean,
+  isWebJob: boolean,
+  limit: number,
+): string {
+  if (reason === "duration") {
+    return isProOrAlpha
+      ? "That is over the 2-hour limit — split it into parts under 2 hours each."
+      : "Voice notes over 30 minutes need Pro — send a shorter clip or split it.";
+  }
+
+  const limitMb = Math.round(limit / (1024 * 1024));
+  return isWebJob
+    ? `That upload is over the ${limitMb} MB the dashboard accepts — compress it or split it into parts.`
+    : `That audio is over the ${limitMb} MB Telegram lets bots download — send a shorter clip, or upload it from the dashboard.`;
+}
+
 async function generateNewNote(
   deps: JobWorkerDependencies,
   job: ClaimedProcessingJob & {
@@ -518,18 +548,16 @@ async function generateNewNote(
   const isWebJob = job.storagePath !== null;
   const maxAudioBytes = isProOrAlpha
     ? (isWebJob ? MAX_WEB_AUDIO_BYTES : MAX_LARGE_AUDIO_BYTES)
-    : MAX_INLINE_AUDIO_BYTES;
+    : MAX_TELEGRAM_FREE_AUDIO_BYTES;
   if (job.sizeBytes !== null && job.sizeBytes > maxAudioBytes) {
-    const publicMessage = isProOrAlpha
-      ? "That is over the 2-hour limit — split it into parts under 2 hours each."
-      : "Voice notes over 30 minutes need Pro — send a shorter clip or split it.";
-    throw AppError.inputTooLarge("audio metadata exceeded size limit for plan", { publicMessage });
+    throw AppError.inputTooLarge("audio metadata exceeded size limit for plan", {
+      publicMessage: audioLimitMessage("size", isProOrAlpha, isWebJob, maxAudioBytes),
+    });
   }
   if (job.durationSeconds !== null && job.durationSeconds > maxAudioSeconds) {
-    const publicMessage = isProOrAlpha
-      ? "That is over the 2-hour limit — split it into parts under 2 hours each."
-      : "Voice notes over 30 minutes need Pro — send a shorter clip or split it.";
-    throw AppError.inputTooLarge("audio duration exceeded plan limit", { publicMessage });
+    throw AppError.inputTooLarge("audio duration exceeded plan limit", {
+      publicMessage: audioLimitMessage("duration", isProOrAlpha, isWebJob, maxAudioSeconds),
+    });
   }
 
   const reportedMimeType = job.mimeType?.split(";", 1)[0]?.trim().toLowerCase() ||
@@ -552,15 +580,24 @@ async function generateNewNote(
     audio = await deps.storage.download("audio_uploads", job.storagePath);
     if (audio.byteLength > maxAudioBytes) {
       audio.fill(0);
-      const publicMessage = isProOrAlpha
-        ? "That is over the 2-hour limit — split it into parts under 2 hours each."
-        : "Voice notes over 30 minutes need Pro — send a shorter clip or split it.";
       throw AppError.inputTooLarge("audio download exceeded size limit for plan", {
-        publicMessage,
+        publicMessage: audioLimitMessage("size", isProOrAlpha, isWebJob, maxAudioBytes),
       });
     }
   } else {
-    audio = await deps.telegram.downloadFile(job.telegramFileId!, maxAudioBytes);
+    try {
+      audio = await deps.telegram.downloadFile(job.telegramFileId!, maxAudioBytes);
+    } catch (thrown) {
+      // The metadata check above is skipped when Telegram sends no `file_size`, so
+      // the ceiling is sometimes discovered here instead. Same breach and same
+      // remedy, so it gets the same sentence rather than the client's generic one.
+      const downloadError = toAppError(thrown);
+      if (downloadError.code !== ERROR_CODES.INPUT_TOO_LARGE) throw thrown;
+      throw AppError.inputTooLarge(
+        downloadError.internalDetail ?? "telegram audio exceeded its download ceiling",
+        { publicMessage: audioLimitMessage("size", isProOrAlpha, false, maxAudioBytes) },
+      );
+    }
   }
   try {
     await advance(deps, job, "ACQUIRING", "EXTRACTING");
