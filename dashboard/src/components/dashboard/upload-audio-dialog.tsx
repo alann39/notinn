@@ -321,17 +321,11 @@ export function UploadAudioDialog({
         return;
       }
     } else {
-      // Audio size check
+      // Audio size check (universal 45MB cap due to Supabase platform limit)
       if (file.size > maxAudioBytes) {
-        if (!isProOrAlpha) {
-          setFileError(
-            `Audio file size (${formatBytes(file.size)}) exceeds the Free plan limit (${formatBytes(MAX_AUDIO_BYTES)}). Upgrade to Pro for uploads up to 100 MB.`,
-          );
-        } else {
-          setFileError(
-            `Audio file size (${formatBytes(file.size)}) exceeds the 100 MB limit. Split long recordings into smaller files.`,
-          );
-        }
+        setFileError(
+          `Audio file size (${formatBytes(file.size)}) exceeds the maximum upload limit (45 MB). Please choose a file under 45 MB or reduce its bitrate.`,
+        );
         return;
       }
     }
@@ -768,7 +762,7 @@ export function UploadAudioDialog({
                     Choose a file or drag & drop here
                   </p>
                   <p className="text-xs text-muted-foreground mt-1 max-w-sm">
-                    Supports <strong>Audio</strong> (up to {isProOrAlpha ? "100 MB" : "14 MB"}), <strong>PDF</strong>, and <strong>Images</strong> (up to 14 MB).
+                    Supports <strong>Audio</strong> (up to 45 MB • {isProOrAlpha ? "2 hours" : "30 mins"}), <strong>PDF</strong>, and <strong>Images</strong> (up to 14 MB).
                   </p>
 
                   <div className="flex flex-wrap items-center justify-center gap-1.5 mt-3">

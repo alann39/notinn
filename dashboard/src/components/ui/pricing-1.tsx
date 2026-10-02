@@ -64,7 +64,7 @@ const plans: PricingPlan[] = [
       "1,000 notes per month",
       "Voice notes up to 2 hours",
       "300 regenerations & Ask queries/mo",
-      "Web audio upload up to 100 MB",
+      "Web audio upload up to 45 MB (2 hours)",
       "Extended document & image upload limits",
       "Full-text & semantic search with citations",
       "Permanent web dashboard access",
