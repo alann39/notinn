@@ -195,12 +195,12 @@ function LegalShell({
                 <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-[var(--highlight-100)] text-[var(--ink-950)]">
                   <Sparkles className="w-3.5 h-3.5 text-amber-700" aria-hidden="true" />
                 </span>
-                <h2
+                <p
                   id="summary-card-heading"
-                  className="text-xs uppercase tracking-wider font-mono font-semibold text-[var(--ink-600)]"
+                  className="text-[11px] uppercase tracking-wider font-mono font-semibold text-[var(--ink-600)]"
                 >
                   Quick Summary & Core Commitments
-                </h2>
+                </p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-[var(--rule-300)]/70">
@@ -324,16 +324,17 @@ function LegalShell({
                     <div className="flex flex-wrap items-center gap-2.5 shrink-0 w-full sm:w-auto">
                       <Link
                         to={source === "privacy" ? "/terms" : "/privacy"}
-                        className="px-3.5 py-2 text-xs sm:text-sm font-medium rounded-lg border border-[var(--rule-300)] bg-[var(--paper-100)] hover:bg-[var(--paper-200)] text-[var(--ink-950)] transition-colors"
+                        className="landing-legal-button-outline px-3.5 py-2 text-xs sm:text-sm font-medium rounded-lg border border-[var(--rule-300)] bg-[var(--paper-100)] hover:bg-[var(--paper-200)] text-[var(--ink-950)] transition-colors"
                       >
                         View {source === "privacy" ? "Terms of Service" : "Privacy Policy"}
                       </Link>
                       <Link
                         to="/notes"
-                        className="px-3.5 py-2 text-xs sm:text-sm font-medium rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-white dark:text-neutral-950 dark:hover:bg-neutral-150 transition-colors flex items-center gap-1.5 shadow-xs"
+                        className="landing-legal-button-primary px-3.5 py-2 text-xs sm:text-sm font-medium rounded-lg bg-[#11110f] !text-[#ffffff] hover:opacity-90 transition-opacity flex items-center gap-1.5 shadow-xs"
+                        style={{ color: "#ffffff", backgroundColor: "#11110f" }}
                       >
-                        <LayoutDashboard className="w-3.5 h-3.5" aria-hidden="true" />
-                        <span>Go to Dashboard</span>
+                        <LayoutDashboard className="w-3.5 h-3.5 text-white shrink-0" aria-hidden="true" style={{ color: "#ffffff" }} />
+                        <span className="text-white" style={{ color: "#ffffff" }}>Go to Dashboard</span>
                       </Link>
                     </div>
                   </div>
