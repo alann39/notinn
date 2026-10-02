@@ -249,7 +249,7 @@ function LegalShell({
                     aria-expanded={mobileTocOpen}
                     className="w-full flex items-center justify-between px-4 py-3.5 text-left text-sm font-medium text-[var(--ink-950)] hover:bg-[var(--paper-100)]/50 transition-colors"
                   >
-                    <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-[var(--ink-600)]">
+                    <span className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-[var(--ink-600)]">
                       <Layers className="w-4 h-4 text-[var(--ink-400)] shrink-0" aria-hidden="true" />
                       Table of Contents ({toc.length} sections)
                     </span>
@@ -277,7 +277,8 @@ function LegalShell({
                                 handleJumpToSection(item.id);
                               }}
                               className={cn(
-                                "block px-2.5 py-1.5 text-xs rounded-md transition-colors",
+                                "block px-2.5 py-1.5 rounded-md transition-colors",
+                                item.level === 3 ? "pl-4 text-xs text-[var(--ink-500)]" : "text-[13px] font-medium",
                                 activeId === item.id
                                   ? "bg-[var(--paper-200)] font-semibold text-[var(--ink-950)]"
                                   : "text-[var(--ink-600)] hover:text-[var(--ink-950)] hover:bg-[var(--paper-100)]",
@@ -347,12 +348,12 @@ function LegalShell({
                   className="hidden lg:block sticky top-24 max-h-[calc(100vh-7.5rem)] overflow-y-auto pl-3 pr-2 py-1 border-l border-[var(--rule-300)]"
                   aria-label="Page navigation"
                 >
-                  <h2 className="text-xs font-mono font-semibold uppercase tracking-wider text-[var(--ink-600)] mb-3.5 flex items-center gap-1.5">
-                    <Layers className="w-3.5 h-3.5 text-[var(--ink-400)] shrink-0" aria-hidden="true" />
+                  <h2 className="text-[11px] font-mono font-semibold uppercase tracking-wider text-[var(--ink-600)] mb-3 flex items-center gap-1.5">
+                    <Layers className="w-3 h-3 text-[var(--ink-400)] shrink-0" aria-hidden="true" />
                     <span>Table of Contents</span>
                   </h2>
                   <nav aria-label="Desktop table of contents">
-                    <ul className="space-y-1 text-xs">
+                    <ul className="space-y-1">
                       {toc.map((item) => (
                         <li key={item.id}>
                           <a
@@ -363,7 +364,7 @@ function LegalShell({
                             }}
                             className={cn(
                               "block py-1 px-2 rounded-md transition-all leading-snug",
-                              item.level === 3 ? "pl-3.5 text-[10px] text-[var(--ink-500)]" : "text-[11px] font-medium",
+                              item.level === 3 ? "pl-3.5 text-xs text-[var(--ink-500)]" : "text-[13px] font-medium",
                               activeId === item.id
                                 ? "bg-[var(--paper-200)] font-semibold text-[var(--ink-950)] shadow-2xs"
                                 : "text-[var(--ink-600)] hover:text-[var(--ink-950)] hover:bg-[var(--paper-100)]",

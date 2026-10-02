@@ -64,8 +64,13 @@ function parseLastReviewed(markdown: string): string {
 }
 
 export function getLegalContent(source: "privacy" | "terms"): LegalContentResult {
-  const markdown = source === "privacy" ? privacyMarkdown : termsMarkdown;
-  const lastReviewed = parseLastReviewed(markdown);
+  const rawMarkdown = source === "privacy" ? privacyMarkdown : termsMarkdown;
+  const lastReviewed = parseLastReviewed(rawMarkdown);
+
+  // Strip top # Heading and redundant "Last reviewed: ..." so it doesn't duplicate the page hero title and metadata badge
+  const markdown = rawMarkdown
+    .trim()
+    .replace(/^#\s+[^\n]+\n+(?:Last reviewed:[^\n]+\n+)?/i, "");
 
   const parsed = marked.parse(markdown, { async: false }) as string;
   const sanitized = DOMPurify.sanitize(parsed, {
