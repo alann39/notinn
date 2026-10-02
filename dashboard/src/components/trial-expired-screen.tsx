@@ -1,4 +1,4 @@
-import { ExternalLink, Lock, LogOut, Send, Sparkles } from "lucide-react";
+import { ExternalLink, Lock, LogOut, Send, Sparkles, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -26,33 +26,36 @@ export function TrialExpiredScreen() {
         </div>
 
         {/* Paywall Card */}
-        <Card className="rounded-2xl border border-amber-500/25 bg-card/95 p-6 sm:p-8 shadow-xl backdrop-blur-md space-y-6">
-          <div className="flex flex-col items-center text-center space-y-3">
-            <div className="size-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 dark:text-amber-400">
-              <Lock className="size-7" />
+        <Card className="rounded-2xl border border-amber-500/25 bg-card/95 p-5 sm:p-8 shadow-xl backdrop-blur-md space-y-5 sm:space-y-6">
+          <div className="flex flex-col items-center text-center space-y-2.5 sm:space-y-3">
+            <div className="size-12 sm:size-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 dark:text-amber-400">
+              <Lock className="size-6 sm:size-7" />
             </div>
 
             <Badge variant="outline" className="border-amber-500/30 text-amber-600 dark:text-amber-400 bg-amber-500/10">
               Free trial ended
             </Badge>
 
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
+            <h1 className="text-lg sm:text-2xl font-bold tracking-tight">
               Web dashboard access has ended
             </h1>
 
-            <p className="text-sm text-muted-foreground leading-relaxed max-w-md">
+            <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed max-w-md">
               Free accounts are limited to the first 14 days after sign-up. Your trial ended{" "}
               <strong className="text-foreground">{formattedExpiryDate || "today"}</strong>.
             </p>
           </div>
 
           {/* Reassurance note */}
-          <div className="rounded-xl border border-border/60 bg-muted/30 p-4 text-xs sm:text-sm text-muted-foreground leading-relaxed">
-            🛡️ <strong className="text-foreground">Your notes are safe!</strong> All your notes remain stored and searchable, and you can create and open them any time through the <strong>Notinn Telegram bot</strong>.
+          <div className="rounded-xl border border-border/60 bg-muted/30 p-3.5 sm:p-4 text-xs sm:text-sm text-muted-foreground leading-relaxed flex items-start gap-2.5">
+            <ShieldCheck className="size-4 shrink-0 text-emerald-500 mt-0.5" />
+            <span>
+              <strong className="text-foreground">Your notes are safe!</strong> All your notes remain stored and searchable, and you can create and open them any time through the <strong>Notinn Telegram bot</strong>.
+            </span>
           </div>
 
           {/* Promo Offer Card */}
-          <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-2">
+          <div className="rounded-xl border border-primary/20 bg-primary/5 p-3.5 sm:p-4 space-y-1.5 sm:space-y-2">
             <div className="flex items-center gap-2 text-primary font-semibold text-sm">
               <Sparkles className="size-4" />
               <span>Upgrade to Notinn Pro</span>
@@ -70,21 +73,21 @@ export function TrialExpiredScreen() {
               rel="noreferrer"
               className="w-full inline-block"
             >
-              <Button size="lg" className="w-full rounded-xl gap-2 font-medium">
+              <Button size="lg" className="w-full rounded-xl gap-2 font-medium text-xs sm:text-sm h-11 sm:h-12 px-3">
                 <Sparkles className="size-4" />
-                Upgrade to Pro with TipTap (Rp 10,000)
+                <span className="truncate">Upgrade to Pro (Rp 10,000)</span>
                 <ExternalLink className="size-3.5 opacity-70 ml-auto" />
               </Button>
             </a>
 
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-2.5">
               <a
                 href="https://t.me/NotinnBot"
                 target="_blank"
                 rel="noreferrer"
                 className="w-full inline-block"
               >
-                <Button variant="outline" className="w-full rounded-xl gap-2 text-xs sm:text-sm">
+                <Button variant="outline" className="w-full rounded-xl gap-2 text-xs sm:text-sm h-10">
                   <Send className="size-3.5" />
                   Open Telegram
                 </Button>
@@ -93,7 +96,7 @@ export function TrialExpiredScreen() {
               <Button
                 variant="outline"
                 onClick={() => signOut()}
-                className="w-full rounded-xl gap-2 text-xs sm:text-sm text-muted-foreground hover:text-foreground"
+                className="w-full rounded-xl gap-2 text-xs sm:text-sm h-10 text-muted-foreground hover:text-foreground"
               >
                 <LogOut className="size-3.5" />
                 Sign Out

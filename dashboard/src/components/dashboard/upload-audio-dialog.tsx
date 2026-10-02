@@ -104,8 +104,7 @@ const DEFAULT_TEMPLATES: Record<string, TemplateItem[]> = {
   ],
 };
 
-const FREE_MAX_AUDIO_BYTES = 14 * 1024 * 1024; // 14 MB
-const PRO_MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100 MB
+const MAX_AUDIO_BYTES = 45 * 1024 * 1024; // 45 MB universal cap across all plans (Supabase storage platform limit)
 const MAX_DOC_BYTES = 14 * 1024 * 1024; // 14 MB
 const FREE_MAX_SECONDS = 1800; // 30 mins
 const PRO_MAX_SECONDS = 7200; // 2 hours
@@ -222,7 +221,7 @@ export function UploadAudioDialog({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isProOrAlpha = profile?.plan_key === "pro" || profile?.plan_key === "alpha";
-  const maxAudioBytes = isProOrAlpha ? PRO_MAX_AUDIO_BYTES : FREE_MAX_AUDIO_BYTES;
+  const maxAudioBytes = MAX_AUDIO_BYTES;
   const maxDuration = isProOrAlpha ? PRO_MAX_SECONDS : FREE_MAX_SECONDS;
 
   const resetState = useCallback(() => {
@@ -326,7 +325,7 @@ export function UploadAudioDialog({
       if (file.size > maxAudioBytes) {
         if (!isProOrAlpha) {
           setFileError(
-            `Audio file size (${formatBytes(file.size)}) exceeds the Free plan limit (${formatBytes(FREE_MAX_AUDIO_BYTES)}). Upgrade to Pro for uploads up to 100 MB.`,
+            `Audio file size (${formatBytes(file.size)}) exceeds the Free plan limit (${formatBytes(MAX_AUDIO_BYTES)}). Upgrade to Pro for uploads up to 100 MB.`,
           );
         } else {
           setFileError(

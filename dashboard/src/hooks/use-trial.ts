@@ -1,7 +1,7 @@
 import { useAuth } from "./use-auth";
 
 export interface TrialStatus {
-  /** True if the user is on the Pro plan and exempt from trial expiration. */
+  /** True if the user is on the Pro or Alpha plan and exempt from trial expiration. */
   isPro: boolean;
   /** True if the account is on Free plan and has exceeded 14 days since creation. */
   isTrialExpired: boolean;
@@ -29,7 +29,7 @@ export function useTrial(): TrialStatus {
     };
   }
 
-  const isPro = profile.plan_key === "pro";
+  const isPro = profile.plan_key === "pro" || profile.plan_key === "alpha";
   if (isPro) {
     return {
       isPro: true,
