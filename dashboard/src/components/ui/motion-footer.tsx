@@ -12,12 +12,12 @@ if (typeof window !== "undefined") {
 }
 
 const MarqueeItem = () => (
-  <div className="flex items-center space-x-10 px-4">
-    <span>Knowledge Inbox</span> <span className="text-primary/40">•</span>
-    <span>Telegram Capture</span> <span className="text-primary/40">•</span>
-    <span>Instant AI Structuring</span> <span className="text-primary/40">•</span>
-    <span>Fast Web Dashboard</span> <span className="text-primary/40">•</span>
-    <span>Absolute Privacy</span> <span className="text-primary/40">•</span>
+  <div className="flex items-center space-x-10 px-5 shrink-0">
+    <span>Knowledge Inbox</span> <span className="text-primary/40" aria-hidden="true">•</span>
+    <span>Telegram Capture</span> <span className="text-primary/40" aria-hidden="true">•</span>
+    <span>Instant AI Structuring</span> <span className="text-primary/40" aria-hidden="true">•</span>
+    <span>Fast Web Dashboard</span> <span className="text-primary/40" aria-hidden="true">•</span>
+    <span>Absolute Privacy</span> <span className="text-primary/40" aria-hidden="true">•</span>
   </div>
 );
 
@@ -115,9 +115,15 @@ export function CinematicFooter(): React.ReactElement {
 
         {/* 1. Sleek Marquee Strip */}
         <div className="relative z-10 w-full overflow-hidden border-y border-border/40 bg-muted/30 backdrop-blur-xs py-3 mt-8">
-          <div className="flex w-max animate-[footer-scroll-marquee_35s_linear_infinite] text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
-            <MarqueeItem />
-            <MarqueeItem />
+          <div className="flex w-max animate-footer-scroll-marquee will-change-transform text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground hover:[animation-play-state:paused]">
+            <div className="flex shrink-0">
+              <MarqueeItem />
+              <MarqueeItem />
+            </div>
+            <div className="flex shrink-0" aria-hidden="true">
+              <MarqueeItem />
+              <MarqueeItem />
+            </div>
           </div>
         </div>
 
