@@ -5,11 +5,49 @@ test("protected notes route redirects signed-out visitors", async ({ page }) => 
   await expect(page).toHaveURL(/\/login/);
 });
 
-test("public legal routes resolve directly", async ({ page }) => {
+test("public legal routes resolve directly with rich UI layout", async ({ page }) => {
   await page.goto("/privacy");
-  await expect(page.locator("#legal-title")).toContainText("Notinn privacy notice");
-  await page.goto("/terms");
-  await expect(page.locator("#legal-title")).toContainText("Notinn Closed Alpha terms");
+
+  // Header & Metadata
+  await expect(page.locator("#legal-title")).toContainText("Notinn Privacy Policy");
+  await expect(page.locator("nav[aria-label='Breadcrumb']")).toBeVisible();
+  await expect(page.getByText(/Last updated:/i)).toBeVisible();
+
+  // Quick Summary Card
+  const summary = page.locator("section[aria-labelledby='summary-card-heading']");
+  await expect(summary).toBeVisible();
+  await expect(summary.getByText("Full Ownership")).toBeVisible();
+  await expect(summary.getByText("No AI Model Training")).toBeVisible();
+  await expect(summary.getByText("Fair Limits & Deletion")).toBeVisible();
+
+  // Table of Contents
+  const desktopToc = page.locator("aside[aria-label='Page navigation']");
+  await expect(desktopToc).toBeVisible();
+  await expect(desktopToc.getByRole("link", { name: /Core Privacy Commitments/i })).toBeVisible();
+
+  // Prose styling & content
+  const prose = page.locator("article.landing-legal-body");
+  await expect(prose).toBeVisible();
+  await expect(prose.locator("table")).toBeVisible();
+  await expect(prose).toContainText("45 MB");
+
+  // Switcher tab navigation to Terms
+  const termsTab = page.locator("div[role='tablist'] a[href='/terms']");
+  await expect(termsTab).toBeVisible();
+  await termsTab.click();
+
+  // Verify Terms of Service
+  await expect(page).toHaveURL(/\/terms/);
+  await expect(page.locator("#legal-title")).toContainText("Notinn Terms of Service");
+  await expect(page.locator("article.landing-legal-body")).toContainText("45 MB");
+  await expect(page.locator("article.landing-legal-body")).toContainText("Free Starter Plan");
+  await expect(page.locator("article.landing-legal-body")).toContainText("Pro Plan");
+
+  // Footer navigation
+  const footerNav = page.locator("section[aria-labelledby='legal-footer-nav-title']");
+  await expect(footerNav).toBeVisible();
+  await expect(footerNav.getByRole("link", { name: /Go to Dashboard/i })).toHaveAttribute("href", "/notes");
+
   await page.goto("/login");
   await expect(page.locator("h1")).toContainText("Notinn");
 });

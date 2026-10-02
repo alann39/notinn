@@ -201,6 +201,10 @@ const sanitizerOptions = {
   allowedAttributes: {
     a: ["href", "title"],
     th: ["scope"],
+    h1: ["id"],
+    h2: ["id"],
+    h3: ["id"],
+    h4: ["id"],
   },
   allowedSchemes: ["https"],
   allowedSchemesAppliedToAttributes: ["href"],
@@ -212,6 +216,12 @@ const sanitizerOptions = {
       if (href === "PRIVACY_NOTICE.md" || href === "./PRIVACY_NOTICE.md") {
         return { tagName, attribs: { href: "/privacy" } };
       }
+      if (href === "TERMS_OF_SERVICE.md" || href === "./TERMS_OF_SERVICE.md") {
+        return { tagName, attribs: { href: "/terms" } };
+      }
+      if (href.startsWith("#")) {
+        return { tagName, attribs: { href } };
+      }
       if (!href.startsWith("https://")) return { tagName: "span", attribs: {} };
       return { tagName, attribs: { href, rel: "noopener noreferrer" } };
     },
@@ -222,7 +232,7 @@ function buildLegalHtml({ pageTitle, description, body }) {
   return [
     `<header><p><a href="/">Notinn</a></p></header>`,
     `<main id="main-content">`,
-    `  <h1>${htmlEscaped(pageTitle)}</h1>`,
+    `  <h1 id="legal-title">${htmlEscaped(pageTitle)}</h1>`,
     `  <p>${htmlEscaped(description)}</p>`,
     `  ${body}`,
     `  <p><a href="/">Back to Notinn home</a></p>`,
@@ -314,16 +324,16 @@ async function main() {
     {
       sourcePath: privacySource,
       directory: resolve(distRoot, "privacy"),
-      pageTitle: "Notinn privacy notice",
-      description: "How Notinn handles Telegram content, AI processing, retention, and deletion.",
-      metadataTitle: "Notinn privacy notice",
+      pageTitle: "Notinn Privacy Policy",
+      description: "How Notinn protects personal data, ensures zero AI model training on user notes, and enforces transparent retention.",
+      metadataTitle: "Notinn Privacy Policy",
     },
     {
       sourcePath: termsSource,
       directory: resolve(distRoot, "terms"),
-      pageTitle: "Notinn Closed Alpha terms",
-      description: "Closed Alpha eligibility, AI limits, fair use, and deletion rules.",
-      metadataTitle: "Notinn Closed Alpha terms",
+      pageTitle: "Notinn Terms of Service",
+      description: "Terms of use, Free and Pro service plan limits, full data ownership, and account deletion rules.",
+      metadataTitle: "Notinn Terms of Service",
     },
   ];
 

@@ -986,18 +986,194 @@
 }
 
 /* ─── Legal pages ────────────────────────────────────────────────────── */
+.landing-legal-body {
+  font-family: var(--font-body);
+  color: var(--ink-800);
+  font-size: 1rem;
+  line-height: 1.75;
+}
+
+.landing-legal-body h2 {
+  font-family: var(--font-display);
+  font-size: clamp(1.35rem, 2vw + 0.5rem, 1.75rem);
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  color: var(--ink-950);
+  margin-top: 3rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--rule-300);
+  scroll-margin-top: 5.5rem;
+}
+
+.landing-legal-body h2:first-of-type {
+  margin-top: 1.5rem;
+}
+
+.landing-legal-body h3 {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--ink-950);
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+  scroll-margin-top: 5.5rem;
+}
+
+.landing-legal-body p {
+  text-align: justify;
+  hyphens: auto;
+  color: var(--ink-800);
+  font-size: 0.9625rem;
+  line-height: 1.75;
+  margin-bottom: 1.25rem;
+  max-width: 72ch;
+}
+
+.landing-legal-body ul,
+.landing-legal-body ol {
+  margin-top: 0.75rem;
+  margin-bottom: 1.5rem;
+  padding-left: 1.75rem;
+  max-width: 72ch;
+}
+
+.landing-legal-body ul {
+  list-style-type: disc;
+}
+
+.landing-legal-body ol {
+  list-style-type: decimal;
+}
+
+.landing-legal-body li {
+  color: var(--ink-800);
+  font-size: 0.9625rem;
+  line-height: 1.7;
+  margin-bottom: 0.5rem;
+  padding-left: 0.25rem;
+  max-width: 70ch;
+}
+
+.landing-legal-body li > strong {
+  color: var(--ink-950);
+  font-weight: 600;
+}
+
+.landing-legal-body strong {
+  color: var(--ink-950);
+  font-weight: 600;
+}
+
+.landing-legal-body blockquote {
+  border-left: 3px solid var(--highlight-400);
+  background: rgba(244, 200, 74, 0.1);
+  border-radius: 0 0.5rem 0.5rem 0;
+  padding: 1rem 1.25rem;
+  margin: 1.75rem 0;
+  font-style: italic;
+  color: var(--ink-950);
+  max-width: 72ch;
+}
+
+.landing-legal-body code {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  background: rgba(17, 17, 15, 0.06);
+  border: 1px solid rgba(215, 208, 196, 0.6);
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.3rem;
+  color: var(--ink-950);
+}
+
+.landing-legal-body pre {
+  background: var(--ink-950);
+  color: var(--paper-100);
+  padding: 1rem 1.25rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin: 1.5rem 0;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+
+.landing-legal-body pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+}
+
 .landing-legal-body table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   width: 100%;
-}
-
-.landing-legal-body th,
-.landing-legal-body td {
+  margin: 2rem 0;
   border: 1px solid var(--rule-300);
-  padding: 0.75rem;
-  text-align: left;
+  border-radius: 0.625rem;
+  overflow: hidden;
+  font-size: 0.875rem;
+  background: var(--paper-50);
+  display: table;
 }
 
+@media (max-width: 640px) {
+  .landing-legal-body table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: normal;
+  }
+}
+
+.landing-legal-body th {
+  background: var(--paper-200);
+  color: var(--ink-950);
+  font-weight: 600;
+  font-size: 0.8125rem;
+  letter-spacing: 0.02em;
+  padding: 0.875rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--rule-300);
+}
+
+.landing-legal-body td {
+  border-bottom: 1px solid rgba(215, 208, 196, 0.5);
+  padding: 0.875rem 1rem;
+  color: var(--ink-800);
+  line-height: 1.6;
+  vertical-align: top;
+}
+
+.landing-legal-body tr:last-child td {
+  border-bottom: none;
+}
+
+.landing-legal-body tr:nth-child(even) td {
+  background: rgba(247, 243, 234, 0.4);
+}
+
+.landing-legal-body a {
+  color: var(--ink-950);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+  transition: opacity 0.15s ease;
+}
+
+.landing-legal-body a:hover {
+  opacity: 0.8;
+  text-decoration-thickness: 2px;
+}
+
+.landing-legal-body hr {
+  border: none;
+  border-top: 1px solid var(--rule-300);
+  margin: 2.5rem 0;
+}
 /* ─── Focus & skip link ──────────────────────────────────────────────── */
 .landing-theme :focus-visible {
   outline: 2px solid var(--ink-950);

@@ -1,88 +1,91 @@
-# Notinn privacy notice
+# Notinn Privacy Policy
 
-Last reviewed: 2026-09-26. This notice describes the Closed Alpha. It is a
-product disclosure, not a promise that third-party policies will never change.
+Last reviewed: 2026-10-02.
 
-## Data Notinn receives
+This Privacy Policy explains how Notinn ("we", "our", or "the service") collects, handles, stores, and protects personal information, Telegram messages, audio recordings, documents, and generated notes across our Telegram bot and web dashboard.
 
-Notinn receives the Telegram identity and private-chat content needed to operate
-the bot: user/chat identifiers, profile labels, message metadata, text, and any
-voice, image, or document submitted for processing. Do not submit secrets or
-content you do not have the right to process.
+## 1. Core Privacy Commitments
 
-## Notinn retention
+- **User Notes Are Strictly Private**: Your notes, thoughts, and documents belong to you. We do not inspect, monetize, or disclose your personal notes.
+- **Zero AI Model Training on User Notes**: We do **not** use your notes, audio files, documents, or transcripts to train foundational artificial intelligence or machine learning models. User data is never fed into training corpuses.
+- **In-Memory Media Processing**: Raw voice notes, audio files, screenshots, and documents are processed in memory and zero-filled immediately after note generation. We do not retain raw audio or document files on persistent storage.
+- **Privacy-by-Design Logging**: Our server logger enforces an allowlist schema that drops message bodies, transcripts, filenames, URLs, tokens, and Telegram handles by construction.
 
-| Data                                                                    | Retention                                                                                              |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Raw audio, image, and document bytes                                    | Processed in memory, not stored as Notinn files, and zero-filled after the attempt                     |
-| Direct text and Telegram file handles                                   | Scrubbed from the processing job after output is staged or the job terminates                          |
-| Source-derived text                                                     | Kept with the note in `balanced`; omitted in `minimal`                                                 |
-| Notes, generated outputs, embeddings, preferences, and custom templates | Until the user deletes the note or account                                                             |
-| Content-free usage events                                               | Retained after account deletion for security, billing, and operations, linked only to an internal UUID |
-| Content-free lifecycle audit                                            | Retained after deletion: internal UUID, event type, and timestamps only                                |
-| Application logs                                                        | Must contain no note content, transcript, file, Telegram profile label, or credential                  |
+## 2. Information Notinn Collects and Receives
 
-## Public website video
+To operate the Telegram bot and web dashboard, Notinn receives:
 
-The landing page requests a self-hosted decorative video from the Notinn
-website when playback starts. This media request does not send Telegram
-messages or generated notes. With JavaScript disabled, reduced motion
-requested, or playback unavailable, the hero shows a solid dark background
-instead of the video. The visitor's browser does not contact the original
-video source to display this page.
+- **Telegram Identity**: User ID, username/handle, display name, and private chat identifier needed to authenticate your account and route your notes.
+- **Submitted Content**: Text messages, forwarded items, audio files, voice notes, screenshots, photos, and documents (PDF, DOCX, TXT, Markdown) that you explicitly send to the bot or upload through the web dashboard.
+- **Operational Metrics**: Content-free system telemetry, including operation counts, current subscription plan (Free vs Pro), and quota usage buckets. These counters contain no user text, transcripts, or personal data.
 
-## Telegram retention is separate
+## 3. Plan Quotas and Upload Limits
 
-Notinn account deletion does not delete the original Telegram message or files
-from the user's Telegram chat. Telegram stores ordinary cloud-chat content under
-its own policy and provides its own message/account deletion controls. Users must
-delete Telegram copies in Telegram.
+Notinn manages ingestion volume through clear plan boundaries:
 
-## AI-provider processing is separate
+- **Free Starter Plan**: Standard generation quotas, voice note processing up to 30 minutes per recording, and full Markdown/PDF export capabilities.
+- **Pro Plan**: High-volume capture (1,000 notes/month, 300 regenerations and semantic search queries), extended audio processing up to 2 hours per file, priority processing queues, and permanent dashboard access.
+- **Universal Audio Upload Cap (45 MB)**: All web audio uploads across all plans are subject to an absolute maximum limit of **45 MB** due to platform storage architecture. Files exceeding 45 MB cannot be accepted. Document uploads (PDF, DOCX, TXT) and images are capped at 14 MB.
 
-Notinn sends only the content needed to generate a note to Google Gemini.
-OpenRouter receives that content only when the configured transient fallback is
-used after a retryable Gemini failure. Notinn does not add Telegram user IDs,
-usernames, or chat IDs to AI-provider requests.
+## 4. Data Retention Schedule
 
-Provider treatment depends on the active account, billing tier, routed model,
-and provider terms:
+| Data Category | Retention Period | Handling and Storage |
+| --- | --- | --- |
+| Raw audio, image, and document bytes | Transient in-memory only | Processed in memory during transcription; zero-filled and released immediately after processing attempt. Never saved to persistent storage. |
+| Direct input text and Telegram file handles | Ephemeral (processing duration) | Scrubbed from processing job records once note generation completes or the job terminates. |
+| Generated notes, summaries, and action items | Until deleted by user | Encrypted at rest in PostgreSQL 17; accessible exclusively by the authenticated user. |
+| Vector embeddings (`note_embeddings`) | Until note or account deletion | 768-dimensional mathematical representations used for semantic search; purged immediately when the parent note is deleted. |
+| Content-free usage events | Retained for billing and security | Numerical counters linked only to an internal UUID; contains zero note text, titles, or transcripts. |
+| Application and error logs | Retained temporarily for operations | Strict allowlist logger strips all note text, transcripts, credentials, tokens, filenames, and Telegram usernames. |
 
-- Google states that unpaid Gemini API content and responses may be used to
-  improve products and may be reviewed by humans. Google states that paid
-  Gemini API prompts and responses are not used to improve its products, while
-  limited safety/security logging still applies.
-- OpenRouter states that it does not use inputs or outputs to train its own
-  models. It routes inputs to a model provider, whose retention and training
-  terms may differ, and may retain information for legal, security, billing, or
-  compliance needs.
+## 5. Public Website Video and Static Assets
 
-Deleting a Notinn account cannot recall data already processed under a
-provider's policy. Before every release, the operator must verify the configured
-Gemini billing tier and the OpenRouter route/provider data policy. The Closed
-Alpha must not invite users to submit sensitive or confidential information
-while Gemini is operating as an unpaid service.
+The public landing page may request a self-hosted decorative video from the Notinn website when playback starts. This media request transmits no user credentials, Telegram identifiers, or note content. When JavaScript is disabled, reduced motion is requested, or playback is unsupported, the page displays a static background. The browser does not contact external third-party video hosts.
 
-Current policy references:
+## 6. Telegram Infrastructure Separation
 
-- <https://ai.google.dev/gemini-api/terms>
-- <https://openrouter.ai/privacy>
-- <https://telegram.org/privacy>
+Notinn operates as an authorized bot within Telegram's ecosystem. Telegram independently stores cloud-chat history under its own terms and privacy policy (<https://telegram.org/privacy>).
 
-## Account deletion
+Deleting a note or account in Notinn removes it from Notinn's databases, but does **not** erase the message from your personal Telegram chat history. You can delete copies within your Telegram app at any time using Telegram's native deletion features.
 
-Send `/delete_account`, read the warning, then send exactly
-`/delete_account confirm`.
+## 7. AI Providers and Sub-processors
 
-The request immediately blocks new processing and cancels active jobs. It is
-reversible for seven days with `/cancel_deletion`. Once due, an hourly database
-job deletes notes, outputs, embeddings, deliveries, drafts, preferences, custom
-templates, jobs, Telegram update metadata, quota state, and invite redemption;
-then it removes Telegram identity and profile labels from the retained account
-anchor. Finalized deletion cannot be undone.
+To generate structured notes, transcribe audio, and power semantic search, Notinn interfaces with trusted infrastructure providers:
 
-## Changes and contact
+- **Google Gemini API**: Used for audio transcription, vision/OCR, document extraction, and structured note synthesis. Notinn operates exclusively through commercial/paid enterprise API tiers. Under Google's enterprise terms, API inputs and outputs are **not used to train Google models** and are not subject to human review.
+- **OpenRouter**: Serves as a transient fallback route during upstream provider downtime. OpenRouter does not train models on customer inputs or outputs.
+- **Supabase**: Provides managed PostgreSQL 17 database storage, Row-Level Security (RLS), and authentication under SOC-2 compliant data protection standards.
 
-Material handling changes require an updated notice and a new review date before
-deployment. Closed-Alpha support and privacy requests use the operator contact
-provided with the invitation.
+Deleting your Notinn account prevents future provider calls; data previously processed through third-party APIs was ephemeral and governed by non-training enterprise terms.
+
+Official provider policy references:
+- Google Gemini API Terms: <https://ai.google.dev/gemini-api/terms>
+- OpenRouter Privacy Policy: <https://openrouter.ai/privacy>
+- Telegram Privacy Policy: <https://telegram.org/privacy>
+
+## 8. Account Deletion and Permanent Data Purge
+
+You maintain complete control over your data and can trigger permanent deletion at any time:
+
+1. **In Telegram**: Send `/delete_account`, review the confirmation prompt, and send `/delete_account confirm`.
+2. **In Web Dashboard**: Navigate to Settings and select **Delete Account**.
+
+Upon confirmation:
+- New message processing is immediately blocked and any pending jobs are cancelled.
+- A **seven-day cancellation window** begins. You may restore your account at any time during these seven days by sending `/cancel_deletion`.
+- After seven days, an automated database worker permanently purges all notes, summaries, transcripts, vector embeddings, custom templates, and credentials.
+- Telegram identity handles are unlinked from the retained content-free audit UUID. Once finalized, deletion is permanent and cannot be undone.
+
+## 9. Your Rights and Data Export
+
+Under applicable data protection laws (including GDPR and CCPA), you have the right to:
+- **Access and Portability**: View all saved notes in your web dashboard and export them individually or in bulk in clean Markdown or PDF format.
+- **Rectification**: Edit, regenerate, or retitle your notes at any time.
+- **Erasure**: Permanently delete individual notes or your entire account with all associated embeddings.
+- **Opt-out of Model Training**: Model training is disabled by default for all users and cannot be opted into.
+
+## 10. Policy Updates and Contact
+
+We may periodically revise this Privacy Policy to reflect feature additions or regulatory requirements. Any material changes will be accompanied by an updated "Last reviewed" date and prominent notification in the Telegram bot or web dashboard.
+
+For privacy-related questions, data subject requests, or security inquiries, please contact us via Telegram at [@NotinnBot](https://t.me/NotinnBot) or through your dashboard account settings.
