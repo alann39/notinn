@@ -24,6 +24,7 @@ import type { PaymentRepository } from "../repositories/payment.repository.ts";
 import type { NoteAIProvider } from "../providers/note-ai.provider.ts";
 import type { EmbeddingProvider, LibraryAnswerProvider } from "../providers/library-ai.provider.ts";
 import { handleCallback } from "../services/callback.service.ts";
+import { createMagicToken } from "../security/magic-token.ts";
 import { closedAlphaAccessMessage, handleCommand } from "../services/command.service.ts";
 import { ingestMessage } from "../services/ingestion.service.ts";
 import { classifyUpdate } from "./parse-update.ts";
@@ -105,27 +106,30 @@ function methodGuard(request: Request): void {
  * transport that can carry the file. Without that pointer the user has no move
  * left, which is what made the old outcome a dead end.
  */
-function tooLargeAudioReply(sizeBytes: number | null, dashboardUrl: string | null): string {
+function tooLargeAudioMessage(sizeBytes: number | null, hasMagicLink: boolean, dashboardUrl: string | null): string {
   const limitMb = Math.round(MAX_TELEGRAM_DOWNLOAD_BYTES / (1024 * 1024));
   const sizeMb = sizeBytes === null ? null : (sizeBytes / (1024 * 1024)).toFixed(1);
   const breach = sizeMb === null
-    ? `That audio is larger than the ${limitMb} MB Telegram lets bots download.`
-    : `That audio is ${sizeMb} MB — Telegram only lets bots download up to ${limitMb} MB.`;
+    ? `Audio ini melebihi batas <b>${limitMb} MB</b> yang diizinkan bot Telegram.`
+    : `Ukuran audio ini <b>${sizeMb} MB</b> — bot Telegram hanya mengizinkan unduhan hingga <b>${limitMb} MB</b>.`;
+
+  if (hasMagicLink) {
+    return [
+      `⚠️ ${breach}`,
+      "",
+      "Anda dapat mengunggah file hingga <b>45 MB</b> melalui Web Dashboard.",
+      "",
+      "🔗 Klik tombol di bawah untuk login otomatis ke dashboard catatan Anda (tautan berlaku 10 menit):",
+    ].join("\n");
+  }
 
   return dashboardUrl === null
-    ? `${breach} Send a shorter clip, or split it into parts.`
-    : `${breach} Send a shorter clip, or upload it from the dashboard: ${
+    ? `${breach} Silakan kirim klip yang lebih pendek atau bagi menjadi beberapa bagian.`
+    : `${breach} Kirim /web untuk mendapatkan tautan login instan ke dashboard, atau buka: ${
       dashboardUrl.replace(/\/+$/, "")
     }/notes`;
 }
 
-/**
- * Parse the request body into a validated Telegram update.
- *
- * Returns both the parsed update and its SHA-256 digest. The digest is taken
- * over the raw bytes as received, before parsing, so that it describes what
- * Telegram actually sent rather than what survived normalisation.
- */
 async function readUpdate(
   request: Request,
 ): Promise<{ update: unknown; digest: string; byteLength: number }> {
@@ -226,17 +230,81 @@ export async function handleWebhookRequest(
       // Registration happens first so that a first-ever message which happens to
       // be oversized does not leave the sender unknown to Notinn. `ensureUser` is
       // idempotent, so this cannot double-write an existing user.
-      await repository.ensureUser(classification.message);
+      const userId = await repository.ensureUser(classification.message);
 
       if (deps.phase1 !== undefined) {
         try {
-          await deps.phase1.telegram.sendMessage(
-            classification.message.telegramChatId,
-            tooLargeAudioReply(
-              classification.message.sizeBytes,
-              deps.config.dashboard?.url ?? null,
-            ),
+          let buttonUrl: string | null = null;
+          const dashboard = deps.config.dashboard;
+          const authLinks = deps.phase1.authLinks;
+
+          if (dashboard && authLinks !== undefined) {
+            try {
+              const { token, nonce, expiresAt } = await createMagicToken(
+                userId,
+                dashboard.linkSecret.reveal(),
+                10 * 60 * 1000,
+              );
+              await authLinks.createToken(userId, nonce, expiresAt);
+
+              const baseUrl = dashboard.url.replace(/\/+$/, "");
+              const loginUrl = `${baseUrl}/auth/callback?token=${encodeURIComponent(token)}`;
+              const supabaseUrl = deps.config.supabaseUrl;
+              const isHttps = baseUrl.startsWith("https://") &&
+                !baseUrl.includes("localhost") &&
+                !baseUrl.includes("127.0.0.1");
+
+              buttonUrl = isHttps
+                ? loginUrl
+                : supabaseUrl
+                ? `${supabaseUrl.replace(/\/+$/, "")}/functions/v1/dashboard-auth?token=${
+                  encodeURIComponent(token)
+                }`
+                : loginUrl;
+            } catch (authErr) {
+              log.warn("webhook.too_large_magic_token_failed", {
+                update_id: classification.message.updateId,
+                chat_id: classification.message.telegramChatId,
+                error_detail: (authErr as Error).message,
+              });
+            }
+          }
+
+          const replyText = tooLargeAudioMessage(
+            classification.message.sizeBytes,
+            buttonUrl !== null,
+            dashboard?.url ?? null,
           );
+
+          if (buttonUrl !== null) {
+            try {
+              await deps.phase1.telegram.sendMessage(
+                classification.message.telegramChatId,
+                replyText,
+                {
+                  parseMode: "HTML",
+                  inlineKeyboard: {
+                    inline_keyboard: [
+                      [{ text: "🚀 Buka Web Dashboard", url: buttonUrl }],
+                    ],
+                  },
+                },
+              );
+            } catch {
+              // Fallback to text message if inline keyboard fails
+              await deps.phase1.telegram.sendMessage(
+                classification.message.telegramChatId,
+                replyText,
+                { parseMode: "HTML" },
+              );
+            }
+          } else {
+            await deps.phase1.telegram.sendMessage(
+              classification.message.telegramChatId,
+              replyText,
+              { parseMode: "HTML" },
+            );
+          }
         } catch (thrown) {
           // Nothing is queued and nothing is reserved, so a failed reply is a
           // messaging problem, not a lost job. Answering 2xx anyway is deliberate:

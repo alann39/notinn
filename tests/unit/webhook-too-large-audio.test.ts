@@ -99,6 +99,7 @@ function stubTransport(respond: (fn: string) => RpcResponse) {
 /** Enough of the happy path for the RPCs the accepted branch reaches. */
 function happyPath(fn: string): RpcResponse {
   if (fn === "ensure_telegram_user") return { status: 200, body: USER_ID };
+  if (fn === "create_auth_link_token") return { status: 200, body: true };
 
   if (fn === "accept_and_enqueue_telegram_update_v2") {
     return {
@@ -120,11 +121,23 @@ function happyPath(fn: string): RpcResponse {
   return { status: 404, body: { code: "PGRST202", message: "no such function" } };
 }
 
+interface SentMessage {
+  readonly chatId: number;
+  readonly text: string;
+  readonly options?: {
+    readonly parseMode?: string;
+    readonly inlineKeyboard?: {
+      readonly inline_keyboard: readonly { readonly text: string; readonly url?: string }[][];
+    };
+  };
+}
+
 interface Harness {
   readonly response: Response;
   readonly calls: RpcCall[];
   readonly lines: string[];
   readonly sent: { readonly chatId: number; readonly text: string }[];
+  readonly sentMessages: SentMessage[];
 }
 
 /** Run one delivery through the whole path, phase 1 included. */
@@ -133,6 +146,7 @@ async function deliver(body: unknown): Promise<Harness> {
   const { logger, lines } = createCapturingLogger({ level: "debug" });
 
   const sent: { chatId: number; text: string }[] = [];
+  const sentMessages: SentMessage[] = [];
 
   // The provider and the outbound Bot API are the two things this path must never
   // reach. They are stubs that record, so a test can prove the absence.
@@ -141,8 +155,9 @@ async function deliver(body: unknown): Promise<Harness> {
   };
 
   const telegram = {
-    sendMessage: (chatId: number, text: string) => {
+    sendMessage: (chatId: number, text: string, options?: any) => {
       sent.push({ chatId, text });
+      sentMessages.push({ chatId, text, options });
       return Promise.resolve({ messageId: 1 });
     },
     sendDocument: () => Promise.reject(new Error("sendDocument must not be reached")),
@@ -198,13 +213,13 @@ async function deliver(body: unknown): Promise<Harness> {
     },
   });
 
-  return { response, calls, lines, sent };
+  return { response, calls, lines, sent, sentMessages };
 }
 
 // --- The refusal -----------------------------------------------------------
 
 Deno.test("audio past the Bot API ceiling is answered, and nothing is enqueued", async () => {
-  const { response, calls, lines, sent } = await deliver(
+  const { response, calls, lines, sent, sentMessages } = await deliver(
     voiceUpdate({ fileSize: OVERSIZED_BYTES }),
   );
 
@@ -227,10 +242,16 @@ Deno.test("audio past the Bot API ceiling is answered, and nothing is enqueued",
     reply.includes(`${Math.round(MAX_TELEGRAM_DOWNLOAD_BYTES / (1024 * 1024))} MB`),
     "the reply did not name the bound that was applied",
   );
+  
   assert(
-    reply.includes(`${DASHBOARD_URL}/notes`),
-    "the reply did not point at the transport that can carry the file",
+    reply.includes("Web Dashboard"),
+    "the reply did not explain dashboard transport",
   );
+
+  const button = sentMessages[0]?.options?.inlineKeyboard?.inline_keyboard?.[0]?.[0];
+  assert(button !== undefined, "magic button was not attached to refusal");
+  assert(button.text.includes("Buka Web Dashboard"), "button text mismatched");
+  assert(button.url?.startsWith(`${DASHBOARD_URL}/auth/callback?token=`), "button url did not use magic auth callback");
 
   assert(
     lines.some((line) => line.includes("webhook.too_large")),
