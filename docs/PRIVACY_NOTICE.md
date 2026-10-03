@@ -68,7 +68,7 @@ Official provider policy references:
 You maintain complete control over your data and can trigger permanent deletion at any time:
 
 1. **In Telegram**: Send `/delete_account`, review the confirmation prompt, and send `/delete_account confirm`.
-2. **In Web Dashboard**: Navigate to Settings and select **Delete Account**.
+2. **In Web Dashboard**: Navigate to Settings to review account lifecycle status and follow the instructions to trigger `/delete_account` via Telegram.
 
 Upon confirmation:
 - New message processing is immediately blocked and any pending jobs are cancelled.

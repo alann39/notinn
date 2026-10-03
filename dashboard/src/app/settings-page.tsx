@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
-  AlertTriangle,
+  AlertTriangle, HelpCircle,
   ExternalLink,
   Globe,
   Shield,
@@ -267,6 +267,41 @@ export function SettingsPage() {
             </div>
           </Card>
         )}
+
+                {/* Help & Support */}
+        <Card className="border-border bg-card p-6 space-y-4 rounded-2xl">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary border border-primary/20">
+                <HelpCircle className="size-4.5" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-foreground tracking-tight">Need Help or Support?</h2>
+                <p className="text-xs text-muted-foreground">Have feedback, questions, or encountered an issue?</p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-xs font-medium cursor-pointer"
+              onClick={() => window.open("https://t.me/itsarchii", "_blank")}
+            >
+              Contact Support
+            </Button>
+          </div>
+          <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+            Reach out directly to our team on Telegram{" "}
+            <a
+              href="https://t.me/itsarchii"
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium text-foreground underline underline-offset-4 hover:text-primary"
+            >
+              @itsarchii
+            </a>{" "}
+            for instant assistance, feedback, or quota inquiries during Closed Alpha.
+          </p>
+        </Card>
 
         {/* Danger Zone */}
         <Card className="border-border bg-muted/10 p-6 space-y-3 rounded-2xl">
