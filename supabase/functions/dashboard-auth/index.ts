@@ -16,6 +16,12 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.116.0";
 import { verifyMagicToken } from "../_shared/security/magic-token.ts";
+import {
+  loadWebFunctionConfig,
+  type WebFunctionConfig,
+} from "../_shared/config/env.ts";
+import { toAppError } from "../_shared/errors/app-error.ts";
+import { createLogger } from "../_shared/observability/logger.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -34,12 +40,18 @@ Deno.serve(async (req) => {
     const url = new URL(req.url);
     const token = url.searchParams.get("token");
     if (!token) {
-      return new Response("Missing token parameter", { status: 400, headers: CORS_HEADERS });
+      return new Response("Missing token parameter", {
+        status: 400,
+        headers: CORS_HEADERS,
+      });
     }
-    const dashboardUrl = (Deno.env.get("DASHBOARD_URL") || "http://localhost:5173").replace(
-      /\/+$/,
-      "",
-    );
+    // GET redirect only: POST loads the full validated config below.
+    // The localhost default is dev-only; production sets DASHBOARD_URL.
+    const dashboardUrl =
+      (Deno.env.get("DASHBOARD_URL") || "http://localhost:5173").replace(
+        /\/+$/,
+        "",
+      );
     return Response.redirect(
       `${dashboardUrl}/auth/callback?token=${encodeURIComponent(token)}`,
       302,
@@ -50,21 +62,47 @@ Deno.serve(async (req) => {
     return new Response(null, { status: 405, headers: CORS_HEADERS });
   }
 
+  let config: WebFunctionConfig;
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const dashboardLinkSecret = Deno.env.get("DASHBOARD_LINK_SECRET");
+    // P3: centralized loader — fail-fast, Secret-wrapped, no raw reads.
+    // requireDashboard: the magic-link flow is meaningless without it.
+    config = await loadWebFunctionConfig(Deno.env.toObject(), {
+      requireDashboard: true,
+    });
+  } catch (thrown) {
+    const error = toAppError(thrown);
+    createLogger({
+      level: "error",
+      context: { function_name: "dashboard-auth" },
+    }).error("dashboard-auth.configuration_failed", {
+      error_code: error.code,
+      error_name: error.name,
+      error_detail: error.internalDetail,
+    });
+    return new Response(null, { status: 500, headers: CORS_HEADERS });
+  }
 
-    if (!supabaseUrl || !serviceRoleKey || !dashboardLinkSecret) {
-      console.error("dashboard-auth: missing required environment variables");
-      return new Response(null, { status: 500, headers: CORS_HEADERS });
-    }
+  // Non-null after requireDashboard: linkSecret + url both present.
+  const dashboard = config.dashboard!;
+  const supabaseUrl = config.supabaseUrl;
+  const serviceRoleKey = config.serviceRoleKey.reveal();
+  const dashboardLinkSecret = dashboard.linkSecret.reveal();
+  const anonKey = config.anonKey;
+
+  try {
+    const log = createLogger({
+      level: "error",
+      context: { function_name: "dashboard-auth" },
+    });
 
     const body = await req.json().catch(() => null);
     if (!body || typeof body.token !== "string" || body.token.length === 0) {
       return new Response(
         JSON.stringify({ error: "Missing or invalid token" }),
-        { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        {
+          status: 400,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -73,7 +111,10 @@ Deno.serve(async (req) => {
     if (verified === null) {
       return new Response(
         JSON.stringify({ error: "Invalid or expired token" }),
-        { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        {
+          status: 401,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -96,14 +137,20 @@ Deno.serve(async (req) => {
           error:
             "This link has already been used or has expired. Please generate a new one with /web in Telegram.",
         }),
-        { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        {
+          status: 401,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        },
       );
     }
 
     if (consumedUserId !== user_id) {
       return new Response(
         JSON.stringify({ error: "Token mismatch" }),
-        { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        {
+          status: 401,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -119,20 +166,30 @@ Deno.serve(async (req) => {
 
     if (!authUserId) {
       // Create new Supabase Auth user
-      const { data: newAuthUser, error: createError } = await supabase.auth.admin.createUser({
-        email: syntheticEmail,
-        email_confirm: true,
-        user_metadata: { notinn_user_id: user_id },
-      });
+      const { data: newAuthUser, error: createError } = await supabase.auth
+        .admin.createUser({
+          email: syntheticEmail,
+          email_confirm: true,
+          user_metadata: { notinn_user_id: user_id },
+        });
 
       if (createError) {
-        if (createError.message?.toLowerCase().includes("already been registered")) {
+        if (
+          createError.message?.toLowerCase().includes("already been registered")
+        ) {
           // User already exists in auth.users, proceed to generateLink
         } else {
-          console.error("dashboard-auth: failed to create auth user", createError.message);
+          log.error("dashboard-auth.create_user_failed", {
+            error_code: "AUTH_CREATE_USER_FAILED",
+            error_name: createError.name,
+            error_detail: toAppError(createError).internalDetail,
+          });
           return new Response(
             JSON.stringify({ error: "Failed to create session" }),
-            { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+            {
+              status: 500,
+              headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+            },
           );
         }
       } else if (newAuthUser?.user) {
@@ -145,32 +202,44 @@ Deno.serve(async (req) => {
         });
 
         if (linkError) {
-          console.error("dashboard-auth: failed to create auth link", linkError.message);
+          log.error("dashboard-auth.create_link_failed", {
+            error_code: "AUTH_LINK_FAILED",
+            error_name: linkError.name,
+            error_detail: toAppError(linkError).internalDetail,
+          });
           return new Response(
             JSON.stringify({ error: "Failed to link account" }),
-            { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+            {
+              status: 500,
+              headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+            },
           );
         }
       }
     }
 
     // Generate link/session for the auth user
-    const { data: session, error: sessionError } = await supabase.auth.admin.generateLink({
-      type: "magiclink",
-      email: syntheticEmail,
-    });
+    const { data: session, error: sessionError } = await supabase.auth.admin
+      .generateLink({
+        type: "magiclink",
+        email: syntheticEmail,
+      });
 
     if (sessionError || !session) {
       return new Response(
         JSON.stringify({ error: "Failed to create session" }),
-        { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        {
+          status: 500,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        },
       );
     }
 
     // Verify token hash if available to obtain access & refresh tokens
-    const hashedToken = ("properties" in session && session.properties?.hashed_token) || null;
+    const hashedToken =
+      ("properties" in session && session.properties?.hashed_token) || null;
     if (hashedToken) {
-      const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? serviceRoleKey;
+      // P3: anonKey comes from the loader — no service-role fallback.
       const verifyRes = await fetch(
         `${supabaseUrl}/auth/v1/verify`,
         {
@@ -203,10 +272,21 @@ Deno.serve(async (req) => {
 
     return new Response(
       JSON.stringify({ error: "Failed to create session" }),
-      { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+      {
+        status: 500,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      },
     );
   } catch (err) {
-    console.error("dashboard-auth: unexpected error", (err as Error).message);
+    const error = toAppError(err);
+    createLogger({
+      level: "error",
+      context: { function_name: "dashboard-auth" },
+    }).error("dashboard-auth.unhandled", {
+      error_code: error.code,
+      error_name: error.name,
+      error_detail: error.internalDetail,
+    });
     return new Response(null, { status: 500, headers: CORS_HEADERS });
   }
 });

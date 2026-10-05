@@ -1,10 +1,17 @@
 import { createClient } from "@supabase/supabase-js";
 import { sendMessage } from "../_shared/telegram/client.ts";
-import { Secret } from "../_shared/config/env.ts";
+import { type Secret } from "../_shared/config/env.ts";
+import { toAppError } from "../_shared/errors/app-error.ts";
+import { createLogger } from "../_shared/observability/logger.ts";
+import {
+  loadWebFunctionConfig,
+  type WebFunctionConfig,
+} from "../_shared/config/env.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -24,24 +31,42 @@ Deno.serve(async (req) => {
     return new Response(null, { status: 405, headers: CORS_HEADERS });
   }
 
+  let config: WebFunctionConfig;
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    config = await loadWebFunctionConfig(Deno.env.toObject());
+  } catch (thrown) {
+    const error = toAppError(thrown);
+    createLogger({
+      level: "error",
+      context: { function_name: "admin-resolve-order" },
+    }).error("admin-resolve-order.configuration_failed", {
+      error_code: error.code,
+      error_name: error.name,
+      error_detail: error.internalDetail,
+    });
+    return new Response(
+      JSON.stringify({ error: "Missing configuration" }),
+      {
+        status: 500,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      },
+    );
+  }
 
-    if (!supabaseUrl || !serviceRoleKey || !anonKey) {
-      return new Response(
-        JSON.stringify({ error: "Missing configuration" }),
-        { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
-      );
-    }
+  const supabaseUrl = config.supabaseUrl;
+  const anonKey = config.anonKey;
+  const botToken: Secret | null = config.botToken;
 
+  try {
     // 1. Authorize caller: requires Authorization header
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(
         JSON.stringify({ error: "Unauthorized: Missing Authorization header" }),
-        { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        {
+          status: 401,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -50,11 +75,16 @@ Deno.serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
 
-    const { data: isAdmin, error: adminCheckError } = await userClient.rpc("is_current_user_admin");
+    const { data: isAdmin, error: adminCheckError } = await userClient.rpc(
+      "is_current_user_admin",
+    );
     if (adminCheckError || !isAdmin) {
       return new Response(
         JSON.stringify({ error: "Forbidden: Caller is not an admin" }),
-        { status: 403, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        {
+          status: 403,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -65,35 +95,58 @@ Deno.serve(async (req) => {
     if (!order_id || (action !== "cancel" && action !== "expire")) {
       return new Response(
         JSON.stringify({
-          error: "Invalid payload: order_id and action ('cancel' | 'expire') required",
+          error:
+            "Invalid payload: order_id and action ('cancel' | 'expire') required",
         }),
-        { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        {
+          status: 400,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        },
       );
     }
 
     // 3. Resolve order via RPC
-    const { data, error: rpcError } = await userClient.rpc("admin_resolve_payment_order", {
-      p_order_id: order_id,
-      p_action: action,
-      p_notes: notes ?? null,
-    });
+    const { data, error: rpcError } = await userClient.rpc(
+      "admin_resolve_payment_order",
+      {
+        p_order_id: order_id,
+        p_action: action,
+        p_notes: notes ?? null,
+      },
+    );
 
     if (rpcError) {
+      // Never echo raw database errors to the caller: they can reveal schema
+      // details, table names or constraints. Detail goes to the operator log
+      // only (P4).
+      createLogger({
+        level: "error",
+        context: { function_name: "admin-resolve-order" },
+      }).error("admin-resolve-order.rpc_failed", {
+        error_code: rpcError.code,
+        error_name: rpcError.name,
+        error_detail: rpcError.message,
+      });
       return new Response(
-        JSON.stringify({ error: rpcError.message }),
-        { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        JSON.stringify({ error: "Failed to resolve order" }),
+        {
+          status: 400,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        },
       );
     }
 
     const result = Array.isArray(data) ? data[0] : data;
-    const telegramUserId = result?.telegram_user_id ? Number(result.telegram_user_id) : null;
+    const telegramUserId = result?.telegram_user_id
+      ? Number(result.telegram_user_id)
+      : null;
     const orderCode = result?.order_code ?? "NOTINN";
-    const newStatus = result?.new_status ?? (action === "cancel" ? "cancelled" : "expired");
+    const newStatus = result?.new_status ??
+      (action === "cancel" ? "cancelled" : "expired");
 
     // 4. Send Telegram notification to user if requested
     let notified = false;
-    const botTokenStr = Deno.env.get("TELEGRAM_BOT_TOKEN");
-    if (notify_user && telegramUserId && botTokenStr) {
+    if (notify_user && telegramUserId && botToken !== null) {
       let message = "";
       if (action === "cancel") {
         message = [
@@ -116,7 +169,7 @@ Deno.serve(async (req) => {
       }
 
       try {
-        await sendMessage(new Secret(botTokenStr), telegramUserId, message, {
+        await sendMessage(botToken, telegramUserId, message, {
           parseMode: "HTML",
         });
         notified = true;
@@ -133,13 +186,27 @@ Deno.serve(async (req) => {
         new_status: newStatus,
         notified,
       }),
-      { status: 200, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+      {
+        status: 200,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      },
     );
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : "Internal error";
+    const error = toAppError(err);
+    createLogger({
+      level: "error",
+      context: { function_name: "admin-resolve-order" },
+    }).error("admin-resolve-order.unhandled", {
+      error_code: error.code,
+      error_name: error.name,
+      error_detail: error.internalDetail,
+    });
     return new Response(
-      JSON.stringify({ error: errorMsg }),
-      { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+      JSON.stringify({ error: "Internal error" }),
+      {
+        status: 500,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      },
     );
   }
 });
