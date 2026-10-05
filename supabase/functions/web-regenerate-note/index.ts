@@ -11,11 +11,17 @@ import { withConsumedQuota } from "../_shared/services/quota.service.ts";
 import { renderNoteOutput } from "../_shared/services/note-rendering.ts";
 import { STRUCTURED_NOTE_VERSION } from "../_shared/schemas/structured-note.ts";
 import { AppError, toAppError } from "../_shared/errors/app-error.ts";
+import { createLogger } from "../_shared/observability/logger.ts";
 import type { TemplateKey } from "../_shared/config/constants.ts";
+import {
+  loadWebFunctionConfig,
+  type WebFunctionConfig,
+} from "../_shared/config/env.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -33,24 +39,46 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return new Response(null, { status: 405, headers: CORS_HEADERS });
   }
 
+  let config: WebFunctionConfig;
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    config = await loadWebFunctionConfig(Deno.env.toObject(), {
+      requireAi: true,
+    });
+  } catch (thrown) {
+    const error = toAppError(thrown);
+    createLogger({
+      level: "error",
+      context: { function_name: "web-regenerate-note" },
+    }).error("web-regenerate-note.configuration_failed", {
+      error_code: error.code,
+      error_name: error.name,
+      error_detail: error.internalDetail,
+    });
+    return new Response(
+      JSON.stringify({ error: "Missing server environment configuration" }),
+      {
+        status: 500,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      },
+    );
+  }
 
-    if (!supabaseUrl || !serviceRoleKey || !anonKey) {
-      return new Response(
-        JSON.stringify({ error: "Missing server environment configuration" }),
-        { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
-      );
-    }
+  const supabaseUrl = config.supabaseUrl;
+  const anonKey = config.anonKey;
+  const serviceRoleKey = config.serviceRoleKey.reveal();
+  // Non-null after requireAi.
+  const aiDefaults = config.ai!;
 
+  try {
     // 1. Authorize caller via Supabase JWT
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(
         JSON.stringify({ error: "Unauthorized: Missing Authorization header" }),
-        { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        {
+          status: 401,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -59,11 +87,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
       global: { headers: { Authorization: authHeader } },
     });
 
-    const { data: userId, error: userError } = await userClient.rpc("get_linked_user_id");
+    const { data: userId, error: userError } = await userClient.rpc(
+      "get_linked_user_id",
+    );
     if (userError || !userId) {
       return new Response(
         JSON.stringify({ error: "Unauthorized: Invalid or unlinked session" }),
-        { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        {
+          status: 401,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -72,11 +105,17 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const { note_id, template_key } = body;
 
     if (
-      !note_id || typeof note_id !== "string" || !template_key || typeof template_key !== "string"
+      !note_id || typeof note_id !== "string" || !template_key ||
+      typeof template_key !== "string"
     ) {
       return new Response(
-        JSON.stringify({ error: "Missing note_id or template_key in request body" }),
-        { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        JSON.stringify({
+          error: "Missing note_id or template_key in request body",
+        }),
+        {
+          status: 400,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -90,10 +129,17 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     // 4. Find note and verify user ownership & source text availability
     const source = await notesRepo.findNoteForRegeneration(userId, note_id);
-    if (!source || !source.sourceText || source.sourceText.trim().length === 0) {
+    if (
+      !source || !source.sourceText || source.sourceText.trim().length === 0
+    ) {
       return new Response(
-        JSON.stringify({ error: "Note or source transcript not found for regeneration" }),
-        { status: 404, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        JSON.stringify({
+          error: "Note or source transcript not found for regeneration",
+        }),
+        {
+          status: 404,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -104,15 +150,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
       source.sourceType,
     );
 
-    // 6. Resolve AI provider with vaulted credentials
-    const fallbackAi: AiConfig = {
-      provider: "gemini",
-      apiKey: new Secret(Deno.env.get("GEMINI_API_KEY") ?? ""),
-      model: Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash",
-      fallbackModel: null,
-      embeddingModel: null,
-      openRouter: null,
-    };
+    // 6. Resolve AI provider with vaulted credentials.
+    // P3+P7: the validated AI config doubles as the DB-vault fallback —
+    // no direct reads, no hardcoded nulls. resolveProviderConfig below lets
+    // the DB-vaulted runtime config win when present.
+    const fallbackAi: AiConfig = aiDefaults;
     const aiConfig = await resolveProviderConfig(serviceClient, fallbackAi);
     const provider = createNoteProvider(aiConfig);
 
@@ -162,7 +204,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
           throw AppError.internal("Generated edit could not be staged");
         }
 
-        const currentResult = await notesRepo.setCurrentOutput(userId, note_id, out.outputId);
+        const currentResult = await notesRepo.setCurrentOutput(
+          userId,
+          note_id,
+          out.outputId,
+        );
         if (currentResult.outcome !== "updated") {
           throw AppError.internal("Could not set note output as current");
         }

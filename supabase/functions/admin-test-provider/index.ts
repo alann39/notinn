@@ -1,8 +1,15 @@
 import { createClient } from "@supabase/supabase-js";
+import { toAppError } from "../_shared/errors/app-error.ts";
+import { createLogger } from "../_shared/observability/logger.ts";
+import {
+  loadWebFunctionConfig,
+  type WebFunctionConfig,
+} from "../_shared/config/env.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -15,24 +22,46 @@ Deno.serve(async (req) => {
     return new Response(null, { status: 405, headers: CORS_HEADERS });
   }
 
+  let config: WebFunctionConfig;
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    config = await loadWebFunctionConfig(Deno.env.toObject(), {
+      requireAi: true,
+    });
+  } catch (thrown) {
+    const error = toAppError(thrown);
+    createLogger({
+      level: "error",
+      context: { function_name: "admin-test-provider" },
+    }).error("admin-test-provider.configuration_failed", {
+      error_code: error.code,
+      error_name: error.name,
+      error_detail: error.internalDetail,
+    });
+    return new Response(
+      JSON.stringify({ error: "Missing configuration" }),
+      {
+        status: 500,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      },
+    );
+  }
 
-    if (!supabaseUrl || !serviceRoleKey || !anonKey) {
-      return new Response(
-        JSON.stringify({ error: "Missing configuration" }),
-        { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
-      );
-    }
+  const supabaseUrl = config.supabaseUrl;
+  const anonKey = config.anonKey;
+  const serviceRoleKey = config.serviceRoleKey.reveal();
+  // Non-null after requireAi.
+  const aiDefaults = config.ai!;
 
+  try {
     // 1. Authorize caller: requires Authorization header
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(
         JSON.stringify({ error: "Unauthorized: Missing Authorization header" }),
-        { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        {
+          status: 401,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -41,11 +70,16 @@ Deno.serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
 
-    const { data: isAdmin, error: adminCheckError } = await userClient.rpc("is_current_user_admin");
+    const { data: isAdmin, error: adminCheckError } = await userClient.rpc(
+      "is_current_user_admin",
+    );
     if (adminCheckError || !isAdmin) {
       return new Response(
         JSON.stringify({ error: "Forbidden: Caller is not an admin" }),
-        { status: 403, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        {
+          status: 403,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -54,8 +88,13 @@ Deno.serve(async (req) => {
     const provider = body.provider;
     if (provider !== "gemini" && provider !== "openrouter") {
       return new Response(
-        JSON.stringify({ error: "Invalid provider. Must be 'gemini' or 'openrouter'" }),
-        { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        JSON.stringify({
+          error: "Invalid provider. Must be 'gemini' or 'openrouter'",
+        }),
+        {
+          status: 400,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -65,7 +104,9 @@ Deno.serve(async (req) => {
     });
 
     const isCandidate = typeof body.api_key === "string";
-    if (isCandidate && (body.api_key.length < 8 || body.api_key.length > 4096)) {
+    if (
+      isCandidate && (body.api_key.length < 8 || body.api_key.length > 4096)
+    ) {
       return new Response(JSON.stringify({ error: "Invalid API key length" }), {
         status: 400,
         headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
@@ -74,10 +115,12 @@ Deno.serve(async (req) => {
     const { data: rows, error: keyError } = isCandidate
       ? { data: null, error: null }
       : await serviceClient.rpc("get_provider_runtime_config");
-    const keyRow = (rows ?? []).find((row: { provider: string }) => row.provider === provider);
+    const keyRow = (rows ?? []).find((row: { provider: string }) =>
+      row.provider === provider
+    );
     const environmentKey = provider === "gemini"
-      ? Deno.env.get("GEMINI_API_KEY")
-      : Deno.env.get("OPENROUTER_API_KEY");
+      ? aiDefaults.apiKey.reveal()
+      : aiDefaults.openRouter?.apiKey.reveal();
     if (
       keyError || (!isCandidate && (keyRow?.is_active === false ||
         !(keyRow?.api_key || environmentKey)))
@@ -89,7 +132,10 @@ Deno.serve(async (req) => {
           error_message:
             "No custom API key vaulted yet for this provider. Please use 'Rotate Key' to set an active key.",
         }),
-        { status: 200, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        {
+          status: 200,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        },
       );
     }
 
@@ -104,11 +150,15 @@ Deno.serve(async (req) => {
 
     if (provider === "gemini") {
       try {
+        // P6: the key travels in a header, never in the URL — query
+        // parameters land in proxy/access logs. Matches
+        // gemini-note.provider.ts and gemini-embedding.provider.ts.
         const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models?key=${
-            encodeURIComponent(apiKey)
-          }`,
-          { signal: AbortSignal.timeout(8000) },
+          "https://generativelanguage.googleapis.com/v1beta/models",
+          {
+            headers: { "x-goog-api-key": apiKey },
+            signal: AbortSignal.timeout(8000),
+          },
         );
         testLatency = Math.round(performance.now() - startTime);
         if (res.ok) {
@@ -144,12 +194,15 @@ Deno.serve(async (req) => {
 
     // 4. Record the test result in the database vault
     if (!isCandidate) {
-      const { error: recordError } = await userClient.rpc("admin_record_provider_test", {
-        p_provider: provider,
-        p_status: testStatus,
-        p_latency_ms: testLatency,
-        p_error: testError,
-      });
+      const { error: recordError } = await userClient.rpc(
+        "admin_record_provider_test",
+        {
+          p_provider: provider,
+          p_status: testStatus,
+          p_latency_ms: testLatency,
+          p_error: testError,
+        },
+      );
       if (recordError) throw recordError;
     }
 
@@ -159,12 +212,18 @@ Deno.serve(async (req) => {
         latency_ms: testLatency,
         error_message: testError,
       }),
-      { status: 200, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+      {
+        status: 200,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      },
     );
   } catch (_err: unknown) {
     return new Response(
       JSON.stringify({ error: "Provider test failed" }),
-      { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+      {
+        status: 500,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      },
     );
   }
 });
