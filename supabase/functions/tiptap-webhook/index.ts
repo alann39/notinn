@@ -9,10 +9,16 @@
  */
 
 import { Secret } from "../_shared/config/env.ts";
+import { toAppError } from "../_shared/errors/app-error.ts";
+import { createLogger } from "../_shared/observability/logger.ts";
 import { createServiceClient } from "../_shared/db/client.ts";
 import { PaymentRepository } from "../_shared/repositories/payment.repository.ts";
 import { constantTimeEquals } from "../_shared/security/webhook-secret.ts";
 import { sendMessage } from "../_shared/telegram/client.ts";
+import {
+  loadWebFunctionConfig,
+  type WebFunctionConfig,
+} from "../_shared/config/env.ts";
 
 const ORDER_CODE_REGEX = /NOTINN-[A-Z0-9]{4,6}/i;
 
@@ -110,9 +116,37 @@ Deno.serve(async (request: Request): Promise<Response> => {
     });
   }
 
-  // Verify webhook secret if configured
-  const expectedSecret = Deno.env.get("TIPTAP_WEBHOOK_SECRET");
-  if (expectedSecret && expectedSecret.trim() !== "") {
+  // --- Configuration (P3): centralized loader, fail-closed (P2) ------------
+  let config: WebFunctionConfig;
+  try {
+    config = await loadWebFunctionConfig(Deno.env.toObject(), {
+      requireTiptapSecret: true,
+    });
+  } catch (thrown) {
+    const error = toAppError(thrown);
+    createLogger({
+      level: "error",
+      context: { function_name: "tiptap-webhook" },
+    }).error("tiptap-webhook.configuration_failed", {
+      error_code: error.code,
+      error_name: error.name,
+      error_detail: error.internalDetail,
+    });
+    return new Response(
+      JSON.stringify({ error: "Server misconfiguration" }),
+      { status: 500, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  // Non-null after requireTiptapSecret.
+  const expectedSecret = config.tiptapWebhookSecret!.reveal();
+  const supabaseUrl = config.supabaseUrl;
+  const serviceRoleKey = config.serviceRoleKey.reveal();
+  const botToken: Secret | null = config.botToken;
+
+  // Verify webhook secret — unconditional. The fail-closed guard above
+  // guarantees expectedSecret is a non-empty string here.
+  {
     const url = new URL(request.url);
     const querySecret = url.searchParams.get("secret") ??
       url.searchParams.get("token") ??
@@ -137,7 +171,10 @@ Deno.serve(async (request: Request): Promise<Response> => {
       : undefined;
 
     const providedSecret = headerSecret ?? querySecret ?? bodySecret;
-    if (!providedSecret || !(await constantTimeEquals(providedSecret, expectedSecret.trim()))) {
+    if (
+      !providedSecret ||
+      !(await constantTimeEquals(providedSecret, expectedSecret.trim()))
+    ) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
@@ -165,16 +202,6 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
   const orderCode = match[0].toUpperCase();
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    return new Response(
-      JSON.stringify({ error: "Server misconfiguration" }),
-      { status: 500, headers: { "Content-Type": "application/json" } },
-    );
-  }
-
   const client = createServiceClient(supabaseUrl, new Secret(serviceRoleKey));
   const paymentRepo = new PaymentRepository(client);
 
@@ -188,8 +215,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
     if (result.outcome === "success") {
       // Notify Telegram user if telegram_user_id is available
-      const botTokenStr = Deno.env.get("TELEGRAM_BOT_TOKEN");
-      if (botTokenStr && result.telegramUserId) {
+      if (botToken !== null && result.telegramUserId) {
         const expiryFormatted = result.subscriptionExpiresAt
           ? formatIndonesianDate(result.subscriptionExpiresAt)
           : "30 hari ke depan";
@@ -205,7 +231,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
         try {
           await sendMessage(
-            new Secret(botTokenStr),
+            botToken,
             result.telegramUserId,
             notification,
             { parseMode: "HTML" },
@@ -228,9 +254,10 @@ Deno.serve(async (request: Request): Promise<Response> => {
     }
 
     if (result.outcome === "amount_insufficient" && result.telegramUserId) {
-      const botTokenStr = Deno.env.get("TELEGRAM_BOT_TOKEN");
-      if (botTokenStr) {
-        const formattedReceived = `Rp ${Number(amount).toLocaleString("id-ID")}`;
+      if (botToken !== null) {
+        const formattedReceived = `Rp ${
+          Number(amount).toLocaleString("id-ID")
+        }`;
         const notification = [
           "⚠️ <b>Pembayaran Kurang / Nominal Tidak Sesuai</b>",
           "",
@@ -243,7 +270,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
         try {
           await sendMessage(
-            new Secret(botTokenStr),
+            botToken,
             result.telegramUserId,
             notification,
             { parseMode: "HTML" },
@@ -262,7 +289,16 @@ Deno.serve(async (request: Request): Promise<Response> => {
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
-  } catch (_thrown) {
+  } catch (thrown) {
+    const error = toAppError(thrown);
+    createLogger({
+      level: "error",
+      context: { function_name: "tiptap-webhook" },
+    }).error("tiptap-webhook.payment_failed", {
+      error_code: error.code,
+      error_name: error.name,
+      error_detail: error.internalDetail,
+    });
     return new Response(
       JSON.stringify({ error: "Failed to process payment" }),
       { status: 500, headers: { "Content-Type": "application/json" } },
