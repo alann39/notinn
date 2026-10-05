@@ -1,12 +1,17 @@
 import { createClient } from "@supabase/supabase-js";
-import { Secret } from "../_shared/config/env.ts";
+import {
+  loadWebFunctionConfig,
+  type WebFunctionConfig,
+} from "../_shared/config/env.ts";
+import type { Secret } from "../_shared/config/env.ts";
 import { createLogger } from "../_shared/observability/logger.ts";
 import { scheduleWorkerInvocation } from "../_shared/worker/invoker.ts";
 import { toAppError } from "../_shared/errors/app-error.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -34,21 +39,32 @@ Deno.serve(async (req: Request): Promise<Response> => {
     context: { function_name: "web-submit-audio-job" },
   });
 
+  let config: WebFunctionConfig;
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-    const internalWorkerSecret = Deno.env.get("INTERNAL_WORKER_SECRET");
+    // P3: centralized loader — fail-fast, no raw reads. Worker secret stays
+    // optional here (queue write is durable; the nudge is best-effort).
+    config = await loadWebFunctionConfig(Deno.env.toObject());
+  } catch (thrown) {
+    const error = toAppError(thrown);
+    logger.error("web_submit_audio_job.configuration_failed", {
+      error_code: error.code,
+      error_name: error.name,
+      error_detail: error.internalDetail,
+    });
+    return new Response(
+      JSON.stringify({ error: "Missing server environment configuration" }),
+      {
+        status: 500,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      },
+    );
+  }
 
-    if (!supabaseUrl || !anonKey) {
-      return new Response(
-        JSON.stringify({ error: "Missing server environment configuration" }),
-        {
-          status: 500,
-          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-        },
-      );
-    }
+  const supabaseUrl = config.supabaseUrl;
+  const anonKey = config.anonKey;
+  const internalWorkerSecret: Secret | null = config.internalWorkerSecret;
 
+  try {
     // 1. Authorize caller via Supabase JWT
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -95,7 +111,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     if (!["audio", "voice", "pdf", "image", "text"].includes(input_type)) {
       return new Response(
-        JSON.stringify({ error: "Invalid input_type: must be audio, pdf, image, or text" }),
+        JSON.stringify({
+          error: "Invalid input_type: must be audio, pdf, image, or text",
+        }),
         {
           status: 400,
           headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
@@ -104,7 +122,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     if (input_type === "text") {
-      if (!source_text || typeof source_text !== "string" || source_text.trim().length === 0) {
+      if (
+        !source_text || typeof source_text !== "string" ||
+        source_text.trim().length === 0
+      ) {
         return new Response(
           JSON.stringify({ error: "Missing or empty source_text" }),
           {
@@ -115,7 +136,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
       }
       if (source_text.length > 50000) {
         return new Response(
-          JSON.stringify({ error: "source_text exceeds maximum length of 50,000 characters" }),
+          JSON.stringify({
+            error: "source_text exceeds maximum length of 50,000 characters",
+          }),
           {
             status: 400,
             headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
@@ -210,10 +233,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     // 4. Trigger worker execution immediately
-    if (internalWorkerSecret) {
+    if (internalWorkerSecret !== null) {
       scheduleWorkerInvocation(
         supabaseUrl,
-        new Secret(internalWorkerSecret),
+        internalWorkerSecret,
         jobId,
         logger,
       );

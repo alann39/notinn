@@ -30,7 +30,12 @@ import { LOG_LEVELS, type LogLevel } from "../observability/levels.ts";
  *      error that names itself.
  */
 
-export const NOTINN_ENVIRONMENTS = ["local", "development", "staging", "production"] as const;
+export const NOTINN_ENVIRONMENTS = [
+  "local",
+  "development",
+  "staging",
+  "production",
+] as const;
 
 export type NotinnEnvironment = (typeof NOTINN_ENVIRONMENTS)[number];
 
@@ -115,7 +120,10 @@ export interface BaseConfig {
   readonly serviceRoleKey: Secret;
   readonly logLevel: LogLevel;
   /** Fingerprints of the credentials in play. Safe to log at startup. */
-  readonly fingerprints: { readonly serviceRoleKey: string; readonly webhookSecret?: string };
+  readonly fingerprints: {
+    readonly serviceRoleKey: string;
+    readonly webhookSecret?: string;
+  };
 }
 
 /**
@@ -193,6 +201,24 @@ export interface ScriptConfig {
   readonly fingerprints: { readonly webhookSecret?: string };
 }
 
+/**
+ * Configuration for browser-facing web functions (dashboard-auth,
+ * web-submit-audio-job, web-regenerate-note) and admin functions
+ * (admin-resolve-order, admin-test-provider).
+ *
+ * P3: one shared loader replaces six hand-rolled `Deno.env.get` blocks.
+ * Every credential is a `Secret`; every missing variable fails fast with a
+ * named-variable message instead of a downstream null dereference.
+ */
+export interface WebFunctionConfig extends BaseConfig {
+  readonly anonKey: string;
+  readonly dashboard: DashboardConfig | null;
+  readonly botToken: Secret | null;
+  readonly tiptapWebhookSecret: Secret | null;
+  readonly internalWorkerSecret: Secret | null;
+  readonly ai: AiConfig | null;
+}
+
 /** Full database access needed only by the synthetic end-to-end smoke test. */
 export type SmokeConfig = ScriptConfig & BaseConfig;
 
@@ -236,6 +262,7 @@ const RawSchema = z.object({
   OPENROUTER_FALLBACK_MODEL: z.string().min(1).optional(),
   DASHBOARD_LINK_SECRET: z.string().min(32).optional(),
   DASHBOARD_URL: z.url().optional(),
+  TIPTAP_WEBHOOK_SECRET: z.string().min(1).optional(),
   NOTINN_ENV: z.enum(NOTINN_ENVIRONMENTS).optional(),
   NOTINN_LOG_LEVEL: z.enum(LOG_LEVELS).optional(),
   NOTINN_PROJECT_REF: z.string().min(1).optional(),
@@ -251,7 +278,9 @@ type RawEnv = z.infer<typeof RawSchema>;
  * should read as "absent", not as "present and empty". Treating it as absent
  * produces the clearer error message.
  */
-function pickRecognised(source: Record<string, string | undefined>): Record<string, string> {
+function pickRecognised(
+  source: Record<string, string | undefined>,
+): Record<string, string> {
   const picked: Record<string, string> = {};
   for (const key of RECOGNISED_ENV_KEYS) {
     const value = source[key];
@@ -355,7 +384,10 @@ function resolveEnvironment(raw: RawEnv): NotinnEnvironment {
   return raw.NOTINN_ENV ?? "local";
 }
 
-function resolveLogLevel(raw: RawEnv, environment: NotinnEnvironment): LogLevel {
+function resolveLogLevel(
+  raw: RawEnv,
+  environment: NotinnEnvironment,
+): LogLevel {
   if (raw.NOTINN_LOG_LEVEL) return raw.NOTINN_LOG_LEVEL;
   // Local development is loud by default; every deployed environment is quiet.
   return environment === "local" ? "debug" : "info";
@@ -363,7 +395,9 @@ function resolveLogLevel(raw: RawEnv, environment: NotinnEnvironment): LogLevel 
 
 function requireSupabaseUrl(raw: RawEnv): string {
   if (raw.SUPABASE_URL === undefined) {
-    throw AppError.configuration("SUPABASE_URL is not set: database access is unavailable.");
+    throw AppError.configuration(
+      "SUPABASE_URL is not set: database access is unavailable.",
+    );
   }
   return raw.SUPABASE_URL;
 }
@@ -429,13 +463,16 @@ function resolveAiConfig(raw: RawEnv): AiConfig {
   }
 
   const openRouterApiKey = raw.OPENROUTER_API_KEY ?? null;
-  const openRouterModel = raw.OPENROUTER_FALLBACK_MODEL ?? DEFAULT_OPENROUTER_FALLBACK_MODEL;
+  const openRouterModel = raw.OPENROUTER_FALLBACK_MODEL ??
+    DEFAULT_OPENROUTER_FALLBACK_MODEL;
   if (!OPENROUTER_MODEL_ID_PATTERN.test(openRouterModel)) {
     throw AppError.configuration(
       "OPENROUTER_FALLBACK_MODEL must be an OpenRouter model slug such as openrouter/free.",
     );
   }
-  if (openRouterApiKey === null && raw.OPENROUTER_FALLBACK_MODEL !== undefined) {
+  if (
+    openRouterApiKey === null && raw.OPENROUTER_FALLBACK_MODEL !== undefined
+  ) {
     throw AppError.configuration(
       "OPENROUTER_API_KEY is required when OPENROUTER_FALLBACK_MODEL is configured.",
     );
@@ -628,7 +665,9 @@ export async function loadScriptConfig(
     webhookSecret,
     webhookUrl: raw.TELEGRAM_WEBHOOK_URL ?? null,
     fingerprints: {
-      ...(webhookSecret === null ? {} : { webhookSecret: await webhookSecret.fingerprint() }),
+      ...(webhookSecret === null
+        ? {}
+        : { webhookSecret: await webhookSecret.fingerprint() }),
     },
   };
 }
@@ -661,6 +700,95 @@ export async function loadSmokeConfig(
       serviceRoleKey: await serviceSecret.fingerprint(),
       ...script.fingerprints,
     },
+  };
+}
+
+/**
+ * Load configuration for web/admin Edge Functions (P3).
+ *
+ * Required: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (or SECRET_KEYS),
+ * SUPABASE_ANON_KEY. Everything else is optional and resolved to null when
+ * absent — each caller decides which optional piece it needs:
+ *
+ * - dashboard-auth requires `dashboard` (linkSecret + url); without it the
+ *   /web magic-link flow cannot work, so it fails fast.
+ * - admin functions use anonKey + serviceRoleKey only.
+ * - tiptap-webhook requires `tiptapWebhookSecret` (fail-closed, P2).
+ * - web functions requiring AI use `ai` (optional here so functions that do
+ *   not generate text do not demand AI keys).
+ *
+ * SUPABASE_ANON_KEY is required with no service-role fallback: the P3 review
+ * found `?? serviceRoleKey` in dashboard-auth, which would send the
+ * service-role credential as a public apikey header.
+ */
+export async function loadWebFunctionConfig(
+  source: Record<string, string | undefined> = Deno.env.toObject(),
+  options: {
+    readonly requireDashboard?: boolean;
+    readonly requireTiptapSecret?: boolean;
+    readonly requireAi?: boolean;
+  } = {},
+): Promise<WebFunctionConfig> {
+  const raw = parseRaw(source);
+  const environment = resolveEnvironment(raw);
+
+  const serviceRoleKey = resolveServiceRoleKey(raw);
+  if (serviceRoleKey === undefined) {
+    throw AppError.configuration(
+      "no server-side key found: set SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SECRET_KEYS).",
+    );
+  }
+  assertServiceRoleKey(serviceRoleKey);
+  const serviceSecret = new Secret(serviceRoleKey);
+
+  const anonKey = raw.SUPABASE_ANON_KEY;
+  if (anonKey === undefined) {
+    throw AppError.configuration(
+      "SUPABASE_ANON_KEY is not set: web/admin functions need it for user-scoped clients.",
+    );
+  }
+
+  const dashboardLinkSecret = raw.DASHBOARD_LINK_SECRET ?? null;
+  const dashboardUrl = raw.DASHBOARD_URL ?? null;
+  const dashboard = dashboardLinkSecret !== null && dashboardUrl !== null
+    ? { linkSecret: new Secret(dashboardLinkSecret), url: dashboardUrl }
+    : null;
+  if (options.requireDashboard === true && dashboard === null) {
+    throw AppError.configuration(
+      "DASHBOARD_LINK_SECRET and DASHBOARD_URL are both required for dashboard auth: set them together.",
+    );
+  }
+
+  const tiptapRaw = raw.TIPTAP_WEBHOOK_SECRET ?? null;
+  const tiptapWebhookSecret = tiptapRaw === null ? null : new Secret(tiptapRaw);
+  if (options.requireTiptapSecret === true && tiptapWebhookSecret === null) {
+    throw AppError.configuration(
+      "TIPTAP_WEBHOOK_SECRET is not set: the payment webhook would accept unsigned requests.",
+    );
+  }
+
+  const botTokenRaw = raw.TELEGRAM_BOT_TOKEN ?? null;
+  const internalWorkerRaw = raw.INTERNAL_WORKER_SECRET ?? null;
+
+  let ai: AiConfig | null = null;
+  if (options.requireAi === true) {
+    ai = resolveAiConfig(raw);
+  }
+
+  return {
+    environment,
+    supabaseUrl: requireSupabaseUrl(raw),
+    serviceRoleKey: serviceSecret,
+    anonKey,
+    dashboard,
+    botToken: botTokenRaw === null ? null : new Secret(botTokenRaw),
+    tiptapWebhookSecret,
+    internalWorkerSecret: internalWorkerRaw === null
+      ? null
+      : new Secret(internalWorkerRaw),
+    ai,
+    logLevel: resolveLogLevel(raw, environment),
+    fingerprints: { serviceRoleKey: await serviceSecret.fingerprint() },
   };
 }
 
@@ -730,12 +858,15 @@ export function describeEnvironment(
   const internalWorkerSecret = picked["INTERNAL_WORKER_SECRET"] ?? null;
 
   return {
-    environment: (picked["NOTINN_ENV"] as NotinnEnvironment | undefined) ?? "local",
+    environment: (picked["NOTINN_ENV"] as NotinnEnvironment | undefined) ??
+      "local",
     logLevel: (picked["NOTINN_LOG_LEVEL"] as LogLevel | undefined) ?? "info",
     // A Supabase URL is not a secret; it is public in every client bundle.
     supabaseUrl: picked["SUPABASE_URL"] ?? "(unset)",
     present,
-    serviceRoleKeyRole: serviceRoleKey === null ? null : jwtRole(serviceRoleKey),
+    serviceRoleKeyRole: serviceRoleKey === null
+      ? null
+      : jwtRole(serviceRoleKey),
     serviceRoleKeyLength: serviceRoleKey?.length ?? null,
     botTokenLength: botToken?.length ?? null,
     webhookSecretLength: webhookSecret?.length ?? null,
@@ -750,7 +881,8 @@ export function describeEnvironment(
     geminiApiKeyLength: geminiApiKey?.length ?? null,
     openRouterFallbackModel: openRouterApiKey === null
       ? null
-      : picked["OPENROUTER_FALLBACK_MODEL"] ?? DEFAULT_OPENROUTER_FALLBACK_MODEL,
+      : picked["OPENROUTER_FALLBACK_MODEL"] ??
+        DEFAULT_OPENROUTER_FALLBACK_MODEL,
     openRouterApiKeyLength: openRouterApiKey?.length ?? null,
     internalWorkerSecretLength: internalWorkerSecret?.length ?? null,
   };
