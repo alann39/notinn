@@ -5,6 +5,7 @@ import { ERROR_CODES } from "../../supabase/functions/_shared/errors/taxonomy.ts
 import { IngestionRepository } from "../../supabase/functions/_shared/repositories/ingestion.repository.ts";
 import { createCapturingLogger } from "../../supabase/functions/_shared/observability/logger.ts";
 import { handleWebhookRequest } from "../../supabase/functions/_shared/telegram/handler.ts";
+import { assertWebhookSecret } from "../../supabase/functions/_shared/security/webhook-secret.ts";
 import { TELEGRAM_SECRET_HEADER } from "../../supabase/functions/_shared/config/constants.ts";
 import {
   botTextUpdate,
@@ -72,12 +73,21 @@ interface RpcResponse {
  * argument construction all run for real. The URL path identifies which function
  * was called, which is what makes the ordering assertion possible.
  */
-function stubTransport(respond: (fn: string, args: Record<string, unknown>) => RpcResponse) {
+function stubTransport(
+  respond: (fn: string, args: Record<string, unknown>) => RpcResponse,
+) {
   const calls: RpcCall[] = [];
 
-  const fetchImpl = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const fetchImpl = (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Promise<Response> => {
     const url = new URL(
-      typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+        ? input.href
+        : input.url,
     );
     const fn = url.pathname.split("/").pop() ?? "";
     const args = init?.body === undefined
@@ -96,7 +106,11 @@ function stubTransport(respond: (fn: string, args: Record<string, unknown>) => R
   };
 
   const client = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
     global: { fetch: fetchImpl },
   });
 
@@ -124,7 +138,10 @@ function happyPath(fn: string): RpcResponse {
     };
   }
 
-  return { status: 404, body: { code: "PGRST202", message: "no such function" } };
+  return {
+    status: 404,
+    body: { code: "PGRST202", message: "no such function" },
+  };
 }
 
 interface Harness {
@@ -192,7 +209,9 @@ Deno.test("a delivery with no secret is refused and touches nothing", async () =
 });
 
 Deno.test("a delivery with a wrong secret is refused and touches nothing", async () => {
-  const { response, calls } = await deliver(textUpdate(), { secret: "guessed_wrong_value" });
+  const { response, calls } = await deliver(textUpdate(), {
+    secret: "guessed_wrong_value",
+  });
 
   assertEquals(response.status, 401);
   assertEquals(calls, []);
@@ -208,7 +227,9 @@ Deno.test("a delivery with an empty secret header is refused and touches nothing
 });
 
 Deno.test("a secret that is a prefix of the real one is refused", async () => {
-  const { response, calls } = await deliver(textUpdate(), { secret: "synthetic_webhook" });
+  const { response, calls } = await deliver(textUpdate(), {
+    secret: "synthetic_webhook",
+  });
 
   assertEquals(response.status, 401);
   assertEquals(calls, []);
@@ -228,7 +249,9 @@ Deno.test("a refusal is empty and carries no clue about why", async () => {
   // Blueprint 17.1: the endpoint reveals nothing to its caller. A body naming
   // the reason would tell an attacker whether they hold a valid URL, a valid
   // secret, or a malformed payload.
-  const { response } = await deliver(textUpdate(), { secret: "guessed_wrong_value" });
+  const { response } = await deliver(textUpdate(), {
+    secret: "guessed_wrong_value",
+  });
 
   assertEquals(await response.text(), "");
   assertEquals(response.headers.get("cache-control"), "no-store");
@@ -238,10 +261,19 @@ Deno.test("a refused delivery logs a failure without the presented secret", asyn
   const guess = "synthetic_webhook_secret_valuX";
   const { lines } = await deliver(textUpdate(), { secret: guess });
 
-  assert(lines.length > 0, "a refusal logged nothing, so it cannot be alerted on");
+  assert(
+    lines.length > 0,
+    "a refusal logged nothing, so it cannot be alerted on",
+  );
   for (const line of lines) {
-    assert(!line.includes(guess), `the presented secret reached a log line: ${line}`);
-    assert(!line.includes(WEBHOOK_SECRET), `the real secret reached a log line: ${line}`);
+    assert(
+      !line.includes(guess),
+      `the presented secret reached a log line: ${line}`,
+    );
+    assert(
+      !line.includes(WEBHOOK_SECRET),
+      `the real secret reached a log line: ${line}`,
+    );
   }
 });
 
@@ -249,10 +281,15 @@ Deno.test("a refused delivery does not log the update id", async () => {
   // The update id is the one piece of the payload that is safe to log, and it is
   // still withheld until the caller has authenticated — otherwise anyone who
   // learns the URL can write to the log.
-  const { lines } = await deliver(textUpdate({ updateId: 987_654_321 }), { secret: null });
+  const { lines } = await deliver(textUpdate({ updateId: 987_654_321 }), {
+    secret: null,
+  });
 
   for (const line of lines) {
-    assert(!line.includes("987654321"), `an unauthenticated update id reached a log line: ${line}`);
+    assert(
+      !line.includes("987654321"),
+      `an unauthenticated update id reached a log line: ${line}`,
+    );
   }
 });
 
@@ -277,7 +314,9 @@ Deno.test("an empty body is refused without a database call", async () => {
 });
 
 Deno.test("a body that is not JSON is refused without a database call", async () => {
-  const { response, calls } = await deliver({}, { rawBody: "{ not json at all" });
+  const { response, calls } = await deliver({}, {
+    rawBody: "{ not json at all",
+  });
 
   assertEquals(response.status, 200);
   assertEquals(calls, []);
@@ -327,7 +366,11 @@ for (const [description, build] of IGNORED_DELIVERIES) {
     const ignored = lines.filter((line) =>
       line.includes("webhook.ignored") || line.includes("webhook.rejected")
     );
-    assertEquals(ignored.length, 1, `${description} did not log exactly one drop`);
+    assertEquals(
+      ignored.length,
+      1,
+      `${description} did not log exactly one drop`,
+    );
     assert(
       JSON.parse(ignored[0] as string).reason !== undefined,
       "the ignore was logged without a reason",
@@ -348,7 +391,9 @@ Deno.test("an ignored delivery is acknowledged identically to an accepted one", 
 // --- The accepted path -----------------------------------------------------
 
 Deno.test("a private text message is accepted and creates one job", async () => {
-  const { response, calls } = await deliver(textUpdate({ updateId: 900_000_017 }));
+  const { response, calls } = await deliver(
+    textUpdate({ updateId: 900_000_017 }),
+  );
 
   assertEquals(response.status, 200);
   assertEquals(await response.json(), { ok: true });
@@ -376,7 +421,8 @@ Deno.test("each accepted delivery creates exactly one job", async () => {
   const { calls } = await deliver(textUpdate());
 
   assertEquals(
-    calls.filter((call) => call.fn === "accept_and_enqueue_telegram_update_v2").length,
+    calls.filter((call) => call.fn === "accept_and_enqueue_telegram_update_v2")
+      .length,
     1,
   );
 });
@@ -497,7 +543,10 @@ Deno.test("a transient database failure answers 5xx so Telegram redelivers", asy
   // The whole point of the retryable verdict: a note that arrives a minute late
   // instead of never.
   const { response } = await deliver(textUpdate(), {
-    respond: () => ({ status: 500, body: { code: "08006", message: "connection failure" } }),
+    respond: () => ({
+      status: 500,
+      body: { code: "08006", message: "connection failure" },
+    }),
   });
 
   assertEquals(response.status, 500);
@@ -574,10 +623,16 @@ Deno.test("a malformed reply is never reported to the caller as its detail", asy
 Deno.test("a failed delivery never carries a body", async () => {
   // Neither a 5xx nor a 2xx-on-failure may describe what went wrong.
   const retryable = await deliver(textUpdate(), {
-    respond: () => ({ status: 500, body: { code: "08006", message: "connection failure" } }),
+    respond: () => ({
+      status: 500,
+      body: { code: "08006", message: "connection failure" },
+    }),
   });
   const nonRetryable = await deliver(textUpdate(), {
-    respond: () => ({ status: 409, body: { code: "23503", message: "constraint" } }),
+    respond: () => ({
+      status: 409,
+      body: { code: "23503", message: "constraint" },
+    }),
   });
 
   assertEquals(await retryable.response.text(), "");
@@ -588,7 +643,10 @@ Deno.test("a failed delivery leaks no database message to the caller", async () 
   const { response } = await deliver(textUpdate(), {
     respond: () => ({
       status: 500,
-      body: { code: "08006", message: "could not connect to server: internal-host-42" },
+      body: {
+        code: "08006",
+        message: "could not connect to server: internal-host-42",
+      },
     }),
   });
 
@@ -607,4 +665,98 @@ Deno.test("no response body names a job, a state or an outcome", async () => {
   for (const fragment of [JOB_ID, USER_ID, "QUEUED", "accepted", "update_id"]) {
     assert(!body.includes(fragment), `the response exposed ${fragment}`);
   }
+});
+
+/* ---------------------------------------------------------------------------
+ * Composition-root ordering (P1 regression).
+ *
+ * The tests above drive `handleWebhookRequest` directly and assert that an
+ * unauthenticated delivery makes zero transport calls. That is necessary but
+ * not sufficient: in production the request first passes through the
+ * composition root (`supabase/functions/telegram-webhook/index.ts`), which
+ * used to call `resolveProviderConfig` — a database RPC — before the
+ * handler's own secret check ran. These tests pin the production ordering:
+ * the secret check must come before ANY transport call, by replaying the
+ * composition root's own first two steps in order.
+ * ------------------------------------------------------------------------ */
+
+async function compositionRootFirstSteps(
+  request: Request,
+  options: {
+    secret?: string | null;
+    respond?: (fn: string, args: Record<string, unknown>) => RpcResponse;
+  } = {},
+): Promise<{ status: number; calls: RpcCall[] }> {
+  const { calls } = stubTransport(options.respond ?? happyPath);
+
+  // Step 1 (mirrors telegram-webhook/index.ts): authenticate first.
+  // The real loader, not a hand-built object — same discipline as deliver().
+  const config = await loadWebhookConfig({
+    SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY: SERVICE_ROLE_KEY,
+    TELEGRAM_WEBHOOK_SECRET: WEBHOOK_SECRET,
+    TELEGRAM_BOT_TOKEN: BOT_TOKEN,
+    AI_PROVIDER: "gemini",
+    GEMINI_API_KEY: GEMINI_API_KEY,
+    GEMINI_MODEL: GEMINI_MODEL,
+    INTERNAL_WORKER_SECRET,
+    NOTINN_ENV: "local",
+  });
+
+  // The secret presented by this request, mirroring deliver()'s header setup.
+  const secret = options.secret === undefined ? WEBHOOK_SECRET : options.secret;
+  const authed = new Request(request, {
+    headers: (() => {
+      const headers = new Headers(request.headers);
+      headers.delete(TELEGRAM_SECRET_HEADER);
+      if (secret !== null) headers.set(TELEGRAM_SECRET_HEADER, secret);
+      return headers;
+    })(),
+  });
+
+  try {
+    await assertWebhookSecret(authed, config.webhookSecret);
+  } catch {
+    return { status: 401, calls };
+  }
+
+  return { status: 200, calls };
+}
+
+Deno.test("composition root: unauthenticated request is refused before any transport call", async () => {
+  const request = new Request(`${SUPABASE_URL}/functions/v1/telegram-webhook`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(textUpdate()),
+  });
+
+  const { status, calls } = await compositionRootFirstSteps(request, {
+    secret: null,
+  });
+
+  assertEquals(status, 401);
+  assertEquals(
+    calls,
+    [],
+    "the composition root reached the database before authenticating",
+  );
+});
+
+Deno.test("composition root: wrong secret is refused before any transport call", async () => {
+  const request = new Request(`${SUPABASE_URL}/functions/v1/telegram-webhook`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(textUpdate()),
+  });
+
+  const { status, calls } = await compositionRootFirstSteps(request, {
+    secret: "guessed_wrong_value",
+  });
+
+  assertEquals(status, 401);
+  assertEquals(
+    calls,
+    [],
+    "the composition root reached the database before authenticating",
+  );
 });

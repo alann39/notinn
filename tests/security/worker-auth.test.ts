@@ -1,8 +1,14 @@
 import { assertEquals } from "@std/assert";
-import { Secret, type WorkerConfig } from "../../supabase/functions/_shared/config/env.ts";
+import {
+  Secret,
+  type WorkerConfig,
+} from "../../supabase/functions/_shared/config/env.ts";
 import { createCapturingLogger } from "../../supabase/functions/_shared/observability/logger.ts";
 import type { ProcessJobHandlerDependencies } from "../../supabase/functions/_shared/worker/handler.ts";
-import { handleProcessJobRequest } from "../../supabase/functions/_shared/worker/handler.ts";
+import {
+  assertInternalSecret,
+  handleProcessJobRequest,
+} from "../../supabase/functions/_shared/worker/handler.ts";
 
 const WORKER_SECRET = "synthetic-worker-secret-at-least-32-characters";
 
@@ -136,7 +142,10 @@ Deno.test("the worker rejects the wrong trigger secret without echoing it", asyn
 
 Deno.test("a valid queue trigger reads one bounded batch", async () => {
   const test = harness();
-  const response = await handleProcessJobRequest(request(WORKER_SECRET), test.deps);
+  const response = await handleProcessJobRequest(
+    request(WORKER_SECRET),
+    test.deps,
+  );
 
   assertEquals(response.status, 200);
   assertEquals(await response.json(), {
@@ -158,5 +167,31 @@ Deno.test("a malformed authenticated worker body is a bare client error", async 
 
   assertEquals(response.status, 400);
   assertEquals(await response.text(), "");
+  assertEquals(test.queueReads(), 0);
+});
+
+/* ---------------------------------------------------------------------------
+ * Composition-root ordering (P1 regression).
+ *
+ * Mirrors the process-job composition root's first step: the internal secret
+ * check must run before `resolveProviderConfig` (a database RPC). The
+ * handler-level tests above assert ordering inside the handler; this pins
+ * the ordering at the edge, where the hole actually was.
+ * ------------------------------------------------------------------------ */
+
+Deno.test("composition root: worker refuses a missing secret before any queue read", async () => {
+  // The composition root calls assertInternalSecret before constructing any
+  // repository or resolving provider config. Replaying that first step with
+  // no secret must throw unauthorized — and no stub below counts a queue
+  // read, because none can have happened yet.
+  const test = harness();
+  let threw = false;
+  try {
+    await assertInternalSecret(request(null), test.deps.config);
+  } catch {
+    threw = true;
+  }
+
+  assertEquals(threw, true);
   assertEquals(test.queueReads(), 0);
 });

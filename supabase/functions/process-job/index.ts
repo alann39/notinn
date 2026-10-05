@@ -13,7 +13,10 @@ import { TemplatesRepository } from "../_shared/repositories/templates.repositor
 import { UsageRepository } from "../_shared/repositories/usage.repository.ts";
 import { resolveProviderConfig } from "../_shared/repositories/provider-config.repository.ts";
 import { createTelegramGateway } from "../_shared/telegram/client.ts";
-import { handleProcessJobRequest } from "../_shared/worker/handler.ts";
+import {
+  assertInternalSecret,
+  handleProcessJobRequest,
+} from "../_shared/worker/handler.ts";
 
 let cachedConfig: WorkerConfig | null = null;
 
@@ -47,7 +50,25 @@ Deno.serve(async (request: Request): Promise<Response> => {
   });
 
   try {
-    const client = createServiceClient(config.supabaseUrl, config.serviceRoleKey);
+    // Authenticate before any database work (see telegram-webhook/index.ts
+    // for the rationale): resolveProviderConfig below performs a database
+    // RPC, which must never run for an unauthenticated caller.
+    try {
+      await assertInternalSecret(request, config);
+    } catch (thrown) {
+      const error = toAppError(thrown);
+      logger[error.logLevel]("worker.request_failed", {
+        error_code: error.code,
+        error_name: error.name,
+        error_detail: error.internalDetail,
+      });
+      return emptyResponse(401);
+    }
+
+    const client = createServiceClient(
+      config.supabaseUrl,
+      config.serviceRoleKey,
+    );
     const ai = await resolveProviderConfig(client, config.ai);
     return await handleProcessJobRequest(request, {
       config,
@@ -60,14 +81,21 @@ Deno.serve(async (request: Request): Promise<Response> => {
       plans: new PlanRepository(client),
       storage: {
         download: async (bucket: string, path: string): Promise<Uint8Array> => {
-          const { data, error } = await client.storage.from(bucket).download(path);
+          const { data, error } = await client.storage.from(bucket).download(
+            path,
+          );
           if (error !== null || !data) {
             throw AppError.fileUnavailable("storage file download failed");
           }
           return new Uint8Array(await data.arrayBuffer());
         },
-        remove: async (bucket: string, paths: readonly string[]): Promise<void> => {
-          const { error } = await client.storage.from(bucket).remove([...paths]);
+        remove: async (
+          bucket: string,
+          paths: readonly string[],
+        ): Promise<void> => {
+          const { error } = await client.storage.from(bucket).remove([
+            ...paths,
+          ]);
           if (error !== null) {
             logger.warn("worker.storage_remove_failed", {
               error_code: error.name,

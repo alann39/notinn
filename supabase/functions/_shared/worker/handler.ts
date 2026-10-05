@@ -22,7 +22,13 @@ export interface ProcessJobHandlerDependencies extends JobWorkerDependencies {
   readonly logger: Logger;
 }
 
-async function assertInternalSecret(request: Request, config: WorkerConfig): Promise<void> {
+// Exported for the process-job composition root, which must authenticate
+// before resolving the provider config (a database RPC). The handler
+// keeps calling it internally too — the double check is deliberate.
+export async function assertInternalSecret(
+  request: Request,
+  config: WorkerConfig,
+): Promise<void> {
   const presented = request.headers.get(INTERNAL_WORKER_SECRET_HEADER);
   if (
     presented === null || presented === "" ||
@@ -37,7 +43,9 @@ export async function handleProcessJobRequest(
   deps: ProcessJobHandlerDependencies,
 ): Promise<Response> {
   try {
-    if (request.method !== "POST") throw AppError.validation("worker accepts POST only");
+    if (request.method !== "POST") {
+      throw AppError.validation("worker accepts POST only");
+    }
     await assertInternalSecret(request, deps.config);
 
     let raw: unknown;
@@ -47,11 +55,17 @@ export async function handleProcessJobRequest(
       throw AppError.validation("worker request body was not JSON");
     }
     const parsed = ProcessJobRequestSchema.safeParse(raw);
-    if (!parsed.success) throw AppError.validation("worker request body had an invalid shape");
+    if (!parsed.success) {
+      throw AppError.validation("worker request body had an invalid shape");
+    }
 
     if (parsed.data.job_id !== undefined) {
       const outcome = await processJobById(parsed.data.job_id, deps);
-      return Response.json({ accepted: true, job_id: parsed.data.job_id, outcome });
+      return Response.json({
+        accepted: true,
+        job_id: parsed.data.job_id,
+        outcome,
+      });
     }
 
     if (parsed.data.trigger !== "queue" && parsed.data.trigger !== "recovery") {

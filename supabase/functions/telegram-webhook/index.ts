@@ -1,4 +1,7 @@
-import { loadWebhookConfig, type WebhookConfig } from "../_shared/config/env.ts";
+import {
+  loadWebhookConfig,
+  type WebhookConfig,
+} from "../_shared/config/env.ts";
 import { createServiceClient } from "../_shared/db/client.ts";
 import { toAppError } from "../_shared/errors/app-error.ts";
 import { emptyResponse } from "../_shared/errors/http.ts";
@@ -22,6 +25,7 @@ import { createNoteProvider } from "../_shared/providers/note-provider.factory.t
 import { GeminiEmbeddingProvider } from "../_shared/providers/gemini-embedding.provider.ts";
 import { createTelegramGateway } from "../_shared/telegram/client.ts";
 import { handleWebhookRequest } from "../_shared/telegram/handler.ts";
+import { assertWebhookSecret } from "../_shared/security/webhook-secret.ts";
 import { scheduleWorkerInvocation } from "../_shared/worker/invoker.ts";
 
 /**
@@ -92,7 +96,28 @@ Deno.serve(async (request: Request): Promise<Response> => {
       },
     });
 
-    const client = createServiceClient(config.supabaseUrl, config.serviceRoleKey);
+    // --- 0. Authentication ------------------------------------------------
+    // The composition root resolves the provider config via a database RPC
+    // below. That RPC must never run for an unauthenticated caller, so the
+    // secret check happens here first — before any database work. The handler
+    // repeats the check internally; the double check is deliberate defense in
+    // depth, and this outer one is what closes the unauthenticated-RPC hole.
+    try {
+      await assertWebhookSecret(request, config.webhookSecret);
+    } catch (thrown) {
+      const error = toAppError(thrown);
+      logger[error.logLevel]("webhook.failed", {
+        error_code: error.code,
+        error_name: error.name,
+        error_detail: error.internalDetail,
+      });
+      return emptyResponse(401);
+    }
+
+    const client = createServiceClient(
+      config.supabaseUrl,
+      config.serviceRoleKey,
+    );
     const repository = new IngestionRepository(client);
 
     const ai = await resolveProviderConfig(client, config.ai);
@@ -112,7 +137,9 @@ Deno.serve(async (request: Request): Promise<Response> => {
       plans: new PlanRepository(client),
       payments: new PaymentRepository(client),
       provider: noteProvider,
-      embeddings: ai.embeddingModel === null ? undefined : new GeminiEmbeddingProvider(ai),
+      embeddings: ai.embeddingModel === null
+        ? undefined
+        : new GeminiEmbeddingProvider(ai),
       answers: noteProvider,
       telegram: createTelegramGateway(config.botToken),
       triggerWorker: (jobId: string) =>
@@ -124,7 +151,12 @@ Deno.serve(async (request: Request): Promise<Response> => {
         ),
     };
 
-    return await handleWebhookRequest(request, { config, repository, logger, phase1 });
+    return await handleWebhookRequest(request, {
+      config,
+      repository,
+      logger,
+      phase1,
+    });
   } catch (thrown) {
     // handleWebhookRequest handles its own errors. This is a backstop for a
     // failure in the wiring above, so that no exception ever escapes to the
@@ -132,7 +164,10 @@ Deno.serve(async (request: Request): Promise<Response> => {
     const error = toAppError(thrown);
     const logger = createLogger({
       level: "error",
-      context: { function_name: "telegram-webhook", environment: config.environment },
+      context: {
+        function_name: "telegram-webhook",
+        environment: config.environment,
+      },
     });
     logger.error("webhook.unhandled", {
       error_code: error.code,
