@@ -25,7 +25,6 @@ import {
   secondsUntilCap,
 } from "./recorder-limits";
 import {
-  BUCKETS,
   downsampleToBuckets,
   normaliseBuckets,
 } from "./recorder-waveform";
@@ -34,7 +33,7 @@ import {
  * Decode the recorded blob into normalised peak buckets for VoiceNote.
  * Falls back to null so the player keeps its synthetic waveform.
  */
-async function decodeWaveformPeaks(blob: Blob): Promise<number[] | null> {
+async function decodeWaveformPeaks(blob: Blob, buckets: number = 28): Promise<number[] | null> {
   if (typeof window === "undefined") {
     return null;
   }
@@ -46,7 +45,7 @@ async function decodeWaveformPeaks(blob: Blob): Promise<number[] | null> {
     const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
     await ctx.close();
     const channel = audioBuffer.getChannelData(0);
-    return normaliseBuckets(downsampleToBuckets(channel, BUCKETS));
+    return normaliseBuckets(downsampleToBuckets(channel, buckets));
   } catch {
     return null;
   }
@@ -92,6 +91,7 @@ export function InBrowserRecorder({
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerIntervalRef = useRef<number | null>(null);
+  const isDiscardingRef = useRef(false);
 
 
   // Initialize supported mime type on client
@@ -134,7 +134,7 @@ export function InBrowserRecorder({
     if (left !== null && left <= 10) {
       stopRecording();
       setError(
-        "Rekaman dihentikan otomatis karena mendekati batas 45 MB. Anda bisa langsung membuat catatan AI atau merekam ulang.",
+        "Recording stopped automatically because it is approaching the 45 MB limit. You can generate the AI note or record again.",
       );
     }
   }, [liveBytes, duration, state, stopRecording]);
@@ -144,12 +144,13 @@ export function InBrowserRecorder({
 
   // Start recording
   const startRecording = async () => {
+    isDiscardingRef.current = false;
     setError(null);
     setState("requesting");
 
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error("Browser Anda belum mendukung perekaman mikrofon.");
+        throw new Error("Your browser does not support microphone recording.");
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -177,6 +178,17 @@ export function InBrowserRecorder({
       recorder.onstop = async () => {
         stopTracks();
 
+        if (isDiscardingRef.current) {
+          isDiscardingRef.current = false;
+          audioChunksRef.current = [];
+          setAudioBlob(null);
+          setAudioUrl(null);
+          setDuration(0);
+          setLiveBytes(0);
+          setWaveformPeaks(null);
+          setState("idle");
+          return;
+        }
 
         const blobType = mimeConfig.mimeType || "audio/webm";
         const blob = new Blob(audioChunksRef.current, { type: blobType });
@@ -186,7 +198,7 @@ export function InBrowserRecorder({
         setAudioUrl(url);
         setState("review");
 
-        const peaks = await decodeWaveformPeaks(blob);
+        const peaks = await decodeWaveformPeaks(blob, 28);
         setWaveformPeaks(peaks);
       };
 
@@ -212,11 +224,11 @@ export function InBrowserRecorder({
       setState("idle");
       const errName = (err as { name?: string }).name;
       if (errName === "NotAllowedError" || errName === "PermissionDeniedError") {
-        setError("Izin akses mikrofon ditolak. Izinkan mikrofon di pengaturan browser untuk merekam.");
+        setError("Microphone access denied. Please allow microphone permissions in your browser settings to record.");
       } else if (errName === "NotFoundError" || errName === "DevicesNotFoundError") {
-        setError("Mikrofon tidak ditemukan pada perangkat Anda.");
+        setError("No microphone found on your device.");
       } else {
-        setError((err as Error).message || "Gagal memulai perekaman audio.");
+        setError((err as Error).message || "Failed to start audio recording.");
       }
     }
   };
@@ -247,11 +259,19 @@ export function InBrowserRecorder({
 
   // Cancel / Discard
   const cancelRecording = () => {
+    isDiscardingRef.current = true;
     stopTracks();
 
-    if (timerIntervalRef.current != null) window.clearInterval(timerIntervalRef.current);
+    if (timerIntervalRef.current != null) {
+      window.clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
     if (audioUrl) URL.revokeObjectURL(audioUrl);
 
+    audioChunksRef.current = [];
     setAudioBlob(null);
     setAudioUrl(null);
     setDuration(0);
@@ -293,10 +313,10 @@ export function InBrowserRecorder({
           </div>
 
           <h3 className="font-sans text-xl sm:text-2xl font-semibold tracking-tight text-foreground">
-            Rekam Suara Langsung
+            Record Audio Directly
           </h3>
           <p className="mt-1.5 max-w-sm text-xs sm:text-sm text-muted-foreground/80 leading-relaxed font-sans">
-            Tangkap percakapan, rapat, atau rekaman suara langsung dari browser Anda tanpa aplikasi tambahan.
+            Capture conversations, meetings, or voice memos directly from your browser with no extra apps needed.
           </p>
 
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
@@ -308,18 +328,18 @@ export function InBrowserRecorder({
               className="min-h-11 rounded-full gap-2 px-6 font-sans font-medium text-sm shadow-xs cursor-pointer bg-foreground text-background hover:bg-foreground/90 transition-all"
             >
               <Mic className="size-4" />
-              <span>Mulai Rekam</span>
+              <span>Start Recording</span>
             </Button>
             {onCancel && (
               <Button type="button" variant="ghost" size="lg" onClick={onCancel} className="min-h-11 rounded-full px-5 font-sans text-sm text-muted-foreground hover:text-foreground cursor-pointer">
-                Batal
+                Cancel
               </Button>
             )}
           </div>
 
           <p className="mt-4 flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
             <Clock className="size-3" />
-            <span>Maksimal {Math.floor(maxDurationSeconds / 60)} menit per sesi</span>
+            <span>Maximum {Math.floor(maxDurationSeconds / 60)} minutes per session</span>
           </p>
         </div>
       )}
@@ -332,8 +352,8 @@ export function InBrowserRecorder({
               <ThinkingOrb state="searching" size={64} theme="auto" />
             </span>
           </div>
-          <h4 className="font-sans text-lg font-semibold text-foreground">Izinkan Akses Mikrofon</h4>
-          <p className="mt-1 text-xs text-muted-foreground font-sans">Silakan setujui izin mikrofon pada pop-up browser Anda.</p>
+          <h4 className="font-sans text-lg font-semibold text-foreground">Allow Microphone Access</h4>
+          <p className="mt-1 text-xs text-muted-foreground font-sans">Please grant microphone permission in your browser prompt.</p>
         </div>
       )}
 
@@ -375,7 +395,7 @@ export function InBrowserRecorder({
                 )}
               />
               <span className="text-[11px] font-sans font-medium uppercase tracking-wider text-muted-foreground">
-                {state === "recording" ? "Mendengarkan" : "Dijeda"}
+                {state === "recording" ? "Listening" : "Paused"}
               </span>
               <span className="text-muted-foreground/30">•</span>
               <span className="font-mono text-base font-semibold tracking-tight text-foreground tabular-nums">
@@ -394,8 +414,8 @@ export function InBrowserRecorder({
               variant="outline"
               size="icon"
               onClick={cancelRecording}
-              title="Buang rekaman"
-              aria-label="Buang rekaman"
+              title="Discard recording"
+              aria-label="Discard recording"
               className="size-11 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive cursor-pointer"
             >
               <Trash2 className="size-4" />
@@ -408,8 +428,8 @@ export function InBrowserRecorder({
                 variant="outline"
                 size="icon"
                 onClick={pauseRecording}
-                title="Jeda rekaman"
-                aria-label="Jeda rekaman"
+                title="Pause recording"
+                aria-label="Pause recording"
                 className="size-11 rounded-full border-border/50 hover:bg-muted cursor-pointer"
               >
                 <Pause className="size-4" />
@@ -420,8 +440,8 @@ export function InBrowserRecorder({
                 variant="outline"
                 size="icon"
                 onClick={resumeRecording}
-                title="Lanjutkan rekaman"
-                aria-label="Lanjutkan rekaman"
+                title="Resume recording"
+                aria-label="Resume recording"
                 className="size-11 rounded-full text-primary border-primary/40 hover:bg-primary/10 cursor-pointer"
               >
                 <Play className="size-4" />
@@ -437,7 +457,7 @@ export function InBrowserRecorder({
               className="min-h-11 rounded-full gap-2 px-6 font-sans font-medium text-sm bg-foreground text-background hover:bg-foreground/90 cursor-pointer shadow-xs transition-all"
             >
               <Square className="size-3.5 fill-current" />
-              <span>Selesai</span>
+              <span>Finish</span>
             </Button>
           </div>
         </div>
@@ -445,57 +465,65 @@ export function InBrowserRecorder({
 
       {/* STATE 3: REVIEW / PLAYBACK */}
       {state === "review" && audioBlob && (
-        <div className="py-2 space-y-5">
-          <div className="flex items-center justify-between border-b border-border/40 pb-3">
-            <div className="flex items-center gap-3">
-              <span className="[&_canvas]:!size-8 flex items-center justify-center">
+        <div className="py-1 space-y-4">
+          {/* Header Info: Responsive Stack on Mobile */}
+          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between border-b border-border/40 pb-3">
+            <div className="flex items-start sm:items-center gap-2.5">
+              <span className="[&_canvas]:!size-6 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
                 <ThinkingOrb state="composing" size={20} theme="auto" />
               </span>
-              <div>
-                <h4 className="font-sans text-base font-semibold text-foreground tracking-tight">Hasil Rekaman</h4>
-                <p className="text-xs text-muted-foreground/80 font-sans">Periksa hasil rekaman suara sebelum dibuat menjadi catatan.</p>
+              <div className="min-w-0">
+                <h4 className="font-sans text-sm sm:text-base font-semibold text-foreground tracking-tight">Recorded Audio</h4>
+                <p className="text-[11px] sm:text-xs text-muted-foreground/80 font-sans leading-tight">Review your recorded voice note before generating the note.</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="font-mono text-[11px] gap-1 rounded-full px-2.5 py-0.5 border border-border/40">
+            <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-auto pl-9 sm:pl-0">
+              <Badge variant="secondary" className="font-mono text-[10px] sm:text-[11px] gap-1 rounded-full px-2 py-0.5 border border-border/40">
                 <Clock className="size-3 text-muted-foreground" />
                 <span>{formatDuration(duration)}</span>
               </Badge>
-              <Badge variant="secondary" className="font-mono text-[11px] rounded-full px-2.5 py-0.5 border border-border/40">
+              <Badge variant="secondary" className="font-mono text-[10px] sm:text-[11px] rounded-full px-2 py-0.5 border border-border/40">
                 {formatBytes(audioBlob.size)}
               </Badge>
             </div>
           </div>
 
-          {/* Rare UI Voice Note Player */}
-          <div className="flex w-full items-center justify-center py-2">
+          {/* Rare UI Voice Note Player - Fully Fluid Container */}
+          <div className="flex w-full items-center justify-center py-1 overflow-hidden">
             <VoiceNote
               src={audioUrl || undefined}
               duration={duration}
               waveform={waveformPeaks ?? undefined}
+              bars={28}
               size="md"
               accent="var(--primary)"
-              className="w-full max-w-lg shadow-sm"
+              className="w-full max-w-full shadow-sm"
             />
           </div>
 
-          {/* Action CTAs */}
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+          {/* Action CTAs: Clean Mobile Dock */}
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between pt-2">
             <Button
               type="button"
               variant="ghost"
               size="sm"
               onClick={cancelRecording}
-              className="gap-1.5 rounded-full text-xs text-muted-foreground hover:text-foreground cursor-pointer font-sans"
+              className="h-10 sm:h-9 w-full sm:w-auto gap-1.5 rounded-full text-xs text-muted-foreground hover:text-foreground cursor-pointer font-sans"
             >
               <RotateCcw className="size-3.5" />
-              <span>Rekam Ulang</span>
+              <span>Record Again</span>
             </Button>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
               {onCancel && (
-                <Button type="button" variant="ghost" size="sm" onClick={onCancel} className="rounded-full text-xs cursor-pointer font-sans text-muted-foreground">
-                  Tutup
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={onCancel}
+                  className="h-10 sm:h-9 flex-1 sm:flex-none rounded-full text-xs cursor-pointer font-sans text-muted-foreground hover:text-foreground"
+                >
+                  Close
                 </Button>
               )}
               <Button
@@ -503,9 +531,9 @@ export function InBrowserRecorder({
                 variant="default"
                 size="sm"
                 onClick={handleSubmit}
-                className="min-h-10 rounded-full gap-2 px-5 font-sans font-medium text-xs bg-foreground text-background hover:bg-foreground/90 shadow-xs cursor-pointer transition-all"
+                className="h-10 sm:h-9 flex-1 sm:flex-none rounded-full gap-2 px-5 font-sans font-medium text-xs bg-foreground text-background hover:bg-foreground/90 shadow-xs cursor-pointer transition-all"
               >
-                <span>Gunakan Rekaman</span>
+                <span>Use Recording</span>
                 <ArrowRight className="size-3.5" />
               </Button>
             </div>

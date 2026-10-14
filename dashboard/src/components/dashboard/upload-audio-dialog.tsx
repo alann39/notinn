@@ -700,8 +700,8 @@ export function UploadAudioDialog({
               <DialogTitle className="text-base sm:text-lg font-semibold tracking-tight">
                 New Note
               </DialogTitle>
-              <DialogDescription className="text-xs text-muted-foreground mt-0.5 truncate">
-                Upload audio, import PDF documents, drop images, or paste text directly.
+              <DialogDescription className="text-xs text-muted-foreground mt-0.5 line-clamp-2 sm:line-clamp-1">
+                Upload audio, import PDF documents, drop images, or record voice directly.
               </DialogDescription>
             </div>
           </div>
@@ -719,18 +719,18 @@ export function UploadAudioDialog({
             }}
             className="flex flex-col gap-3.5"
           >
-            <TabsList className="w-full grid grid-cols-3">
-              <TabsTrigger value="record" className="gap-2 text-xs">
-                <Mic className="size-3.5" />
-                <span>Rekam Suara</span>
+            <TabsList className="w-full grid grid-cols-3 h-auto p-1">
+              <TabsTrigger value="record" className="gap-1.5 py-1.5 px-1 sm:px-3 text-[11px] sm:text-xs">
+                <Mic className="size-3.5 shrink-0" />
+                <span className="truncate">Record</span>
               </TabsTrigger>
-              <TabsTrigger value="upload" className="gap-2 text-xs">
-                <UploadCloud className="size-3.5" />
-                <span>Upload File</span>
+              <TabsTrigger value="upload" className="gap-1.5 py-1.5 px-1 sm:px-3 text-[11px] sm:text-xs">
+                <UploadCloud className="size-3.5 shrink-0" />
+                <span className="truncate">Upload</span>
               </TabsTrigger>
-              <TabsTrigger value="text" className="gap-2 text-xs">
-                <FileText className="size-3.5" />
-                <span>Paste Text</span>
+              <TabsTrigger value="text" className="gap-1.5 py-1.5 px-1 sm:px-3 text-[11px] sm:text-xs">
+                <FileText className="size-3.5 shrink-0" />
+                <span className="truncate">Text</span>
               </TabsTrigger>
             </TabsList>
 
@@ -745,8 +745,8 @@ export function UploadAudioDialog({
                   setDurationSeconds(duration);
                   setActiveTab("upload");
                   toastManager.add({
-                    title: "Audio Berhasil Direkam!",
-                    description: `${file.name} (${(file.size / 1024).toFixed(1)} KB) siap diproses. Pilih format catatan lalu klik Upload & Generate Note.`,
+                    title: "Audio Recorded!",
+                    description: `${file.name} (${(file.size / 1024).toFixed(1)} KB) is ready. Choose a note format and click Upload & Generate Note.`,
                     type: "success",
                   });
                 }}
@@ -774,6 +774,8 @@ export function UploadAudioDialog({
                   )}
                 >
                   <input
+                    id="file-upload-input"
+                    name="file-upload-input"
                     ref={fileInputRef}
                     type="file"
                     accept="audio/*,.mp3,.m4a,.ogg,.opus,.wav,.aac,.webm,.flac,.pdf,image/*,.jpg,.jpeg,.png,.webp,.heic"
@@ -895,6 +897,7 @@ export function UploadAudioDialog({
                 </label>
 
                 <Select
+                  name="file-template-select"
                   value={fileTemplateKey}
                   onValueChange={(val: string | null) => {
                     if (val) setFileTemplateKey(val);
@@ -971,6 +974,7 @@ export function UploadAudioDialog({
 
                 <Textarea
                   id="pasted-note-text"
+                  name="pasted-note-text"
                   placeholder="Paste or type notes, meeting transcripts, articles, or drafts here..."
                   value={pastedText}
                   onChange={(e) => setPastedText(e.target.value)}
@@ -991,6 +995,7 @@ export function UploadAudioDialog({
                 </label>
 
                 <Select
+                  name="text-template-select"
                   value={textTemplateKey}
                   onValueChange={(val: string | null) => {
                     if (val) setTextTemplateKey(val);
