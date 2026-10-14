@@ -7,10 +7,13 @@ import {
   HardDrive,
   Image as ImageIcon,
   Loader2,
+  Mic,
   Sparkles,
   UploadCloud,
   X,
 } from "lucide-react";
+import { InBrowserRecorder } from "./in-browser-recorder";
+import { maxDurationForPlan } from "./recorder-limits";
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabase";
 import * as tus from "tus-js-client";
 import { useAuth } from "@/hooks/use-auth";
@@ -195,7 +198,7 @@ export function UploadAudioDialog({
   onNoteReady,
 }: UploadAudioDialogProps) {
   const { user, profile } = useAuth();
-  const [activeTab, setActiveTab] = useState<"upload" | "text">("upload");
+  const [activeTab, setActiveTab] = useState<"record" | "upload" | "text">("record");
 
   // Tab 1 (File Upload) States
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -706,17 +709,21 @@ export function UploadAudioDialog({
 
         {/* Scrollable Dialog Panel with Coss ScrollArea */}
         <DialogPanel className="p-6 py-4 max-sm:p-4 max-sm:py-3 flex-1 min-h-0">
-          {/* 2-Tab Coss UI: Upload File vs Paste Text */}
+          {/* 3-Tab Multimodal UI: Record vs Upload File vs Paste Text */}
           <Tabs
             value={activeTab}
             onValueChange={(val) => {
               if (!isUploading && !isSubmittingText) {
-                setActiveTab(val as "upload" | "text");
+                setActiveTab(val as "record" | "upload" | "text");
               }
             }}
             className="flex flex-col gap-3.5"
           >
-            <TabsList className="w-full grid grid-cols-2">
+            <TabsList className="w-full grid grid-cols-3">
+              <TabsTrigger value="record" className="gap-2 text-xs">
+                <Mic className="size-3.5" />
+                <span>Rekam Suara</span>
+              </TabsTrigger>
               <TabsTrigger value="upload" className="gap-2 text-xs">
                 <UploadCloud className="size-3.5" />
                 <span>Upload File</span>
@@ -726,6 +733,29 @@ export function UploadAudioDialog({
                 <span>Paste Text</span>
               </TabsTrigger>
             </TabsList>
+
+            {/* ============================================================== */}
+            {/* TAB 0: IN-BROWSER AUDIO RECORDER                               */}
+            {/* ============================================================== */}
+            <TabsContent value="record" className="pt-1 outline-none">
+              <InBrowserRecorder
+                templates={DEFAULT_TEMPLATES.audio}
+                defaultTemplateKey={fileTemplateKey}
+                maxDurationSeconds={maxDurationForPlan(profile?.plan_key)}
+                onAudioReady={(file, duration, templateKey) => {
+                  setSelectedFile(file);
+                  setDurationSeconds(duration);
+                  setFileTemplateKey(templateKey);
+                  setActiveTab("upload");
+                  toastManager.add({
+                    title: "Audio Berhasil Direkam!",
+                    description: `${file.name} (${(file.size / 1024).toFixed(1)} KB) siap diproses dengan template ${templateKey}. Klik Upload & Generate Note untuk melanjutkan.`,
+                    type: "success",
+                  });
+                }}
+                onCancel={() => handleOpenChange(false)}
+              />
+            </TabsContent>
 
             {/* ============================================================== */}
             {/* TAB 1: FILE UPLOAD (AUDIO, PDF, IMAGE)                         */}
@@ -1034,61 +1064,63 @@ export function UploadAudioDialog({
         </DialogPanel>
 
         {/* Sticky Dialog Footer with Coss default framing */}
-        <DialogFooter variant="default" className="p-4 px-6 max-sm:px-4 max-sm:py-3 border-t bg-muted/50">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => handleOpenChange(false)}
-            disabled={isUploading || isSubmittingText}
-          >
-            Cancel
-          </Button>
+        {activeTab !== "record" && (
+          <DialogFooter variant="default" className="p-4 px-6 max-sm:px-4 max-sm:py-3 border-t bg-muted/50">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleOpenChange(false)}
+              disabled={isUploading || isSubmittingText}
+            >
+              Cancel
+            </Button>
 
-          {activeTab === "upload" ? (
-            <Button
-              type="button"
-              variant="default"
-              size="sm"
-              onClick={handleUploadFile}
-              disabled={!selectedFile || isUploading}
-              className="gap-1.5"
-            >
-              {isUploading ? (
-                <>
-                  <Loader2 className="size-3.5 animate-spin" />
-                  <span>Processing...</span>
-                </>
-              ) : (
-                <>
-                  <UploadCloud className="size-3.5" />
-                  <span>Upload & Generate Note</span>
-                </>
-              )}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="default"
-              size="sm"
-              onClick={handleSubmitText}
-              disabled={!pastedText.trim() || pastedText.length > MAX_TEXT_CHARS || isSubmittingText}
-              className="gap-1.5"
-            >
-              {isSubmittingText ? (
-                <>
-                  <Loader2 className="size-3.5 animate-spin" />
-                  <span>Generating...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="size-3.5" />
-                  <span>Generate Note</span>
-                </>
-              )}
-            </Button>
-          )}
-        </DialogFooter>
+            {activeTab === "upload" ? (
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                onClick={handleUploadFile}
+                disabled={!selectedFile || isUploading}
+                className="gap-1.5"
+              >
+                {isUploading ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <UploadCloud className="size-3.5" />
+                    <span>Upload & Generate Note</span>
+                  </>
+                )}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                onClick={handleSubmitText}
+                disabled={!pastedText.trim() || pastedText.length > MAX_TEXT_CHARS || isSubmittingText}
+                className="gap-1.5"
+              >
+                {isSubmittingText ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" />
+                    <span>Generating...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="size-3.5" />
+                    <span>Generate Note</span>
+                  </>
+                )}
+              </Button>
+            )}
+          </DialogFooter>
+        )}
       </DialogPopup>
     </Dialog>
   );
