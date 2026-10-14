@@ -24,6 +24,33 @@ import {
   pickRecorderMime,
   secondsUntilCap,
 } from "./recorder-limits";
+import {
+  BUCKETS,
+  downsampleToBuckets,
+  normaliseBuckets,
+} from "./recorder-waveform";
+
+/**
+ * Decode the recorded blob into normalised peak buckets for VoiceNote.
+ * Falls back to null so the player keeps its synthetic waveform.
+ */
+async function decodeWaveformPeaks(blob: Blob): Promise<number[] | null> {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const arrayBuffer = await blob.arrayBuffer();
+    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return null;
+    const ctx = new AudioCtx();
+    const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+    await ctx.close();
+    const channel = audioBuffer.getChannelData(0);
+    return normaliseBuckets(downsampleToBuckets(channel, BUCKETS));
+  } catch {
+    return null;
+  }
+}
 
 export interface TemplateItem {
   template_key: string;
@@ -65,6 +92,7 @@ export function InBrowserRecorder({
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>(defaultTemplateKey);
   const [mimeConfig, setMimeConfig] = useState({ mimeType: "audio/webm", extension: "webm" });
   const [liveBytes, setLiveBytes] = useState(0);
+  const [waveformPeaks, setWaveformPeaks] = useState<number[] | null>(null);
 
   // Refs for audio infrastructure
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -225,7 +253,7 @@ export function InBrowserRecorder({
         }
       };
 
-      recorder.onstop = () => {
+      recorder.onstop = async () => {
         stopTracks();
         stopVisualizer();
 
@@ -236,6 +264,9 @@ export function InBrowserRecorder({
         const url = URL.createObjectURL(blob);
         setAudioUrl(url);
         setState("review");
+
+        const peaks = await decodeWaveformPeaks(blob);
+        setWaveformPeaks(peaks);
       };
 
       recorder.start(500); // 500ms chunk slices
@@ -304,6 +335,7 @@ export function InBrowserRecorder({
     setAudioUrl(null);
     setDuration(0);
     setLiveBytes(0);
+    setWaveformPeaks(null);
     setState("idle");
     setError(null);
   };
@@ -547,8 +579,9 @@ export function InBrowserRecorder({
             <VoiceNote
               src={audioUrl || undefined}
               duration={duration}
+              waveform={waveformPeaks ?? undefined}
               size="md"
-              accent="#f97316"
+              accent="var(--primary)"
               className="w-full max-w-lg shadow-sm"
             />
           </div>
