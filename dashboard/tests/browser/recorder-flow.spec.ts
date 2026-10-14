@@ -41,7 +41,7 @@ test("recorder moves idle -> recording -> paused -> recording -> review", async 
   await expect(player).toHaveAttribute("aria-label", "Play voice message");
 
   // Submitting hands the blob back to the host page
-  await page.getByRole("button", { name: "Buat Catatan AI" }).click();
+  await page.getByRole("button", { name: "Gunakan Rekaman" }).click();
   await expect(page.getByText("Callback Frontend Berhasil Menerima Audio")).toBeVisible();
   await page.screenshot({ path: "C:/Users/arkad/recorder-submitted.png", fullPage: false });
 });

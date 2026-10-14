@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
+  ArrowRight,
   Clock,
   Mic,
   Pause,
   Play,
   RotateCcw,
-  Sparkles,
   Square,
   Trash2,
 } from "lucide-react";
@@ -74,12 +74,6 @@ type RecorderState = "idle" | "requesting" | "recording" | "paused" | "review";
 export function InBrowserRecorder({
   onAudioReady,
   onCancel,
-  templates = [
-    { template_key: "clean_note", template_name: "Clean Note", description: "Catatan terstruktur & rapi" },
-    { template_key: "meeting_minutes", template_name: "Meeting Minutes", description: "Notula rapat, agenda & keputusan" },
-    { template_key: "executive_summary", template_name: "Executive Summary", description: "Ringkasan eksekutif poin penting" },
-    { template_key: "action_items", template_name: "Action Items Only", description: "Daftar tindak lanjut & penanggung jawab" },
-  ],
   defaultTemplateKey = "clean_note",
   maxDurationSeconds = 1800, // 30 mins
   className,
@@ -89,7 +83,6 @@ export function InBrowserRecorder({
   const [error, setError] = useState<string | null>(null);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>(defaultTemplateKey);
   const [mimeConfig, setMimeConfig] = useState({ mimeType: "audio/webm", extension: "webm" });
   const [liveBytes, setLiveBytes] = useState(0);
   const [waveformPeaks, setWaveformPeaks] = useState<number[] | null>(null);
@@ -345,7 +338,7 @@ export function InBrowserRecorder({
     if (!audioBlob) return;
     const filename = `recording-${Date.now()}.${mimeConfig.extension}`;
     const file = new File([audioBlob], filename, { type: audioBlob.type });
-    onAudioReady?.(file, duration, selectedTemplateKey);
+    onAudioReady?.(file, duration, defaultTemplateKey);
   };
 
   return (
@@ -377,31 +370,6 @@ export function InBrowserRecorder({
           <p className="mt-1.5 max-w-sm text-xs sm:text-sm text-muted-foreground/80 leading-relaxed font-sans">
             Tangkap percakapan, rapat, atau rekaman suara langsung dari browser Anda tanpa aplikasi tambahan.
           </p>
-
-          {/* Template Selection Ahead of time */}
-          <div className="mt-6 w-full max-w-sm text-left">
-            <label className="block text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80 font-sans pb-1.5">
-              Format Catatan AI
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {templates.map((tmpl) => (
-                <button
-                  key={tmpl.template_key}
-                  type="button"
-                  onClick={() => setSelectedTemplateKey(tmpl.template_key)}
-                  className={cn(
-                    "flex flex-col items-start rounded-xl border p-2.5 text-left transition-all cursor-pointer font-sans",
-                    selectedTemplateKey === tmpl.template_key
-                      ? "border-foreground/30 bg-muted/80 text-foreground ring-1 ring-foreground/20 font-medium"
-                      : "border-border/50 bg-background/50 text-muted-foreground hover:bg-muted/40 hover:text-foreground",
-                  )}
-                >
-                  <span className="text-xs font-medium">{tmpl.template_name}</span>
-                  <span className="text-[10px] text-muted-foreground/70 line-clamp-1">{tmpl.description}</span>
-                </button>
-              ))}
-            </div>
-          </div>
 
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
             <Button
@@ -586,31 +554,6 @@ export function InBrowserRecorder({
             />
           </div>
 
-          {/* Template Choice */}
-          <div className="space-y-2">
-            <label className="block text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80 font-sans">
-              Format Catatan AI yang Diinginkan
-            </label>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {templates.map((tmpl) => (
-                <button
-                  key={tmpl.template_key}
-                  type="button"
-                  onClick={() => setSelectedTemplateKey(tmpl.template_key)}
-                  className={cn(
-                    "flex flex-col items-start rounded-xl border p-2.5 text-left transition-all cursor-pointer font-sans",
-                    selectedTemplateKey === tmpl.template_key
-                      ? "border-foreground/40 bg-muted/80 text-foreground ring-1 ring-foreground/20 font-medium"
-                      : "border-border/40 bg-background/50 text-muted-foreground hover:bg-muted/40 hover:text-foreground",
-                  )}
-                >
-                  <span className="text-xs font-medium">{tmpl.template_name}</span>
-                  <span className="text-[10px] text-muted-foreground/70 line-clamp-1">{tmpl.description}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Action CTAs */}
           <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
             <Button
@@ -637,8 +580,8 @@ export function InBrowserRecorder({
                 onClick={handleSubmit}
                 className="min-h-10 rounded-full gap-2 px-5 font-sans font-medium text-xs bg-foreground text-background hover:bg-foreground/90 shadow-xs cursor-pointer transition-all"
               >
-                <Sparkles className="size-3.5" />
-                <span>Buat Catatan AI</span>
+                <span>Gunakan Rekaman</span>
+                <ArrowRight className="size-3.5" />
               </Button>
             </div>
           </div>

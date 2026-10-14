@@ -739,17 +739,14 @@ export function UploadAudioDialog({
             {/* ============================================================== */}
             <TabsContent value="record" className="pt-1 outline-none">
               <InBrowserRecorder
-                templates={DEFAULT_TEMPLATES.audio}
-                defaultTemplateKey={fileTemplateKey}
                 maxDurationSeconds={maxDurationForPlan(profile?.plan_key)}
-                onAudioReady={(file, duration, templateKey) => {
+                onAudioReady={(file, duration) => {
                   setSelectedFile(file);
                   setDurationSeconds(duration);
-                  setFileTemplateKey(templateKey);
                   setActiveTab("upload");
                   toastManager.add({
                     title: "Audio Berhasil Direkam!",
-                    description: `${file.name} (${(file.size / 1024).toFixed(1)} KB) siap diproses dengan template ${templateKey}. Klik Upload & Generate Note untuk melanjutkan.`,
+                    description: `${file.name} (${(file.size / 1024).toFixed(1)} KB) siap diproses. Pilih format catatan lalu klik Upload & Generate Note.`,
                     type: "success",
                   });
                 }}
