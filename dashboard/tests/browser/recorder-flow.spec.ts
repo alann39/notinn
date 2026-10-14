@@ -7,42 +7,53 @@ test.use({
   permissions: ["microphone"],
 });
 
-test("capture recording and review states with virtual mic", async ({ page }) => {
+test("recorder moves idle -> recording -> paused -> recording -> review", async ({ page }) => {
   test.setTimeout(60000);
-  await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/test/audio-recorder");
 
-  // Capture idle state with ThinkingOrb
-  await page.waitForTimeout(600);
+  // IDLE
+  await expect(page.getByRole("heading", { name: "Rekam Suara Langsung" })).toBeVisible();
+  await expect(page.getByText(/Maksimal \d+ menit per sesi/)).toBeVisible();
   await page.screenshot({ path: "C:/Users/arkad/recorder-idle.png", fullPage: false });
 
-  // Click Mulai Rekam
-  const startBtn = page.getByRole("button", { name: "Mulai Rekam" });
-  await startBtn.click();
-
-  // Wait 1.5s while recording to capture the recording active state
-  await page.waitForTimeout(1500);
+  // -> RECORDING
+  await page.getByRole("button", { name: "Mulai Rekam" }).click();
+  await expect(page.getByText("Mendengarkan")).toBeVisible({ timeout: 5000 });
+  await expect(page.getByRole("button", { name: "Selesai" })).toBeVisible();
   await page.screenshot({ path: "C:/Users/arkad/recorder-active.png", fullPage: false });
 
-  // Click Selesai
-  const stopBtn = page.getByRole("button", { name: "Selesai" });
-  await expect(stopBtn).toBeVisible({ timeout: 5000 });
-  await stopBtn.click();
+  // -> PAUSED
+  await page.getByRole("button", { name: "Jeda rekaman" }).click();
+  await expect(page.getByText("Dijeda")).toBeVisible();
 
-  // Wait for review state to render
+  // -> RECORDING
+  await page.getByRole("button", { name: "Lanjutkan rekaman" }).click();
+  await expect(page.getByText("Mendengarkan")).toBeVisible();
+
+  // -> REVIEW
+  await page.getByRole("button", { name: "Selesai" }).click();
   await expect(page.getByRole("heading", { name: "Hasil Rekaman" })).toBeVisible({ timeout: 5000 });
-  await page.waitForTimeout(400);
-
-  // Capture review state
   await page.screenshot({ path: "C:/Users/arkad/recorder-review.png", fullPage: false });
 
-  // Click Buat Catatan AI to test frontend callback
+  // VoiceNote owns playback in the review state
+  const player = page.locator('[data-slot="voice-note-control"]').first();
+  await expect(player).toBeVisible();
+  await expect(player).toHaveAttribute("aria-label", "Play voice message");
+
+  // Submitting hands the blob back to the host page
   await page.getByRole("button", { name: "Buat Catatan AI" }).click();
   await expect(page.getByText("Callback Frontend Berhasil Menerima Audio")).toBeVisible();
   await page.screenshot({ path: "C:/Users/arkad/recorder-submitted.png", fullPage: false });
 });
 
-test("idle state states the plan duration ceiling", async ({ page }) => {
+test("discarding a recording returns to the idle state", async ({ page }) => {
   await page.goto("/test/audio-recorder");
-  await expect(page.getByText(/Maksimal \d+ menit per sesi/)).toBeVisible();
+  await page.getByRole("button", { name: "Mulai Rekam" }).click();
+  await expect(page.getByRole("button", { name: "Selesai" })).toBeVisible({ timeout: 5000 });
+  await page.getByRole("button", { name: "Selesai" }).click();
+  await expect(page.getByRole("heading", { name: "Hasil Rekaman" })).toBeVisible({ timeout: 5000 });
+
+  await page.getByRole("button", { name: "Rekam Ulang" }).click();
+  await expect(page.getByRole("heading", { name: "Rekam Suara Langsung" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Mulai Rekam" })).toBeEnabled();
 });
