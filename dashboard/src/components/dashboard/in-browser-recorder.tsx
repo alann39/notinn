@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   Clock,
@@ -18,9 +18,11 @@ import { cn } from "@/lib/utils";
 import { ThinkingOrb } from "@/components/ui/thinking-orbs";
 import { VoiceNote } from "@/components/ui/voice-note";
 import {
+  MAX_AUDIO_BYTES,
   formatBytes,
   formatDuration,
   pickRecorderMime,
+  secondsUntilCap,
 } from "./recorder-limits";
 
 export interface TemplateItem {
@@ -62,6 +64,7 @@ export function InBrowserRecorder({
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>(defaultTemplateKey);
   const [mimeConfig, setMimeConfig] = useState({ mimeType: "audio/webm", extension: "webm" });
+  const [liveBytes, setLiveBytes] = useState(0);
 
   // Refs for audio infrastructure
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -97,6 +100,30 @@ export function InBrowserRecorder({
       mediaStreamRef.current = null;
     }
   };
+
+  // Stop recording & proceed to review
+  const stopRecording = useCallback(() => {
+    if (timerIntervalRef.current != null) {
+      window.clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
+  }, []);
+
+  // Hard stop before the blob outgrows the Supabase 45 MB ceiling.
+  useEffect(() => {
+    if (state !== "recording" && state !== "paused") return;
+    if (duration < 5) return; // need a stable byte-rate sample
+    const left = secondsUntilCap(liveBytes, duration, MAX_AUDIO_BYTES);
+    if (left !== null && left <= 10) {
+      stopRecording();
+      setError(
+        "Rekaman dihentikan otomatis karena mendekati batas 45 MB. Anda bisa langsung membuat catatan AI atau merekam ulang.",
+      );
+    }
+  }, [liveBytes, duration, state, stopRecording]);
 
   // Live waveform visualizer
   const startVisualizer = (stream: MediaStream) => {
@@ -194,6 +221,7 @@ export function InBrowserRecorder({
       recorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) {
           audioChunksRef.current.push(event.data);
+          setLiveBytes((prev) => prev + event.data.size);
         }
       };
 
@@ -213,6 +241,7 @@ export function InBrowserRecorder({
       recorder.start(500); // 500ms chunk slices
       setState("recording");
       setDuration(0);
+      setLiveBytes(0);
 
       // Start duration timer
       timerIntervalRef.current = window.setInterval(() => {
@@ -264,17 +293,6 @@ export function InBrowserRecorder({
     }
   };
 
-  // Stop recording & proceed to review
-  const stopRecording = () => {
-    if (timerIntervalRef.current != null) {
-      window.clearInterval(timerIntervalRef.current);
-      timerIntervalRef.current = null;
-    }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      mediaRecorderRef.current.stop();
-    }
-  };
-
   // Cancel / Discard
   const cancelRecording = () => {
     stopTracks();
@@ -285,6 +303,7 @@ export function InBrowserRecorder({
     setAudioBlob(null);
     setAudioUrl(null);
     setDuration(0);
+    setLiveBytes(0);
     setState("idle");
     setError(null);
   };
