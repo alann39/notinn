@@ -92,10 +92,7 @@ export function InBrowserRecorder({
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerIntervalRef = useRef<number | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
 
   // Initialize supported mime type on client
   useEffect(() => {
@@ -107,10 +104,6 @@ export function InBrowserRecorder({
     return () => {
       stopTracks();
       if (timerIntervalRef.current != null) window.clearInterval(timerIntervalRef.current);
-      if (animationFrameRef.current != null) window.cancelAnimationFrame(animationFrameRef.current);
-      if (audioContextRef.current && audioContextRef.current.state !== "closed") {
-        audioContextRef.current.close().catch(() => {});
-      }
       if (audioUrl) URL.revokeObjectURL(audioUrl);
     };
   }, [audioUrl]);
@@ -147,72 +140,7 @@ export function InBrowserRecorder({
   }, [liveBytes, duration, state, stopRecording]);
 
   // Live waveform visualizer
-  const startVisualizer = (stream: MediaStream) => {
-    try {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (!AudioCtx) return;
 
-      const audioCtx = new AudioCtx();
-      audioContextRef.current = audioCtx;
-      const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 64;
-      analyserRef.current = analyser;
-
-      const source = audioCtx.createMediaStreamSource(stream);
-      source.connect(analyser);
-
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
-
-      const draw = () => {
-        animationFrameRef.current = requestAnimationFrame(draw);
-        analyser.getByteFrequencyData(dataArray);
-
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        const barCount = 24;
-        const barWidth = 3;
-        const gap = (canvas.width - barCount * barWidth) / (barCount - 1);
-
-        for (let i = 0; i < barCount; i++) {
-          const dataIdx = Math.floor((i / barCount) * (bufferLength / 2));
-          const val = dataArray[dataIdx] || 0;
-          const percent = val / 255;
-          const minHeight = 4;
-          const maxHeight = canvas.height * 0.9;
-          const barHeight = Math.max(minHeight, percent * maxHeight);
-
-          const x = i * (barWidth + gap);
-          const y = (canvas.height - barHeight) / 2;
-
-          ctx.fillStyle = val > 30 ? "rgb(239, 68, 68)" : "rgba(156, 163, 175, 0.4)";
-          ctx.beginPath();
-          ctx.roundRect(x, y, barWidth, barHeight, 2);
-          ctx.fill();
-        }
-      };
-
-      draw();
-    } catch (err) {
-      console.warn("AudioContext visualizer not available:", err);
-    }
-  };
-
-  const stopVisualizer = () => {
-    if (animationFrameRef.current != null) {
-      window.cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
-      audioContextRef.current.close().catch(() => {});
-      audioContextRef.current = null;
-    }
-  };
 
   // Start recording
   const startRecording = async () => {
@@ -248,7 +176,7 @@ export function InBrowserRecorder({
 
       recorder.onstop = async () => {
         stopTracks();
-        stopVisualizer();
+
 
         const blobType = mimeConfig.mimeType || "audio/webm";
         const blob = new Blob(audioChunksRef.current, { type: blobType });
@@ -278,7 +206,7 @@ export function InBrowserRecorder({
         });
       }, 1000);
 
-      startVisualizer(stream);
+
     } catch (err) {
       stopTracks();
       setState("idle");
@@ -320,7 +248,7 @@ export function InBrowserRecorder({
   // Cancel / Discard
   const cancelRecording = () => {
     stopTracks();
-    stopVisualizer();
+
     if (timerIntervalRef.current != null) window.clearInterval(timerIntervalRef.current);
     if (audioUrl) URL.revokeObjectURL(audioUrl);
 
@@ -456,10 +384,7 @@ export function InBrowserRecorder({
             </div>
           </div>
 
-          {/* Live Waveform Canvas */}
-          <div className="flex w-full max-w-xs items-center justify-center rounded-xl border border-border/40 bg-muted/20 px-4 py-2.5">
-            <canvas ref={canvasRef} width={280} height={32} className="w-full max-w-[280px]" />
-          </div>
+
 
           {/* Action Buttons */}
           <div className="flex items-center gap-3 pt-1">
