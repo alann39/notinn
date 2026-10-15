@@ -11,7 +11,7 @@ end
 $$;
 
 -- 2. Audio recording sessions master table
-create table if not null public.audio_recording_sessions (
+create table if not exists public.audio_recording_sessions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.users(id) on delete cascade,
   template_key text not null default 'clean_note' references public.templates(key),
@@ -27,7 +27,7 @@ create table if not null public.audio_recording_sessions (
 );
 
 -- 3. Audio session parts table
-create table if not null public.audio_session_parts (
+create table if not exists public.audio_session_parts (
   id uuid primary key default gen_random_uuid(),
   session_id uuid not null references public.audio_recording_sessions(id) on delete cascade,
   part_number integer not null,
