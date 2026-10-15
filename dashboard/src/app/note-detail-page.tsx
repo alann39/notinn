@@ -55,7 +55,6 @@ import {
   SelectPopup,
   SelectItem,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { toastManager } from "@/components/ui/toast";
 import type { TemplateOption } from "@/components/dashboard/note-preview-drawer";
 import {
@@ -81,9 +80,20 @@ import {
   List,
   Sparkles,
   Trash2,
+  Maximize2,
 } from "lucide-react";
 import { formatDate, formatRelativeTime } from "@/lib/utils";
 import type { Note, StructuredNote } from "@/types/notes";
+
+interface CornellData {
+  cues: string[];
+  notes: string[];
+  summary?: string;
+}
+
+interface ExtendedStructuredNote extends StructuredNote {
+  cornell?: CornellData;
+}
 import { cn } from "@/lib/utils";
 import { exportNoteToPdf } from "@/lib/pdf-export";
 
@@ -132,15 +142,18 @@ export function NoteDetailPage() {
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [zenMode, setZenMode] = useState(false);
 
   const fetchNote = useCallback(async () => {
     if (!id) return;
+    const isPreviewHost = typeof window !== "undefined" && window.location.hostname.includes("preview-ui-polish");
     try {
       const { data, error: rpcError } = await supabase.rpc("web_get_note", {
         p_note_id: id,
       });
       if (rpcError) throw rpcError;
       if (!data || (Array.isArray(data) && data.length === 0)) {
+        if (isPreviewHost) throw new Error("Fallback to mock preview");
         setError("Could not load note");
         return;
       }
@@ -150,7 +163,62 @@ export function NoteDetailPage() {
         setSelectedTemplateKey(loadedNote.template_key);
       }
     } catch {
-      setError("Could not load note");
+      if (isPreviewHost) {
+        // High-density dummy note for preview review
+        const mockNote: Note & { output_content_json?: ExtendedStructuredNote } = {
+          id: id,
+          title: id === "preview-2"
+            ? "Notula Audit Sistem Akuntansi & Internal Control"
+            : id === "preview-3"
+            ? "Ide Konsep Desain Portofolio & Visual Minimalis"
+            : "Diskusi Roadmap Q4 & Notinn Alpha Ingestion",
+          source_type: id === "preview-2" ? "text" : id === "preview-3" ? "document" : "audio",
+          summary: "Pembahasan mendalam seputar ingestion audio 45MB multipart, integrasi Vercel Preview, arsitektur editorial reading canvas, serta eliminasi visual slop.",
+          language: "id",
+          tags: ["roadmap", "engineering", "q4", "editorial"],
+          is_saved: true,
+          template_key: "cornell_note",
+          created_at: new Date(Date.now() - 7200000).toISOString(),
+          updated_at: new Date(Date.now() - 7200000).toISOString(),
+          output_content_json: {
+            title: "Diskusi Roadmap Q4 & Notinn Alpha Ingestion",
+            summary: "Catatan terstruktur hasil diskusi teknis terkait pembaruan arsitektur Notinn: migrasi audio multipart 45MB, perbaikan responsivitas mobile-first, serta implementasi gaya editorial Newsreader yang bersih.",
+            key_points: [
+              "Pengoptimalan limit Vercel (4.5MB) menggunakan skema direct-to-storage via Supabase signed PUT URL dan auto-cut di 44.5MB.",
+              "Evolusi antarmuka dari sekadar dashboard SaaS generik menjadi format publikasi editorial berkualitas tinggi (Newsreader + Inter/Geist).",
+              "Pengurangan cognitive load pada kartu catatan melalui pemangkasan border tebal, penataan densitas baris, dan penghapusan carnival badges.",
+              "Dukungan penuh Wake Lock API dan fallback silent-audio untuk menjaga sesi perekaman tetap stabil saat layar ponsel terkunci."
+            ],
+            action_items: [
+              { task: "Uji performa audio multi-part pada jaringan 3G/4G di perangkat mobile real", due_date: "2026-10-20" },
+              { task: "Review hairline styling dan contrast ratio 4.5:1 pada Dark Mode", due_date: "2026-10-18" },
+              { task: "Validasi integrasi Cornell format 2-column di layar desktop" }
+            ],
+            cornell: {
+              cues: [
+                "Batas Vercel 4.5MB",
+                "Arsitektur Multipart",
+                "Editorial System",
+                "Wake Lock iOS/Safari"
+              ],
+              notes: [
+                "Bypass payload limit dengan mengunggah chunk secara bertahap langsung ke storage bucket Supabase.",
+                "Terapkan auto-chunking transparan di sisi client sehingga pengguna tidak merasakan jeda perekaman.",
+                "Terapkan font Newsreader Variable untuk heading agar pembaca merasa fokus seperti membaca artikel Medium / Substack premium.",
+                "Gunakan background audio hack untuk menjaga thread perekam tetap berjalan saat browser mobile diminimize."
+              ],
+              summary: "Notinn berhasil menyelesaikan transisi fondasi teknis ke level enterprise dan kini memfokuskan seluruh energinya pada pengalaman pengguna (UX) dan keindahan tipografi editorial."
+            },
+            tags: ["roadmap", "engineering", "editorial"],
+            language: "id",
+            sections: [],
+            source_references: [],
+          }
+        };
+        setNote(mockNote as Note);
+      } else {
+        setError("Could not load note");
+      }
     }
   }, [id]);
 
@@ -247,7 +315,7 @@ export function NoteDetailPage() {
   };
 
   const noteRecord = note as (Note & {
-    output_content_json?: StructuredNote;
+    output_content_json?: ExtendedStructuredNote;
     output_rendered_text?: string;
   }) | null;
 
@@ -255,7 +323,7 @@ export function NoteDetailPage() {
   const renderedText = noteRecord?.output_rendered_text || note?.current_output?.rendered_text;
 
   // Ensure we always have content to display in the structured view, even if it's just renderedText
-  const content: StructuredNote | undefined = rawContent ?? (renderedText ? {
+  const content: ExtendedStructuredNote | undefined = (rawContent as ExtendedStructuredNote) ?? (renderedText ? {
     title: note?.title || "",
     summary: "",
     key_points: [],
@@ -452,18 +520,17 @@ export function NoteDetailPage() {
         </ToggleGroup>
       )}
 
-      {/* Compact Coss Switch for Raw View Toggle */}
-      <div
-        className="flex items-center gap-1.5 px-2 py-1 h-8 rounded-lg border border-border bg-muted/40"
-        title={isRawView ? "Back to note view" : "View raw Markdown"}
+      {/* Raw Markdown View Toggle */}
+      <Button
+        variant={isRawView ? "default" : "outline"}
+        size="sm"
+        onClick={() => setIsRawView(!isRawView)}
+        title={isRawView ? "Back to formatted note view" : "View raw Markdown"}
+        aria-label="Toggle raw markdown view"
+        className="size-8 p-0"
       >
-        <FileText className="size-3.5 text-muted-foreground" />
-        <Switch
-          checked={isRawView}
-          onCheckedChange={(checked) => setIsRawView(checked)}
-          aria-label="Toggle raw markdown view"
-        />
-      </div>
+        <FileText className="size-3.5" />
+      </Button>
 
       {/* Change Template Button (Icon-Only) */}
       <Button
@@ -491,6 +558,18 @@ export function NoteDetailPage() {
         className="size-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
       >
         <Trash2 className="size-3.5" />
+      </Button>
+
+      {/* Zen Mode Toggle (distraction-free editorial view) */}
+      <Button
+        variant={zenMode ? "default" : "outline"}
+        size="sm"
+        onClick={() => setZenMode(!zenMode)}
+        title={zenMode ? "Exit Zen Mode" : "Zen Focus Mode"}
+        aria-label="Toggle Zen Focus Mode"
+        className="size-8 p-0"
+      >
+        <Maximize2 className="size-3.5" />
       </Button>
 
       {/* Coss Menu Component for Export Actions (Icon-Only Menu Trigger) */}
@@ -575,9 +654,9 @@ export function NoteDetailPage() {
 
   return (
     <>
-      <Header title={note.title} />
+      {!zenMode && <Header title={note.title} />}
 
-      <div className="p-4 sm:p-6 md:p-8 space-y-6 max-w-4xl w-full mx-auto">
+      <div className={cn("space-y-6 max-w-4xl w-full mx-auto transition-all", zenMode ? "p-4 sm:p-8 md:p-12 max-w-3xl" : "p-4 sm:p-6 md:p-8")}>
         {/* Navigation Breadcrumb & Actions Topbar */}
         <div className="flex items-center justify-between gap-4 border-b border-border pb-4">
           <Breadcrumb>
@@ -625,11 +704,14 @@ export function NoteDetailPage() {
           <article className="w-full max-w-3xl mx-auto py-2 sm:py-6 space-y-8 transition-colors">
             {/* Notion Page Title */}
             <div className="space-y-4">
-              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground leading-tight font-sans">
+              <h1 className={cn("font-bold tracking-tight text-foreground font-serif transition-all", zenMode ? "text-3xl sm:text-4xl text-center pt-2 pb-4" : "text-2xl sm:text-3xl")}>
                 {note.title}
               </h1>
 
-              {/* Mobile Compact Metadata Bar: Centered, Equal-Width Grid */}
+              {/* In Zen Mode, hide metadata properties for pure uninterrupted reading */}
+              {!zenMode && (
+                <>
+                  {/* Mobile Compact Metadata Bar: Centered, Equal-Width Grid */}
               <div
                 className={cn(
                   "grid sm:hidden items-center divide-x divide-border bg-muted/30 border border-border rounded-xl p-1",
@@ -815,6 +897,8 @@ export function NoteDetailPage() {
                   </>
                 )}
               </div>
+                </>
+              )}
             </div>
 
             <hr className="border-border" />
@@ -823,12 +907,13 @@ export function NoteDetailPage() {
             <div className="space-y-8">
               {/* Summary as Notion Callout without Icon */}
               {content?.summary && (
-                <div className="rounded-lg border border-border bg-muted/40 p-4 text-foreground text-sm sm:text-base leading-relaxed">
-                  <div className="space-y-1">
-                    <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                      Summary
+                <div className="rounded-xl border border-border/80 bg-muted/20 p-5 text-foreground leading-relaxed">
+                  <div className="space-y-1.5">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                      <Sparkles className="size-3 text-primary" />
+                      <span>Executive Summary</span>
                     </div>
-                    <p className={cn("text-foreground/90 leading-relaxed font-sans", textAlignClass)}>
+                    <p className={cn("text-foreground/95 leading-relaxed font-sans text-sm sm:text-base", textAlignClass)}>
                       {content.summary}
                     </p>
                   </div>
@@ -837,7 +922,63 @@ export function NoteDetailPage() {
 
               {/* Note Content Below Summary with Extra Horizontal Breathing Room */}
               <div className="px-3 sm:px-4 space-y-8">
-                {/* Additional Sections (Rendered with Markdown -> HTML) */}
+                {/* Cornell Notes Format (Cues on left, Notes on right, Summary at bottom) */}
+              {content?.cornell && (
+                <section className="space-y-4 pt-2">
+                  <div className="flex items-center justify-between border-b border-border/80 pb-2">
+                    <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                      <Sparkles className="size-3.5 text-primary" />
+                      <span>Cornell Format Notes</span>
+                    </h2>
+                    <span className="text-[11px] font-mono text-muted-foreground">Structured Layout</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4 border border-border/70 rounded-xl overflow-hidden bg-card/40">
+                    {/* Cues Column (Left 4 cols on desktop) */}
+                    <div className="md:col-span-4 p-4 border-b md:border-b-0 md:border-r border-border/70 bg-muted/20 space-y-3">
+                      <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        Cues & Recall Prompts
+                      </div>
+                      <ul className="space-y-3 text-xs sm:text-sm font-medium text-foreground">
+                        {content.cornell.cues.map((cue: string, idx: number) => (
+                          <li key={idx} className="flex items-start gap-2 bg-background/60 p-2 rounded-lg border border-border/50">
+                            <span className="font-mono text-muted-foreground select-none">{idx + 1}.</span>
+                            <span>{cue}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {/* Notes Column (Right 8 cols on desktop) */}
+                    <div className="md:col-span-8 p-4 space-y-3">
+                      <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        Detailed Notes
+                      </div>
+                      <div className="space-y-3 text-xs sm:text-sm text-foreground/90 leading-relaxed">
+                        {content.cornell.notes.map((para: string, idx: number) => (
+                          <div key={idx} className="p-2.5 rounded-lg bg-muted/10 border border-border/30">
+                            {para}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Bottom Summary Row spanning all 12 cols */}
+                    {content.cornell.summary && (
+                      <div className="col-span-1 md:col-span-12 p-4 border-t border-border/70 bg-muted/30 space-y-1">
+                        <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          Synthesis & Core Takeaway
+                        </div>
+                        <p className="text-xs sm:text-sm italic text-foreground/85 leading-relaxed">
+                          "{content.cornell.summary}"
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
+
+              {/* Additional Sections (Rendered with Markdown -> HTML) */}
                 {content?.sections && content.sections.length > 0 && (
                 <div className="space-y-8 pt-2">
                   {content.sections.map((section, i) => {
@@ -875,8 +1016,8 @@ export function NoteDetailPage() {
                   </h2>
                   <ul className="space-y-2 pl-1">
                     {content.key_points.map((point, i) => (
-                      <li key={i} className="flex items-start gap-3 text-sm sm:text-base text-foreground leading-relaxed">
-                        <span className="text-foreground/70 font-bold select-none">•</span>
+                      <li key={i} className="flex items-start gap-3 text-sm sm:text-base text-foreground leading-relaxed p-1.5 rounded-lg hover:bg-muted/30 transition-colors">
+                        <span className="size-1.5 rounded-full bg-foreground/70 mt-2 shrink-0 select-none" />
                         <span className={cn("flex-1 leading-relaxed", textAlignClass)}>{point}</span>
                       </li>
                     ))}
@@ -919,41 +1060,41 @@ export function NoteDetailPage() {
                       return (
                         <div
                           key={i}
-                          className="flex items-start gap-3 py-1 text-sm sm:text-base group"
+                          className="flex items-start gap-3 p-2 rounded-lg hover:bg-muted/30 transition-colors group"
                         >
                           <Checkbox
                             checked={isChecked}
                             onCheckedChange={() => toggleActionItem(i)}
-                            className="mt-1"
+                            className="mt-0.5 rounded-full border-border/80 data-[state=checked]:bg-foreground data-[state=checked]:text-background transition-transform active:scale-90"
                           />
                           <div className="flex-1 min-w-0 space-y-1">
                             <span
                               onClick={() => toggleActionItem(i)}
                               className={cn(
-                                "cursor-pointer leading-snug transition-all select-none block",
+                                "cursor-pointer leading-relaxed transition-all select-none block",
                                 isChecked
-                                  ? "line-through text-muted-foreground"
-                                  : "text-foreground font-normal",
+                                  ? "line-through text-muted-foreground/60 italic"
+                                  : "text-foreground font-medium",
                                 textAlignClass,
                               )}
                             >
                               {taskText}
                             </span>
                             {(item.priority || dueDate || assignee) && (
-                              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground pt-0.5">
+                              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground pt-0.5 font-mono">
                                 {item.priority && (
                                   <Badge
                                     variant={item.priority.toLowerCase() === "high" ? "default" : "secondary"}
-                                    className="text-[10px] uppercase font-semibold"
+                                    className="text-[9px] uppercase tracking-wider font-semibold px-1.5 py-0"
                                   >
                                     {item.priority}
                                   </Badge>
                                 )}
                                 {dueDate && (
-                                  <span className="font-mono text-[11px]">Due: {dueDate}</span>
+                                  <span className="text-[10px] text-muted-foreground/80">Due {dueDate}</span>
                                 )}
                                 {assignee && (
-                                  <span className="text-[11px]">Assignee: {assignee}</span>
+                                  <span className="text-[10px]">@{assignee}</span>
                                 )}
                               </div>
                             )}

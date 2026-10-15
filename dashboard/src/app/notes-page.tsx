@@ -13,7 +13,6 @@ import {
   List,
   Mic,
   PlusCircle,
-  Plus,
   Search,
   X,
   Sparkles,
@@ -85,6 +84,7 @@ export function NotesPage() {
 
   const handleNoteClick = (note: Note) => {
     if (note.is_saved) {
+      // On desktop, support fast click to preview in detail pane or double-click / navigate directly
       navigate(`/notes/${note.id}`);
     } else {
       setSelectedDraftId(note.id);
@@ -229,10 +229,10 @@ export function NotesPage() {
               variant="default"
               size="sm"
               onClick={() => setUploadOpen(true)}
-              className="gap-1.5 text-xs font-medium cursor-pointer"
+              className="gap-1.5 text-xs font-medium cursor-pointer bg-foreground text-background hover:bg-foreground/90"
             >
-              <Plus className="size-3.5" />
-              <span>New Note</span>
+              <Mic className="size-3.5" />
+              <span>Record & Ingest</span>
             </Button>
 
             {/* Grouped Controls: Filter Toggle + Grid/Table View Switcher */}
@@ -415,10 +415,10 @@ export function NotesPage() {
                   variant="default"
                   size="sm"
                   onClick={() => setUploadOpen(true)}
-                  className="gap-1.5 text-xs cursor-pointer"
+                  className="gap-1.5 text-xs cursor-pointer bg-foreground text-background hover:bg-foreground/90 font-medium"
                 >
-                  <Plus className="size-3.5" />
-                  <span>New Note</span>
+                  <Mic className="size-3.5" />
+                  <span>Direct Web Capture</span>
                 </Button>
                 <Button
                   variant="outline"
@@ -427,7 +427,7 @@ export function NotesPage() {
                   className="gap-1.5 text-xs cursor-pointer"
                 >
                   <PlusCircle className="size-3.5" />
-                  <span>Open on Telegram</span>
+                  <span>Open Telegram Bot</span>
                 </Button>
                 </div>
               )}
@@ -454,11 +454,11 @@ export function NotesPage() {
                   }}
                   aria-label={`Open note: ${note.title}`}
                 >
-                  <Card className="p-4 sm:p-4.5 flex flex-col justify-between h-full space-y-3.5 rounded-xl border-border/70 hover:border-foreground/40 bg-card/70 backdrop-blur-xs hover:shadow-xs transition-all">
+                  <Card className="p-3.5 sm:p-4 flex flex-col justify-between h-full space-y-3 rounded-xl border-border/70 hover:border-foreground/50 bg-card/60 hover:bg-muted/15 transition-all">
                     <CardHeader className="p-0 space-y-2">
                       <div className="flex items-start gap-2.5">
-                        <div className="flex size-7.5 shrink-0 items-center justify-center rounded-md bg-muted/80 text-foreground/80 border border-border/60">
-                          <SourceIcon className="size-4" strokeWidth={2} />
+                        <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/60 text-foreground/80 border border-border/50">
+                          <SourceIcon className="size-3.5" strokeWidth={1.75} />
                         </div>
 
                         <div className="min-w-0 flex-1">
@@ -524,24 +524,32 @@ export function NotesPage() {
                       )}
                     </CardContent>
 
-                    {/* Footer: Tags */}
-                    {note.tags && note.tags.length > 0 && (
-                      <CardFooter className="p-0 pt-2.5 flex flex-wrap gap-1 border-t border-border/50">
-                        {note.tags.slice(0, 4).map((tag) => (
-                          <span
-                            key={tag}
-                            className="text-[10px] font-normal px-1.5 py-0.5 rounded-md bg-muted/60 text-muted-foreground hover:bg-muted transition-colors"
-                          >
-                            #{tag}
-                          </span>
-                        ))}
-                        {note.tags.length > 4 && (
-                          <span className="text-[10px] text-muted-foreground/70 self-center">
-                            +{note.tags.length - 4} more
-                          </span>
-                        )}
-                      </CardFooter>
-                    )}
+                    {/* Footer: Tags & Timestamp */}
+                    <CardFooter className="p-0 pt-2.5 flex items-center justify-between gap-2 border-t border-border/40 text-xs">
+                      {note.tags && note.tags.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {note.tags.slice(0, 3).map((tag) => (
+                            <span
+                              key={tag}
+                              className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-muted/60 text-muted-foreground hover:bg-muted transition-colors"
+                            >
+                              #{tag}
+                            </span>
+                          ))}
+                          {note.tags.length > 3 && (
+                            <span className="text-[10px] text-muted-foreground/70 self-center">
+                              +{note.tags.length - 3}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-[10px] font-mono text-muted-foreground/60">No tags</span>
+                      )}
+
+                      <span className="text-[10px] font-mono text-muted-foreground/80 shrink-0">
+                        {formatRelativeTime(note.created_at)}
+                      </span>
+                    </CardFooter>
                   </Card>
                 </div>
               );
@@ -769,6 +777,19 @@ export function NotesPage() {
             </Pagination>
           </div>
         )}
+      </div>
+
+      {/* Mobile & Desktop Floating Island Recorder Trigger (Bottom Dock) */}
+      <div className="fixed bottom-6 right-6 z-40 sm:bottom-8 sm:right-8">
+        <Button
+          size="lg"
+          onClick={() => setUploadOpen(true)}
+          className="rounded-full shadow-lg border border-border/80 px-5 py-6 gap-2.5 bg-foreground text-background hover:bg-foreground/90 transition-all hover:scale-105 active:scale-95"
+          aria-label="Start recording audio or upload"
+        >
+          <Mic className="size-5" />
+          <span className="font-semibold text-sm">Capture Note</span>
+        </Button>
       </div>
 
       <UploadAudioDialog
