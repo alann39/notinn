@@ -253,3 +253,78 @@ $$;
 
 revoke all on function public.web_submit_audio_part(uuid, integer, text, text, bigint, integer) from public, anon, authenticated;
 grant execute on function public.web_submit_audio_part(uuid, integer, text, text, bigint, integer) to service_role, authenticated;
+
+-- 8. RPC: web_finalize_audio_session
+create or replace function public.web_finalize_audio_session(
+  p_session_id uuid
+)
+returns table (
+  job_id uuid,
+  session_id uuid,
+  status text
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+#variable_conflict use_column
+declare
+  v_user_id uuid;
+  v_session_owner uuid;
+  v_session_status public.audio_session_status;
+  v_total_duration integer;
+  v_total_size bigint;
+  v_template_key text;
+  v_job_id uuid;
+begin
+  v_user_id := public.get_linked_user_id();
+  if v_user_id is null then
+    raise exception 'Unauthorized' using errcode = '42501';
+  end if;
+
+  select s.user_id, s.status, s.total_duration_seconds, s.total_size_bytes, s.template_key
+    into v_session_owner, v_session_status, v_total_duration, v_total_size, v_template_key
+    from public.audio_recording_sessions as s
+   where s.id = p_session_id;
+
+  if v_session_owner is null or v_session_owner <> v_user_id then
+    raise exception 'Session not found' using errcode = '42501';
+  end if;
+
+  update public.audio_recording_sessions as s
+     set status = 'processing'::public.audio_session_status,
+         updated_at = now()
+   where s.id = p_session_id;
+
+  -- Enqueue processing job for session
+  insert into public.processing_jobs (
+    user_id,
+    input_type,
+    storage_path,
+    mime_type,
+    size_bytes,
+    duration_seconds,
+    template_key,
+    state
+  ) values (
+    v_user_id,
+    'audio',
+    'session:' || p_session_id::text,
+    'audio/webm',
+    coalesce(v_total_size, 0),
+    coalesce(v_total_duration, 0),
+    v_template_key,
+    'QUEUED'
+  )
+  returning id into v_job_id;
+
+  -- Nudge queue
+  perform pgmq.send('notinn_jobs', jsonb_build_object('job_id', v_job_id));
+
+  return query select v_job_id, p_session_id, 'processing'::text;
+end;
+$$;
+
+revoke all on function public.web_finalize_audio_session(uuid) from public, anon, authenticated;
+grant execute on function public.web_finalize_audio_session(uuid) to service_role, authenticated;
+

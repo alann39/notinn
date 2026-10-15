@@ -212,6 +212,12 @@ export function UploadAudioDialog({
   const [bytesProgress, setBytesProgress] = useState<{ loaded: number; total: number } | null>(null);
   const [statusText, setStatusText] = useState<string>("");
   const [fileError, setFileError] = useState<string | null>(null);
+  const [pendingMultiParts, setPendingMultiParts] = useState<Array<{
+    partNumber: number;
+    blob: Blob;
+    durationSeconds: number;
+    sizeBytes: number;
+  }> | null>(null);
 
   // Tab 2 (Paste Text) States
   const [pastedText, setPastedText] = useState<string>("");
@@ -238,6 +244,7 @@ export function UploadAudioDialog({
     setBytesProgress(null);
     setStatusText("");
     setFileError(null);
+    setPendingMultiParts(null);
 
     setPastedText("");
     setTextTemplateKey("clean_note");
@@ -480,6 +487,110 @@ export function UploadAudioDialog({
       const accessToken = sessionData.session?.access_token;
       if (!accessToken) {
         throw new Error("Invalid session. Please sign in again.");
+      }
+
+      // Handle Pipelined Multi-Part Uploads (>45MB or multi-part sessions)
+      if (pendingMultiParts && pendingMultiParts.length > 1) {
+        setStatusText("Initializing multi-part recording session...");
+        setUploadProgress(10);
+
+        const { data: startData, error: startError } = await supabase.rpc(
+          "web_start_audio_session",
+          { p_template_key: fileTemplateKey },
+        );
+
+        if (startError || !startData) {
+          throw new Error(startError?.message || "Failed to initialize multi-part audio session.");
+        }
+
+        const startRow = Array.isArray(startData) ? startData[0] : startData;
+        const sessionId = startRow?.session_id;
+        if (!sessionId) {
+          throw new Error("Invalid audio session identifier received from server.");
+        }
+
+        const tusEndpoint = `${SUPABASE_URL}/storage/v1/upload/resumable`;
+
+        for (let i = 0; i < pendingMultiParts.length; i++) {
+          const part = pendingMultiParts[i]!;
+          setStatusText(`Uploading part ${part.partNumber} of ${pendingMultiParts.length}...`);
+          const partStoragePath = `${user.id}/${sessionId}_part${part.partNumber}.webm`;
+          const partMime = part.blob.type || "audio/webm";
+
+          await new Promise<void>((resolve, reject) => {
+            const upload = new tus.Upload(part.blob, {
+              endpoint: tusEndpoint,
+              retryDelays: [0, 1000, 3000, 5000],
+              chunkSize: 2 * 1024 * 1024,
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                apikey: SUPABASE_ANON_KEY,
+              },
+              metadata: {
+                bucketName: "audio_uploads",
+                objectName: partStoragePath,
+                contentType: partMime,
+                cacheControl: "3600",
+              },
+              onProgress: (bytesUploaded, bytesTotal) => {
+                const fraction = (i + (bytesTotal > 0 ? bytesUploaded / bytesTotal : 0)) / pendingMultiParts.length;
+                setUploadProgress(Math.min(85, Math.round(10 + fraction * 75)));
+              },
+              onSuccess: () => resolve(),
+              onError: (err) => {
+                const msg =
+                  err instanceof tus.DetailedError
+                    ? (err.originalResponse?.getBody() ?? err.message)
+                    : String(err);
+                reject(new Error(msg));
+              },
+            });
+            upload.start();
+          });
+
+          const { error: submitPartError } = await supabase.rpc("web_submit_audio_part", {
+            p_session_id: sessionId,
+            p_part_number: part.partNumber,
+            p_storage_path: partStoragePath,
+            p_mime_type: partMime,
+            p_size_bytes: part.sizeBytes,
+            p_duration_seconds: part.durationSeconds,
+          });
+
+          if (submitPartError) {
+            throw new Error(submitPartError.message || `Failed to submit metadata for part ${part.partNumber}.`);
+          }
+        }
+
+        setUploadProgress(88);
+        setStatusText("Finalizing audio session & generating structured note...");
+
+        const { data: finalizeData, error: finalizeError } = await supabase.rpc(
+          "web_finalize_audio_session",
+          { p_session_id: sessionId },
+        );
+
+        if (finalizeError) {
+          throw new Error(finalizeError.message || "Failed to finalize audio recording session.");
+        }
+
+        const finalizeRow = Array.isArray(finalizeData) ? finalizeData[0] : finalizeData;
+        const jobId = finalizeRow?.job_id;
+
+        if (jobId) {
+          setStatusText("Processing multi-part note with AI...");
+          setUploadProgress(92);
+          await pollJobCompletion(jobId, "Multi-Part Audio Session");
+        } else {
+          setUploadProgress(100);
+          setStatusText("Complete!");
+          toastManager.add({
+            title: "Multi-Part Session Complete!",
+            description: "All parts uploaded and processed successfully.",
+            type: "success",
+          });
+        }
+        return;
       }
 
       setStatusText(`Uploading ${modalityName.toLowerCase()} to secure storage...`);
@@ -741,6 +852,7 @@ export function UploadAudioDialog({
               <InBrowserRecorder
                 maxDurationSeconds={maxDurationForPlan(profile?.plan_key)}
                 onAudioReady={(file, duration) => {
+                  setPendingMultiParts(null);
                   setSelectedFile(file);
                   setDurationSeconds(duration);
                   setActiveTab("upload");
@@ -749,6 +861,28 @@ export function UploadAudioDialog({
                     description: `${file.name} (${(file.size / 1024).toFixed(1)} KB) is ready. Choose a note format and click Upload & Generate Note.`,
                     type: "success",
                   });
+                }}
+                onMultiPartReady={(parts, totalDuration, templateKey) => {
+                  if (parts.length > 1) {
+                    setPendingMultiParts(parts);
+                    const firstPart = parts[0]!;
+                    const totalBytes = parts.reduce((acc, p) => acc + p.sizeBytes, 0);
+                    const syntheticBundle = new File(
+                      [firstPart.blob],
+                      `multipart-recording-${parts.length}-parts.webm`,
+                      { type: firstPart.blob.type || "audio/webm" },
+                    );
+                    Object.defineProperty(syntheticBundle, "size", { value: totalBytes });
+                    setSelectedFile(syntheticBundle);
+                    setDurationSeconds(totalDuration);
+                    if (templateKey) setFileTemplateKey(templateKey);
+                    setActiveTab("upload");
+                    toastManager.add({
+                      title: "Multi-Part Recording Ready!",
+                      description: `${parts.length} parts recorded (${(totalBytes / (1024 * 1024)).toFixed(1)} MB total). Choose a template and start processing.`,
+                      type: "success",
+                    });
+                  }
                 }}
                 onCancel={() => handleOpenChange(false)}
               />
@@ -838,6 +972,14 @@ export function UploadAudioDialog({
                           <Badge variant="secondary" className="text-[10px] uppercase font-medium py-0 px-1.5 h-4">
                             {modalityBadgeLabel}
                           </Badge>
+                          {pendingMultiParts && pendingMultiParts.length > 1 && (
+                            <>
+                              <span>•</span>
+                              <Badge variant="outline" className="border-primary/40 text-primary text-[10px] py-0 px-1.5 h-4">
+                                {pendingMultiParts.length} Parts Pipelined
+                              </Badge>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
