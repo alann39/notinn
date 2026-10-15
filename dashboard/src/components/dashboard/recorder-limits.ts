@@ -7,6 +7,9 @@
 /** Supabase Free-tier Storage hard ceiling, shared by every plan. */
 export const MAX_AUDIO_BYTES = 45 * 1024 * 1024; // 45 MB
 
+/** Safety ceiling where multi-part auto-cut begins to prevent single-file overflow. */
+export const MULTIPART_AUTO_CUT_BYTES = 44.5 * 1024 * 1024; // 44.5 MB
+
 /** A clip shorter than this is almost certainly an accidental tap. */
 export const MIN_RECORDING_SECONDS = 1;
 
@@ -89,3 +92,9 @@ export function secondsUntilCap(
   if (remaining <= 0) return 0;
   return Math.floor(remaining / rate);
 }
+
+/** Determines if a recording part should be cleanly split into the next part. */
+export function shouldAutoCutPart(bytes: number, cap: number = MULTIPART_AUTO_CUT_BYTES): boolean {
+  return bytes >= cap;
+}
+

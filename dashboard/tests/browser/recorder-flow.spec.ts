@@ -43,6 +43,7 @@ test("recorder moves idle -> recording -> paused -> recording -> review", async 
   // Submitting hands the blob back to the host page
   await page.getByRole("button", { name: "Use Recording" }).click();
   await expect(page.getByText("Callback Frontend Berhasil Menerima Audio")).toBeVisible();
+  await expect(page.getByText("1 part(s) terekam")).toBeVisible();
   await page.screenshot({ path: "C:/Users/arkad/recorder-submitted.png", fullPage: false });
 });
 
