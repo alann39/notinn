@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Header } from "@/components/layout/header";
 import { cn } from "@/lib/utils";
 
 export function UiPreviewPage(): React.ReactElement {
@@ -19,10 +18,16 @@ export function UiPreviewPage(): React.ReactElement {
 
   return (
     <div className="min-h-screen bg-background text-foreground selection:bg-primary/20">
-      <Header
-        title="UI/UX Polish Preview"
-        description="Showcase evaluasi design & perbaikan anti-slop Notinn"
-      />
+      <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border/40 bg-gradient-to-b from-background/95 via-background/80 to-background/40 backdrop-blur-md px-4 sm:px-6 md:px-8 transition-colors">
+        <div className="flex items-center gap-3">
+          <Link to="/" className="font-bold text-lg tracking-tight">Notinn</Link>
+          <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">Preview Mode</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link to="/" className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "text-xs")}>Landing</Link>
+          <Link to="/notes" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "text-xs")}>Notes Dashboard</Link>
+        </div>
+      </header>
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-10">
         {/* Banner Overview */}
