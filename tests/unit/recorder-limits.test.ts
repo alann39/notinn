@@ -9,6 +9,8 @@ import {
   maxDurationForPlan,
   pickRecorderMime,
   secondsUntilCap,
+  shouldAutoCutPart,
+  MULTIPART_AUTO_CUT_BYTES,
 } from "../../dashboard/src/components/dashboard/recorder-limits.ts";
 
 Deno.test("MIN_RECORDING_SECONDS is positive", () => {
@@ -67,4 +69,10 @@ Deno.test("secondsUntilCap reports zero once already over the cap", () => {
 
 Deno.test("secondsUntilCap projects from the observed byte rate", () => {
   assertEquals(secondsUntilCap(1024 * 1024, 1024, MAX_AUDIO_BYTES), 45056);
+});
+
+Deno.test("shouldAutoCutPart signals true only at or above threshold", () => {
+  assertEquals(shouldAutoCutPart(MULTIPART_AUTO_CUT_BYTES - 100), false);
+  assertEquals(shouldAutoCutPart(MULTIPART_AUTO_CUT_BYTES), true);
+  assertEquals(shouldAutoCutPart(MULTIPART_AUTO_CUT_BYTES + 500), true);
 });

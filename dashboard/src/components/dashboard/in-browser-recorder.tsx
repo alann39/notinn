@@ -5,6 +5,7 @@ import {
   AlertCircle,
   ArrowRight,
   Clock,
+  Layers,
   Mic,
   Pause,
   Play,
@@ -18,11 +19,11 @@ import { cn } from "@/lib/utils";
 import { ThinkingOrb } from "@/components/ui/thinking-orbs";
 import { VoiceNote } from "@/components/ui/voice-note";
 import {
-  MAX_AUDIO_BYTES,
+  MULTIPART_AUTO_CUT_BYTES,
   formatBytes,
   formatDuration,
   pickRecorderMime,
-  secondsUntilCap,
+  shouldAutoCutPart,
 } from "./recorder-limits";
 import {
   downsampleToBuckets,
@@ -59,8 +60,22 @@ export interface TemplateItem {
   is_default?: boolean;
 }
 
+export interface RecordedPart {
+  partNumber: number;
+  blob: Blob;
+  url: string;
+  durationSeconds: number;
+  sizeBytes: number;
+  waveformPeaks?: number[] | null;
+}
+
 export interface InBrowserRecorderProps {
   onAudioReady?: (file: File, durationSeconds: number, templateKey: string) => void;
+  onMultiPartReady?: (
+    parts: Array<{ partNumber: number; blob: Blob; durationSeconds: number; sizeBytes: number }>,
+    totalDurationSeconds: number,
+    templateKey: string,
+  ) => void;
   onCancel?: () => void;
   templates?: TemplateItem[];
   defaultTemplateKey?: string;
@@ -72,6 +87,7 @@ type RecorderState = "idle" | "requesting" | "recording" | "paused" | "review";
 
 export function InBrowserRecorder({
   onAudioReady,
+  onMultiPartReady,
   onCancel,
   defaultTemplateKey = "clean_note",
   maxDurationSeconds = 1800, // 30 mins
@@ -80,11 +96,14 @@ export function InBrowserRecorder({
   const [state, setState] = useState<RecorderState>("idle");
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [mimeConfig, setMimeConfig] = useState({ mimeType: "audio/webm", extension: "webm" });
   const [liveBytes, setLiveBytes] = useState(0);
-  const [waveformPeaks, setWaveformPeaks] = useState<number[] | null>(null);
+
+  // Multi-part state
+  const [completedParts, setCompletedParts] = useState<RecordedPart[]>([]);
+  const [currentPartNumber, setCurrentPartNumber] = useState(1);
+  const [activeReviewPartIndex, setActiveReviewPartIndex] = useState(0);
+  const [autoCutNotice, setAutoCutNotice] = useState<string | null>(null);
 
   // Refs for audio infrastructure
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -92,27 +111,163 @@ export function InBrowserRecorder({
   const audioChunksRef = useRef<Blob[]>([]);
   const timerIntervalRef = useRef<number | null>(null);
   const isDiscardingRef = useRef(false);
-
+  const isAutoCuttingRef = useRef(false);
+  const partStartDurationRef = useRef(0);
 
   // Initialize supported mime type on client
   useEffect(() => {
     setMimeConfig(pickRecorderMime((t) => MediaRecorder.isTypeSupported(t)));
   }, []);
 
-  // Cleanup on unmount
+  // Cleanup object URLs on unmount
   useEffect(() => {
     return () => {
       stopTracks();
       if (timerIntervalRef.current != null) window.clearInterval(timerIntervalRef.current);
-      if (audioUrl) URL.revokeObjectURL(audioUrl);
+      completedParts.forEach((part) => {
+        if (part.url) URL.revokeObjectURL(part.url);
+      });
     };
-  }, [audioUrl]);
+  }, [completedParts]);
 
   const stopTracks = () => {
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach((track) => track.stop());
       mediaStreamRef.current = null;
     }
+  };
+
+  // Perform smooth transition to next part
+  const cutAndStartNextPart = useCallback(() => {
+    if (isAutoCuttingRef.current || !mediaRecorderRef.current || !mediaStreamRef.current) return;
+    isAutoCuttingRef.current = true;
+
+    const currentNumber = currentPartNumber;
+    const blobType = mimeConfig.mimeType || "audio/webm";
+    const partBlob = new Blob(audioChunksRef.current, { type: blobType });
+    const partUrl = URL.createObjectURL(partBlob);
+    const partDuration = Math.max(1, duration - partStartDurationRef.current);
+    const partSize = partBlob.size;
+
+    // Register completed part
+    const newPart: RecordedPart = {
+      partNumber: currentNumber,
+      blob: partBlob,
+      url: partUrl,
+      durationSeconds: partDuration,
+      sizeBytes: partSize,
+      waveformPeaks: null,
+    };
+
+    setCompletedParts((prev) => [...prev, newPart]);
+
+    // Decode peaks in background
+    decodeWaveformPeaks(partBlob, 28).then((peaks) => {
+      setCompletedParts((prev) =>
+        prev.map((p) => (p.partNumber === currentNumber ? { ...p, waveformPeaks: peaks } : p)),
+      );
+    });
+
+    // Reset buffer for next part
+    audioChunksRef.current = [];
+    setLiveBytes(0);
+    partStartDurationRef.current = duration;
+    const nextNumber = currentNumber + 1;
+    setCurrentPartNumber(nextNumber);
+
+    setAutoCutNotice(
+      `Part ${currentNumber} reached the 44.5 MB limit. Seamlessly continuing Part ${nextNumber}...`,
+    );
+
+    // Briefly notify then fade
+    setTimeout(() => {
+      setAutoCutNotice(null);
+    }, 6000);
+
+    // Restart recorder on existing stream without interrupting
+    try {
+      if (mediaRecorderRef.current.state !== "inactive") {
+        // Detach old onstop to avoid triggering review
+        mediaRecorderRef.current.onstop = null;
+        mediaRecorderRef.current.stop();
+      }
+
+      const options = mimeConfig.mimeType ? { mimeType: mimeConfig.mimeType } : undefined;
+      const nextRecorder = new MediaRecorder(mediaStreamRef.current, options);
+      mediaRecorderRef.current = nextRecorder;
+
+      nextRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+          setLiveBytes((prev) => prev + event.data.size);
+        }
+      };
+
+      nextRecorder.onstop = () => {
+        handleFinalStop();
+      };
+
+      nextRecorder.start(500);
+      isAutoCuttingRef.current = false;
+    } catch {
+      isAutoCuttingRef.current = false;
+      stopRecording();
+    }
+  }, [currentPartNumber, duration, mimeConfig]);
+
+  // Auto-cut when bytes reach MULTIPART_AUTO_CUT_BYTES
+  useEffect(() => {
+    if (state !== "recording") return;
+    if (shouldAutoCutPart(liveBytes, MULTIPART_AUTO_CUT_BYTES)) {
+      cutAndStartNextPart();
+    }
+  }, [liveBytes, state, cutAndStartNextPart]);
+
+  // Final stop handler when user finishes or duration completes
+  const handleFinalStop = async () => {
+    stopTracks();
+
+    if (isDiscardingRef.current) {
+      isDiscardingRef.current = false;
+      audioChunksRef.current = [];
+      setCompletedParts([]);
+      setCurrentPartNumber(1);
+      setDuration(0);
+      setLiveBytes(0);
+      setState("idle");
+      return;
+    }
+
+    const currentNumber = currentPartNumber;
+    const blobType = mimeConfig.mimeType || "audio/webm";
+    const partBlob = new Blob(audioChunksRef.current, { type: blobType });
+    const partUrl = URL.createObjectURL(partBlob);
+    const partDuration = Math.max(1, duration - partStartDurationRef.current);
+    const partSize = partBlob.size;
+
+    const finalPart: RecordedPart = {
+      partNumber: currentNumber,
+      blob: partBlob,
+      url: partUrl,
+      durationSeconds: partDuration,
+      sizeBytes: partSize,
+      waveformPeaks: null,
+    };
+
+    setCompletedParts((prev) => {
+      const all = [...prev, finalPart];
+      setActiveReviewPartIndex(0);
+      return all;
+    });
+
+    setState("review");
+
+    // Decode peaks for final part
+    decodeWaveformPeaks(partBlob, 28).then((peaks) => {
+      setCompletedParts((prev) =>
+        prev.map((p) => (p.partNumber === currentNumber ? { ...p, waveformPeaks: peaks } : p)),
+      );
+    });
   };
 
   // Stop recording & proceed to review
@@ -126,26 +281,24 @@ export function InBrowserRecorder({
     }
   }, []);
 
-  // Hard stop before the blob outgrows the Supabase 45 MB ceiling.
+  // Hard stop safeguard if overall duration hits limit
   useEffect(() => {
     if (state !== "recording" && state !== "paused") return;
-    if (duration < 5) return; // need a stable byte-rate sample
-    const left = secondsUntilCap(liveBytes, duration, MAX_AUDIO_BYTES);
-    if (left !== null && left <= 10) {
+    if (duration >= maxDurationSeconds) {
       stopRecording();
-      setError(
-        "Recording stopped automatically because it is approaching the 45 MB limit. You can generate the AI note or record again.",
-      );
     }
-  }, [liveBytes, duration, state, stopRecording]);
-
-  // Live waveform visualizer
-
+  }, [duration, maxDurationSeconds, state, stopRecording]);
 
   // Start recording
   const startRecording = async () => {
     isDiscardingRef.current = false;
+    isAutoCuttingRef.current = false;
     setError(null);
+    setAutoCutNotice(null);
+    setCompletedParts([]);
+    setCurrentPartNumber(1);
+    setActiveReviewPartIndex(0);
+    partStartDurationRef.current = 0;
     setState("requesting");
 
     try {
@@ -175,31 +328,8 @@ export function InBrowserRecorder({
         }
       };
 
-      recorder.onstop = async () => {
-        stopTracks();
-
-        if (isDiscardingRef.current) {
-          isDiscardingRef.current = false;
-          audioChunksRef.current = [];
-          setAudioBlob(null);
-          setAudioUrl(null);
-          setDuration(0);
-          setLiveBytes(0);
-          setWaveformPeaks(null);
-          setState("idle");
-          return;
-        }
-
-        const blobType = mimeConfig.mimeType || "audio/webm";
-        const blob = new Blob(audioChunksRef.current, { type: blobType });
-        setAudioBlob(blob);
-
-        const url = URL.createObjectURL(blob);
-        setAudioUrl(url);
-        setState("review");
-
-        const peaks = await decodeWaveformPeaks(blob, 28);
-        setWaveformPeaks(peaks);
+      recorder.onstop = () => {
+        handleFinalStop();
       };
 
       recorder.start(500); // 500ms chunk slices
@@ -217,8 +347,6 @@ export function InBrowserRecorder({
           return next;
         });
       }, 1000);
-
-
     } catch (err) {
       stopTracks();
       setState("idle");
@@ -269,29 +397,67 @@ export function InBrowserRecorder({
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
     }
-    if (audioUrl) URL.revokeObjectURL(audioUrl);
+
+    completedParts.forEach((part) => {
+      if (part.url) URL.revokeObjectURL(part.url);
+    });
 
     audioChunksRef.current = [];
-    setAudioBlob(null);
-    setAudioUrl(null);
+    setCompletedParts([]);
+    setCurrentPartNumber(1);
+    setActiveReviewPartIndex(0);
     setDuration(0);
     setLiveBytes(0);
-    setWaveformPeaks(null);
     setState("idle");
     setError(null);
+    setAutoCutNotice(null);
   };
 
   // Handle final submission
   const handleSubmit = () => {
-    if (!audioBlob) return;
-    const filename = `recording-${Date.now()}.${mimeConfig.extension}`;
-    const file = new File([audioBlob], filename, { type: audioBlob.type });
-    onAudioReady?.(file, duration, defaultTemplateKey);
+    if (completedParts.length === 0) return;
+
+    if (completedParts.length === 1) {
+      const part = completedParts[0]!;
+      const filename = `recording-${Date.now()}.${mimeConfig.extension}`;
+      const file = new File([part.blob], filename, { type: part.blob.type });
+      onAudioReady?.(file, part.durationSeconds, defaultTemplateKey);
+      if (onMultiPartReady) {
+        onMultiPartReady(
+          [{ partNumber: 1, blob: part.blob, durationSeconds: part.durationSeconds, sizeBytes: part.sizeBytes }],
+          duration,
+          defaultTemplateKey,
+        );
+      }
+      return;
+    }
+
+    // Multi-part submission
+    if (onMultiPartReady) {
+      onMultiPartReady(
+        completedParts.map((p) => ({
+          partNumber: p.partNumber,
+          blob: p.blob,
+          durationSeconds: p.durationSeconds,
+          sizeBytes: p.sizeBytes,
+        })),
+        duration,
+        defaultTemplateKey,
+      );
+    } else {
+      // Fallback: send first part or combined
+      const firstPart = completedParts[0]!;
+      const filename = `recording-part1-${Date.now()}.${mimeConfig.extension}`;
+      const file = new File([firstPart.blob], filename, { type: firstPart.blob.type });
+      onAudioReady?.(file, duration, defaultTemplateKey);
+    }
   };
+
+  const activePart = completedParts[activeReviewPartIndex] || completedParts[0];
+  const totalRecordedBytes = completedParts.reduce((acc, p) => acc + p.sizeBytes, 0);
 
   return (
     <div className={cn("w-full rounded-2xl border border-border/50 bg-card/60 backdrop-blur-xs p-6 sm:p-8 shadow-xs", className)}>
-
       {/* Error Banner */}
       {error && (
         <div className="mb-5 flex items-start gap-3 rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 text-xs sm:text-sm text-destructive">
@@ -300,10 +466,17 @@ export function InBrowserRecorder({
         </div>
       )}
 
+      {/* Auto-cut Notification */}
+      {autoCutNotice && (
+        <div className="mb-5 flex items-center gap-2.5 rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs text-foreground animate-in fade-in slide-in-from-top-1">
+          <Layers className="size-4 shrink-0 text-primary" />
+          <span className="font-sans font-medium">{autoCutNotice}</span>
+        </div>
+      )}
+
       {/* STATE 1: IDLE */}
       {state === "idle" && (
         <div className="flex flex-col items-center py-6 text-center">
-          {/* Thinking Orb */}
           <div className="relative mb-5 flex items-center justify-center">
             <div className="relative flex size-20 items-center justify-center rounded-full border border-border/40 bg-muted/30 shadow-xs backdrop-blur-xs transition-transform hover:scale-105">
               <span className="[&_canvas]:!size-16 flex items-center justify-center">
@@ -316,7 +489,7 @@ export function InBrowserRecorder({
             Record Audio Directly
           </h3>
           <p className="mt-1.5 max-w-sm text-xs sm:text-sm text-muted-foreground/80 leading-relaxed font-sans">
-            Capture conversations, meetings, or voice memos directly from your browser with no extra apps needed.
+            Capture conversations, meetings, or voice memos directly from your browser. Long recordings automatically partition seamlessly.
           </p>
 
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
@@ -360,7 +533,6 @@ export function InBrowserRecorder({
       {/* STATE 2: RECORDING OR PAUSED */}
       {(state === "recording" || state === "paused") && (
         <div className="flex flex-col items-center py-6 text-center space-y-5">
-          {/* Hero Thinking Orb */}
           <div className="relative flex flex-col items-center justify-center">
             <div
               className={cn(
@@ -386,7 +558,7 @@ export function InBrowserRecorder({
               </span>
             </div>
 
-            {/* Floating Status & Timer Island */}
+            {/* Status & Timer Badge */}
             <div className="mt-4 flex items-center gap-2.5 rounded-full border border-border/40 bg-background/80 px-4 py-1.5 shadow-2xs backdrop-blur-xs">
               <span
                 className={cn(
@@ -401,14 +573,19 @@ export function InBrowserRecorder({
               <span className="font-mono text-base font-semibold tracking-tight text-foreground tabular-nums">
                 {formatDuration(duration)}
               </span>
+              {currentPartNumber > 1 && (
+                <>
+                  <span className="text-muted-foreground/30">•</span>
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-primary/40 text-primary">
+                    Part {currentPartNumber}
+                  </Badge>
+                </>
+              )}
             </div>
           </div>
 
-
-
           {/* Action Buttons */}
           <div className="flex items-center gap-3 pt-1">
-            {/* Cancel Button */}
             <Button
               type="button"
               variant="outline"
@@ -421,7 +598,6 @@ export function InBrowserRecorder({
               <Trash2 className="size-4" />
             </Button>
 
-            {/* Pause / Resume Button */}
             {state === "recording" ? (
               <Button
                 type="button"
@@ -448,7 +624,6 @@ export function InBrowserRecorder({
               </Button>
             )}
 
-            {/* Stop / Finish Button */}
             <Button
               type="button"
               variant="default"
@@ -464,9 +639,9 @@ export function InBrowserRecorder({
       )}
 
       {/* STATE 3: REVIEW / PLAYBACK */}
-      {state === "review" && audioBlob && (
+      {state === "review" && activePart && (
         <div className="py-1 space-y-4">
-          {/* Header Info: Responsive Stack on Mobile */}
+          {/* Header Info */}
           <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between border-b border-border/40 pb-3">
             <div className="flex items-start sm:items-center gap-2.5">
               <span className="[&_canvas]:!size-6 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
@@ -474,7 +649,11 @@ export function InBrowserRecorder({
               </span>
               <div className="min-w-0">
                 <h4 className="font-sans text-sm sm:text-base font-semibold text-foreground tracking-tight">Recorded Audio</h4>
-                <p className="text-[11px] sm:text-xs text-muted-foreground/80 font-sans leading-tight">Review your recorded voice note before generating the note.</p>
+                <p className="text-[11px] sm:text-xs text-muted-foreground/80 font-sans leading-tight">
+                  {completedParts.length > 1
+                    ? `Review your multi-part recording (${completedParts.length} parts) before generating the note.`
+                    : "Review your recorded voice note before generating the note."}
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-auto pl-9 sm:pl-0">
@@ -483,17 +662,41 @@ export function InBrowserRecorder({
                 <span>{formatDuration(duration)}</span>
               </Badge>
               <Badge variant="secondary" className="font-mono text-[10px] sm:text-[11px] rounded-full px-2 py-0.5 border border-border/40">
-                {formatBytes(audioBlob.size)}
+                {formatBytes(totalRecordedBytes)}
               </Badge>
             </div>
           </div>
 
-          {/* Rare UI Voice Note Player - Fully Fluid Container */}
+          {/* Part Selector Pills for Multi-Part Sessions */}
+          {completedParts.length > 1 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5">
+              <span className="text-[11px] font-medium text-muted-foreground mr-1 shrink-0">Parts:</span>
+              {completedParts.map((part, idx) => (
+                <button
+                  key={part.partNumber}
+                  type="button"
+                  onClick={() => setActiveReviewPartIndex(idx)}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-sans transition-all cursor-pointer border",
+                    idx === activeReviewPartIndex
+                      ? "bg-primary text-primary-foreground border-primary font-medium shadow-xs"
+                      : "bg-muted/50 text-muted-foreground border-border/40 hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  <span>Part {part.partNumber}</span>
+                  <span className="text-[10px] opacity-75 font-mono">({formatBytes(part.sizeBytes)})</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* VoiceNote Player for active part */}
           <div className="flex w-full items-center justify-center py-1 overflow-hidden">
             <VoiceNote
-              src={audioUrl || undefined}
-              duration={duration}
-              waveform={waveformPeaks ?? undefined}
+              key={activePart.url}
+              src={activePart.url || undefined}
+              duration={activePart.durationSeconds}
+              waveform={activePart.waveformPeaks ?? undefined}
               bars={28}
               size="md"
               accent="var(--primary)"
@@ -501,7 +704,7 @@ export function InBrowserRecorder({
             />
           </div>
 
-          {/* Action CTAs: Clean Mobile Dock */}
+          {/* Action CTAs */}
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between pt-2">
             <Button
               type="button"
