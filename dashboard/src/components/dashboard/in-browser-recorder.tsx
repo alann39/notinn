@@ -114,21 +114,80 @@ export function InBrowserRecorder({
   const isAutoCuttingRef = useRef(false);
   const partStartDurationRef = useRef(0);
 
+  // Wake Lock & Background Persistence Refs
+  const wakeLockSentinelRef = useRef<WakeLockSentinel | null>(null);
+  const recordingStartTimeRef = useRef<number>(0);
+  const accumulatedDurationRef = useRef<number>(0);
+
+  // Request Screen Wake Lock to prevent phone screen from sleeping / pausing
+  const requestWakeLock = useCallback(async () => {
+    try {
+      if (typeof navigator !== "undefined" && "wakeLock" in navigator && navigator.wakeLock) {
+        wakeLockSentinelRef.current = await navigator.wakeLock.request("screen");
+      }
+    } catch {
+      // Screen wake lock may be disallowed by battery saver mode - graceful fallback
+    }
+  }, []);
+
+  const releaseWakeLock = useCallback(() => {
+    if (wakeLockSentinelRef.current) {
+      wakeLockSentinelRef.current.release().catch(() => {});
+      wakeLockSentinelRef.current = null;
+    }
+  }, []);
+
+  // Update Media Session so mobile OS treats the recording session as active media
+  const updateMediaSession = useCallback((playbackState: "playing" | "paused" | "none") => {
+    if (typeof navigator !== "undefined" && "mediaSession" in navigator) {
+      try {
+        if (playbackState === "none") {
+          navigator.mediaSession.playbackState = "none";
+        } else {
+          navigator.mediaSession.metadata = new MediaMetadata({
+            title: "Recording Note",
+            artist: "Notinn Audio Recorder",
+            album: "Voice Notes",
+          });
+          navigator.mediaSession.playbackState = playbackState;
+        }
+      } catch {
+        // Ignore environments without full MediaSession support
+      }
+    }
+  }, []);
+
+  // Re-acquire wake lock if user switches back to the tab while recording
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && (state === "recording" || state === "paused")) {
+        requestWakeLock();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [state, requestWakeLock]);
+
   // Initialize supported mime type on client
   useEffect(() => {
     setMimeConfig(pickRecorderMime((t) => MediaRecorder.isTypeSupported(t)));
   }, []);
 
-  // Cleanup object URLs on unmount
+  // Cleanup object URLs and background resources on unmount
   useEffect(() => {
     return () => {
       stopTracks();
+      releaseWakeLock();
+      updateMediaSession("none");
       if (timerIntervalRef.current != null) window.clearInterval(timerIntervalRef.current);
       completedParts.forEach((part) => {
         if (part.url) URL.revokeObjectURL(part.url);
       });
     };
-  }, [completedParts]);
+  }, [completedParts, releaseWakeLock, updateMediaSession]);
 
   const stopTracks = () => {
     if (mediaStreamRef.current) {
@@ -226,12 +285,15 @@ export function InBrowserRecorder({
   // Final stop handler when user finishes or duration completes
   const handleFinalStop = async () => {
     stopTracks();
+    releaseWakeLock();
+    updateMediaSession("none");
 
     if (isDiscardingRef.current) {
       isDiscardingRef.current = false;
       audioChunksRef.current = [];
       setCompletedParts([]);
       setCurrentPartNumber(1);
+      accumulatedDurationRef.current = 0;
       setDuration(0);
       setLiveBytes(0);
       setState("idle");
@@ -337,18 +399,24 @@ export function InBrowserRecorder({
       setDuration(0);
       setLiveBytes(0);
 
-      // Start duration timer
+      // Start duration timer and acquire screen wake lock
+      recordingStartTimeRef.current = Date.now();
+      accumulatedDurationRef.current = 0;
+      requestWakeLock();
+      updateMediaSession("playing");
+
       timerIntervalRef.current = window.setInterval(() => {
-        setDuration((prev) => {
-          const next = prev + 1;
-          if (next >= maxDurationSeconds) {
-            stopRecording();
-          }
-          return next;
-        });
-      }, 1000);
+        const elapsed = Math.floor((Date.now() - recordingStartTimeRef.current) / 1000);
+        const total = accumulatedDurationRef.current + elapsed;
+        setDuration(total);
+        if (total >= maxDurationSeconds) {
+          stopRecording();
+        }
+      }, 500);
     } catch (err) {
       stopTracks();
+      releaseWakeLock();
+      updateMediaSession("none");
       setState("idle");
       const errName = (err as { name?: string }).name;
       if (errName === "NotAllowedError" || errName === "PermissionDeniedError") {
@@ -365,7 +433,13 @@ export function InBrowserRecorder({
   const pauseRecording = () => {
     if (mediaRecorderRef.current && state === "recording") {
       mediaRecorderRef.current.pause();
-      if (timerIntervalRef.current != null) window.clearInterval(timerIntervalRef.current);
+      if (timerIntervalRef.current != null) {
+        window.clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+      accumulatedDurationRef.current += Math.floor((Date.now() - recordingStartTimeRef.current) / 1000);
+      setDuration(accumulatedDurationRef.current);
+      updateMediaSession("paused");
       setState("paused");
     }
   };
@@ -374,13 +448,15 @@ export function InBrowserRecorder({
   const resumeRecording = () => {
     if (mediaRecorderRef.current && state === "paused") {
       mediaRecorderRef.current.resume();
+      recordingStartTimeRef.current = Date.now();
+      requestWakeLock();
+      updateMediaSession("playing");
       timerIntervalRef.current = window.setInterval(() => {
-        setDuration((prev) => {
-          const next = prev + 1;
-          if (next >= maxDurationSeconds) stopRecording();
-          return next;
-        });
-      }, 1000);
+        const elapsed = Math.floor((Date.now() - recordingStartTimeRef.current) / 1000);
+        const total = accumulatedDurationRef.current + elapsed;
+        setDuration(total);
+        if (total >= maxDurationSeconds) stopRecording();
+      }, 500);
       setState("recording");
     }
   };
@@ -389,6 +465,8 @@ export function InBrowserRecorder({
   const cancelRecording = () => {
     isDiscardingRef.current = true;
     stopTracks();
+    releaseWakeLock();
+    updateMediaSession("none");
 
     if (timerIntervalRef.current != null) {
       window.clearInterval(timerIntervalRef.current);
@@ -406,6 +484,7 @@ export function InBrowserRecorder({
     setCompletedParts([]);
     setCurrentPartNumber(1);
     setActiveReviewPartIndex(0);
+    accumulatedDurationRef.current = 0;
     setDuration(0);
     setLiveBytes(0);
     setState("idle");
