@@ -1,9 +1,3 @@
-export {
-  CORNELL_NOTE_CONTRACT,
-  CORNELL_NOTE_VERSION,
-  isCornellNote,
-} from "./cornell.ts";
-export type { CornellNote, CornellNoteEntry } from "./cornell.ts";
 export interface Note {
   id: string;
   title: string;
