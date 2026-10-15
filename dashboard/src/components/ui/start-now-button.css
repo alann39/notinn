@@ -11,7 +11,7 @@
   border: 0;
   background: transparent;
   color: var(--button04-ink);
-  font-family: 'Inter', -apple-system, sans-serif;
+  font-family: inherit;
   font-weight: 600;
   font-size: 0.9375rem;
   line-height: 1.5;

@@ -12,16 +12,27 @@ import { AdminUsersPage } from "./admin/admin-users-page";
 import { AuthCallbackPage } from "./auth-callback-page";
 import { LandingPage } from "./landing-page";
 import { PrivacyPage, TermsPage } from "./legal-page";
+import { CornellEditorTestPage } from "./test-cornell-editor-page";
+import { AudioRecorderTestPage } from "./test-recorder-page";
 import { LoginPage } from "./login-page";
 import { NoteDetailPage } from "./note-detail-page";
 import { NotesPage } from "./notes-page";
 import { SettingsPage } from "./settings-page";
 import { UsagePage } from "./usage-page";
-
+import { UiPreviewPage } from "./ui-preview-page";
 export const router = createBrowserRouter([
   { path: "/", element: <LandingPage /> },
+  { path: "/preview", element: <UiPreviewPage /> },
+  { path: "/preview/ui-showcase", element: <UiPreviewPage /> },
   { path: "/privacy", element: <PrivacyPage /> },
   { path: "/terms", element: <TermsPage /> },
+  // LN-102 dev-only harness: `import.meta.env.DEV` is `false` in production
+  // builds, so the branch (and the test-page import) is dead-code-eliminated
+  // and neither the URL nor the fixture ships to production.
+  ...(import.meta.env.DEV
+    ? [{ path: "/test/cornell-editor", element: <CornellEditorTestPage /> },
+      { path: "/test/audio-recorder", element: <AudioRecorderTestPage /> }]
+    : []),
   {
     element: <DashboardAppLayout />,
     children: [
@@ -55,4 +66,5 @@ export const router = createBrowserRouter([
     ],
   },
 ]);
+
 

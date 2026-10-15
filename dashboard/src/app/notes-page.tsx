@@ -409,10 +409,10 @@ export function NotesPage() {
                   }}
                   aria-label={`Open note: ${note.title}`}
                 >
-                  <Card className="p-5 flex flex-col justify-between h-full space-y-4 hover:border-foreground/30 transition-all">
-                    <CardHeader className="p-0 space-y-2.5">
-                      <div className="flex items-start gap-3">
-                        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground border border-border">
+                  <Card className="p-4 sm:p-4.5 flex flex-col justify-between h-full space-y-3.5 rounded-xl border-border/70 hover:border-foreground/40 bg-card/70 backdrop-blur-xs hover:shadow-xs transition-all">
+                    <CardHeader className="p-0 space-y-2">
+                      <div className="flex items-start gap-2.5">
+                        <div className="flex size-7.5 shrink-0 items-center justify-center rounded-md bg-muted/80 text-foreground/80 border border-border/60">
                           <SourceIcon className="size-4" strokeWidth={2} />
                         </div>
 
@@ -455,10 +455,10 @@ export function NotesPage() {
                             )}
                           </div>
 
-                          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                          <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground/80 font-mono">
                             <span className="capitalize">{note.source_type}</span>
-                            <span>•</span>
-                            <span className="tabular-nums font-mono">
+                            <span>&middot;</span>
+                            <span className="tabular-nums">
                               {formatRelativeTime(note.created_at)}
                             </span>
                           </div>
@@ -469,7 +469,7 @@ export function NotesPage() {
                     {/* Summary Snippet in CardContent */}
                     <CardContent className="p-0">
                       {note.summary ? (
-                        <p className="text-xs sm:text-sm text-muted-foreground line-clamp-3 leading-relaxed">
+                        <p className="text-xs sm:text-[13px] text-muted-foreground line-clamp-2 leading-relaxed font-sans">
                           {note.summary}
                         </p>
                       ) : (
@@ -481,18 +481,17 @@ export function NotesPage() {
 
                     {/* Footer: Tags */}
                     {note.tags && note.tags.length > 0 && (
-                      <CardFooter className="p-0 pt-3 flex flex-wrap gap-1.5 border-t border-border">
+                      <CardFooter className="p-0 pt-2.5 flex flex-wrap gap-1 border-t border-border/50">
                         {note.tags.slice(0, 4).map((tag) => (
-                          <Badge
+                          <span
                             key={tag}
-                            variant="secondary"
-                            className="text-[10px] font-normal"
+                            className="text-[10px] font-normal px-1.5 py-0.5 rounded-md bg-muted/60 text-muted-foreground hover:bg-muted transition-colors"
                           >
                             #{tag}
-                          </Badge>
+                          </span>
                         ))}
                         {note.tags.length > 4 && (
-                          <span className="text-[10px] text-muted-foreground self-center">
+                          <span className="text-[10px] text-muted-foreground/70 self-center">
                             +{note.tags.length - 4} more
                           </span>
                         )}

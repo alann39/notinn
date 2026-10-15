@@ -131,7 +131,7 @@ export function PrismaHero(): React.ReactElement {
               <p className="prisma-hero-description">
                 {LANDING_CONTENT.heroBody}
               </p>
-              <div className="prisma-hero-actions">
+              <div className="prisma-hero-actions flex flex-wrap items-center gap-3">
                 <a
                   className="prisma-hero-cta group/sliding"
                   href={TELEGRAM_URL}
@@ -139,6 +139,12 @@ export function PrismaHero(): React.ReactElement {
                 >
                   <span className="prisma-hero-cta-label">{LANDING_CONTENT.primaryCta}</span>
                   <ArrowRight className="prisma-hero-cta-icon" size={18} aria-hidden="true" />
+                </a>
+                <a
+                  href="/notes"
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full text-sm font-medium border border-border/80 hover:bg-muted/30 transition-all text-foreground/90 backdrop-blur-xs"
+                >
+                  <span>{LANDING_CONTENT.dashboardLink}</span>
                 </a>
               </div>
             </div>
