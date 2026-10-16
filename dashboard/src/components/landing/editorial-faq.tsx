@@ -28,18 +28,15 @@ export function EditorialFaq() {
     <section id="faq" className="py-20 border-t border-[var(--ed-line)] bg-[var(--ed-bg-subtle)]/30">
       <div className="ed-shell">
         <div className="text-center max-w-2xl mx-auto">
-          <p className="text-xs font-mono uppercase tracking-widest text-[var(--ed-text-3)] font-semibold">
-            Common Inquiries
-          </p>
-          <h2 className="text-3xl sm:text-5xl font-semibold tracking-tight text-[var(--ed-ink)] mt-2">
-            Questions? <em className="ed-title-em">Honest answers.</em>
+          <h2 className="text-3xl sm:text-5xl font-semibold tracking-tight text-[var(--ed-ink)]">
+            Questions? Honest answers.
           </h2>
           <p className="text-base text-[var(--ed-text-2)] mt-3">
             Everything you need to know about how Notinn handles your voice, text, and knowledge.
           </p>
         </div>
 
-        <div className="ed-faq-list">
+        <div className="ed-faq-list mt-12">
           {faqs.map((f, i) => (
             <details key={i} className="ed-faq-item group">
               <summary>

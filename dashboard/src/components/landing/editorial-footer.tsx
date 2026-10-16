@@ -7,7 +7,7 @@ export function EditorialFooter() {
         {/* Final CTA Strip */}
         <div className="text-center max-w-3xl mx-auto py-12">
           <h2 className="text-3xl sm:text-6xl font-semibold tracking-tight text-[var(--ed-ink)]">
-            Turn your voice notes into <em className="ed-title-em">lasting clarity.</em>
+            Turn your voice notes into lasting clarity.
           </h2>
           <p className="text-base text-[var(--ed-text-2)] mt-4 max-w-xl mx-auto">
             Zero apps to install. Ten seconds to connect and start speaking your messy ideas.

@@ -177,10 +177,10 @@
 
 .ed-hero__title em,
 .ed-title-em {
-  font-family: var(--ed-font-serif);
-  font-style: italic;
-  font-weight: 400;
-  letter-spacing: -0.02em;
+  font-family: inherit;
+  font-style: normal;
+  font-weight: 600;
+  color: var(--ed-ink);
 }
 
 .ed-hero__sub {

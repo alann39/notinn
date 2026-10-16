@@ -5,21 +5,18 @@ export function EditorialBento() {
     <section id="features" className="py-20 border-t border-[var(--ed-line)]">
       <div className="ed-shell">
         <div className="text-center max-w-2xl mx-auto">
-          <p className="text-xs font-mono uppercase tracking-widest text-[var(--ed-text-3)] font-semibold">
-            Capabilities &amp; Craft
-          </p>
-          <h2 className="text-3xl sm:text-5xl font-semibold tracking-tight text-[var(--ed-ink)] mt-2">
-            Everything you need to <em className="ed-title-em">stop losing ideas.</em>
+          <h2 className="text-3xl sm:text-5xl font-semibold tracking-tight text-[var(--ed-ink)]">
+            Everything you need to stop losing ideas.
           </h2>
           <p className="text-base text-[var(--ed-text-2)] mt-3">
             A zero-friction cognitive inbox designed for messy thinkers who need structured output.
           </p>
         </div>
 
-        <div className="ed-bento">
+        <div className="ed-bento mt-12">
           {/* Card 1: Telegram Habit (Wide) */}
           <div className="ed-bcard ed-bcard--wide">
-            <span className="ed-bcard__tag">01 / Zero-Friction Capture</span>
+            <span className="ed-bcard__tag">Mobile &amp; Forwarding</span>
             <h3 className="ed-bcard__title">The Telegram Habit.</h3>
             <p className="ed-bcard__desc">
               You already keep Telegram open all day. Record a voice memo while walking, forward a messy debate from a group, or snap a screenshot. No slow app to open, no login prompt, no friction.
@@ -32,10 +29,10 @@ export function EditorialBento() {
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-[var(--ed-ink)]">Voice memo to @notinnbot</p>
-                  <p className="text-[11px] text-[var(--ed-text-3)] font-mono">03:42 · Audio 18.2 MB</p>
+                  <p className="text-xs text-[var(--ed-text-3)] font-mono mt-0.5">03:42 · Audio 18.2 MB</p>
                 </div>
               </div>
-              <span className="text-xs font-mono px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+              <span className="text-xs font-mono px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 font-medium flex items-center gap-1 border border-emerald-500/20">
                 <Check className="size-3" /> Note Ready (2.8s)
               </span>
             </div>
@@ -43,41 +40,41 @@ export function EditorialBento() {
 
           {/* Card 2: 45MB Audio Lab (Narrow) */}
           <div className="ed-bcard ed-bcard--narrow">
-            <span className="ed-bcard__tag">02 / Audio Lab</span>
+            <span className="ed-bcard__tag">Audio Engine</span>
             <h3 className="ed-bcard__title">45 MB Audio Ceiling.</h3>
             <p className="ed-bcard__desc">
               Screen Wake Lock keeps your phone browser awake during hour-long lectures. Pipelined multipart bypasses cloud limits silently.
             </p>
             <div className="mt-auto pt-6">
-              <div className="p-3 rounded-lg border border-[var(--ed-line)] bg-[var(--ed-surface-2)] flex items-center justify-between text-xs font-mono text-[var(--ed-text-2)]">
+              <div className="p-3.5 rounded-lg border border-[var(--ed-line)] bg-[var(--ed-surface-2)] flex items-center justify-between text-xs font-mono text-[var(--ed-text-2)]">
                 <span className="flex items-center gap-1.5">
-                  <Mic className="size-3.5 text-pink-500" /> Web Recording
+                  <Mic className="size-3.5 text-blue-600 dark:text-blue-400" /> Web Recording
                 </span>
-                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">45 MB max</span>
+                <span className="text-emerald-800 dark:text-emerald-300 font-semibold">45 MB max</span>
               </div>
             </div>
           </div>
 
           {/* Card 3: Cornell vs Transcript (Narrow) */}
           <div className="ed-bcard ed-bcard--narrow">
-            <span className="ed-bcard__tag">03 / Synthesis</span>
+            <span className="ed-bcard__tag">Cornell Method</span>
             <h3 className="ed-bcard__title">A transcript is not a note.</h3>
             <p className="ed-bcard__desc">
               Raw speech-to-text is an unreadable wall of words. Notinn extracts cues, decisions, questions, and action items in clean Cornell grids.
             </p>
             <div className="mt-auto pt-6">
-              <div className="p-3 rounded-lg border border-[var(--ed-line)] bg-[var(--ed-surface-2)] flex items-center justify-between text-xs font-mono text-[var(--ed-text-2)]">
+              <div className="p-3.5 rounded-lg border border-[var(--ed-line)] bg-[var(--ed-surface-2)] flex items-center justify-between text-xs font-mono text-[var(--ed-text-2)]">
                 <span className="flex items-center gap-1.5">
-                  <BookOpen className="size-3.5 text-amber-500" /> Structure
+                  <BookOpen className="size-3.5 text-amber-600 dark:text-amber-400" /> Structure
                 </span>
-                <span className="text-amber-600 dark:text-amber-400 font-semibold">Cues + Summary</span>
+                <span className="text-amber-800 dark:text-amber-300 font-semibold">Cues + Summary</span>
               </div>
             </div>
           </div>
 
           {/* Card 4: Density & Zen Mode (Wide) */}
           <div className="ed-bcard ed-bcard--wide">
-            <span className="ed-bcard__tag">04 / Reader Workspace</span>
+            <span className="ed-bcard__tag">Reading Environment</span>
             <h3 className="ed-bcard__title">Master-Detail Density &amp; Zen Mode.</h3>
             <p className="ed-bcard__desc">
               Built for high information throughput: dense p-3.5 lists, keyboard navigation, and a one-click Zen Mode that strips away all chrome for distraction-free reading.
@@ -90,7 +87,7 @@ export function EditorialBento() {
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-[var(--ed-ink)]">Zen Reader Mode</p>
-                  <p className="text-[11px] text-[var(--ed-text-3)] font-mono">Max-width 3xl · Zero Distractions</p>
+                  <p className="text-xs text-[var(--ed-text-3)] font-mono mt-0.5">Max-width 3xl · Zero Distractions</p>
                 </div>
               </div>
               <a

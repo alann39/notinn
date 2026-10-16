@@ -18,7 +18,7 @@ export function EditorialHero() {
       <div className="ed-shell">
         {/* Release Pill Badge */}
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-[var(--ed-line)] bg-[var(--ed-surface)] shadow-2xs text-xs font-mono text-[var(--ed-text-2)] mb-6">
-          <span className="size-2 rounded-full bg-blue-600 animate-pulse" />
+          <span className="size-2 rounded-full bg-blue-600 inline-block" />
           <span>Notinn // iArchii Labs</span>
           <span className="text-[var(--ed-text-3)]">·</span>
           <span className="text-[var(--ed-ink)] font-medium">AI Workflow v2.4</span>
@@ -27,7 +27,7 @@ export function EditorialHero() {
         {/* Main Headline */}
         <h1 className="ed-hero__title">
           Speak messy thoughts. <br />
-          Read <em className="ed-title-em">academic clarity.</em>
+          Read academic clarity.
         </h1>
 
         {/* Subhead */}
@@ -73,14 +73,14 @@ export function EditorialHero() {
         <div className="ed-stage">
           {/* Floating Pill Badges */}
           <div className="hidden lg:flex ed-tile absolute -top-4 left-6 z-20">
-            <span className="size-2 rounded-full bg-blue-500 animate-ping" />
+            <span className="size-2 rounded-full bg-blue-600 inline-block" />
             <span className="font-mono text-xs font-medium text-[var(--ed-ink)]">
               Voice Note · 01:42:18
             </span>
           </div>
 
           <div className="hidden lg:flex ed-tile absolute -bottom-4 right-8 z-20">
-            <CheckCircle2 className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+            <CheckCircle2 className="size-3.5 text-emerald-700 dark:text-emerald-400" />
             <span className="font-mono text-xs font-medium text-[var(--ed-ink)]">
               Cornell Synthesis · Ready
             </span>
@@ -99,12 +99,12 @@ export function EditorialHero() {
                 </span>
               </div>
               <div className="flex items-center gap-2 text-xs font-mono text-[var(--ed-text-3)]">
-                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="size-1.5 rounded-full bg-emerald-600 inline-block" />
                 <span>ACTIVE STAGE</span>
               </div>
             </div>
 
-            {/* Central Stage Mockup Layout (Direct from the graphic reference) */}
+            {/* Central Stage Mockup Layout */}
             <div className="relative max-w-3xl mx-auto flex flex-col gap-6">
               
               {/* TOP CARD: Voice Note Masuk (Forwarded) */}
@@ -113,12 +113,12 @@ export function EditorialHero() {
                 <div className="flex items-center justify-between gap-3 pb-4 border-b border-[var(--ed-line)]">
                   <div className="flex items-center gap-2.5">
                     <div className="size-2.5 rounded-full bg-blue-600" />
-                    <h3 className="text-sm font-semibold tracking-tight text-[var(--ed-ink)]">
+                    <h2 className="text-sm font-semibold tracking-tight text-[var(--ed-ink)]">
                       Voice Note Masuk (Forwarded)
-                    </h3>
+                    </h2>
                   </div>
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-medium bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
-                    <span className="size-1.5 rounded-full bg-rose-500" />
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-rose-500/10 text-rose-800 dark:text-rose-300 border border-rose-500/20">
+                    <span className="size-1.5 rounded-full bg-rose-600 inline-block" />
                     PROCESSED
                   </span>
                 </div>
@@ -165,7 +165,7 @@ export function EditorialHero() {
                 </div>
 
                 {/* Metadata Chips */}
-                <div className="mt-3 flex items-center gap-3 text-[11px] font-mono text-[var(--ed-text-3)] flex-wrap">
+                <div className="mt-3 flex items-center gap-2.5 text-xs font-mono text-[var(--ed-text-3)] flex-wrap">
                   <span className="bg-[var(--ed-surface-2)] px-2 py-0.5 rounded border border-[var(--ed-line)]">
                     CODEC: OPUS // 48kHz
                   </span>
@@ -198,13 +198,13 @@ export function EditorialHero() {
                 {/* Card Header */}
                 <div className="flex items-center justify-between gap-3 pb-4 border-b border-[var(--ed-line)]">
                   <div className="flex items-center gap-2.5">
-                    <Sparkles className="size-4 text-emerald-600 dark:text-emerald-400" />
-                    <h3 className="text-sm font-semibold tracking-tight text-[var(--ed-ink)]">
+                    <Sparkles className="size-4 text-emerald-700 dark:text-emerald-400" />
+                    <h2 className="text-sm font-semibold tracking-tight text-[var(--ed-ink)]">
                       Notinn Auto-Synthesis
-                    </h3>
+                    </h2>
                   </div>
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                    <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border border-emerald-500/20">
+                    <span className="size-1.5 rounded-full bg-emerald-600 inline-block" />
                     SAVED TO INBOX // READY
                   </span>
                 </div>
@@ -228,7 +228,7 @@ export function EditorialHero() {
                     <div className="flex items-center gap-3 min-w-0">
                       <div className={`size-5 rounded flex items-center justify-center border transition-colors ${
                         checkedTasks[0]
-                          ? "bg-emerald-600 border-emerald-600 text-white"
+                          ? "bg-emerald-700 border-emerald-700 text-white"
                           : "border-[var(--ed-line)] bg-[var(--ed-surface)]"
                       }`}>
                         {checkedTasks[0] && <Check className="size-3.5 stroke-[3]" />}
@@ -241,10 +241,10 @@ export function EditorialHero() {
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-mono font-semibold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-rose-500/10 text-rose-800 dark:text-rose-300 border border-rose-500/20">
                         BESOK 10:00
                       </span>
-                      <span className="hidden sm:inline px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-mono font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                      <span className="hidden sm:inline px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-blue-500/10 text-blue-800 dark:text-blue-300 border border-blue-500/20">
                         HIGH PRIO
                       </span>
                     </div>
@@ -258,7 +258,7 @@ export function EditorialHero() {
                     <div className="flex items-center gap-3 min-w-0">
                       <div className={`size-5 rounded flex items-center justify-center border transition-colors ${
                         checkedTasks[1]
-                          ? "bg-emerald-600 border-emerald-600 text-white"
+                          ? "bg-emerald-700 border-emerald-700 text-white"
                           : "border-[var(--ed-line)] bg-[var(--ed-surface)]"
                       }`}>
                         {checkedTasks[1] && <Check className="size-3.5 stroke-[3]" />}
@@ -271,7 +271,7 @@ export function EditorialHero() {
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-mono font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/20">
                         COST CUT -20%
                       </span>
                     </div>
@@ -285,7 +285,7 @@ export function EditorialHero() {
                     <div className="flex items-center gap-3 min-w-0">
                       <div className={`size-5 rounded flex items-center justify-center border transition-colors ${
                         checkedTasks[2]
-                          ? "bg-emerald-600 border-emerald-600 text-white"
+                          ? "bg-emerald-700 border-emerald-700 text-white"
                           : "border-[var(--ed-line)] bg-[var(--ed-surface)]"
                       }`}>
                         {checkedTasks[2] && <Check className="size-3.5 stroke-[3]" />}
@@ -298,7 +298,7 @@ export function EditorialHero() {
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-mono font-semibold bg-slate-500/10 text-slate-600 dark:text-slate-400 border border-slate-500/20">
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-slate-500/10 text-slate-800 dark:text-slate-300 border border-slate-500/20">
                         EST 30M
                       </span>
                     </div>
@@ -306,7 +306,7 @@ export function EditorialHero() {
                 </div>
 
                 {/* Synthesis Footer Metadata */}
-                <div className="mt-5 pt-4 border-t border-[var(--ed-line)] flex items-center justify-between text-[11px] font-mono text-[var(--ed-text-3)]">
+                <div className="mt-5 pt-4 border-t border-[var(--ed-line)] flex items-center justify-between text-xs font-mono text-[var(--ed-text-3)]">
                   <span>FORMAT: CORNELL SYNTHESIS</span>
                   <span>ACCURACY: 98.4%</span>
                   <a href="/notes" className="text-blue-600 hover:underline flex items-center gap-0.5 font-medium">
