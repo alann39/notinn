@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { LandingFloatingMenu } from "@/components/landing/landing-floating-menu";
 import { LandingMarquee } from "@/components/landing/landing-marquee";
 import { PrismaHero } from "@/components/ui/prisma-hero";
+import { TransformationProof } from "@/components/landing/transformation-proof";
 import { DashboardShowoff } from "@/components/ui/hero-05";
 import { FeaturesSection } from "@/components/ui/feature";
 import { HowItWorks } from "@/components/ui/how-it-works";
@@ -39,6 +40,7 @@ export function LandingPage(): React.ReactElement {
       <main id="main-content" tabIndex={-1}>
         <PrismaHero />
         <LandingMarquee />
+        <TransformationProof />
         <DashboardShowoff />
         <FeaturesSection />
         <HowItWorks />
