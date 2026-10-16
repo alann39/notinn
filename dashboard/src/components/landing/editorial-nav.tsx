@@ -1,40 +1,36 @@
-import { ArrowUpRight } from "lucide-react";
+import { Bot, ArrowRight } from "lucide-react";
 
 export function EditorialNav() {
   return (
-    <nav className="ed-nav">
+    <header className="ed-nav">
       <div className="ed-shell ed-nav__in">
-        <a href="/" className="ed-brand">
+        <a href="/" className="ed-brand" aria-label="Notinn Home">
           <span>Notinn</span>
-          <span className="ed-brand__bracket">&#123; &#125;</span>
+          <span className="ed-brand__bracket">[ ]</span>
         </a>
 
-        <div className="ed-nav__links hidden md:flex">
-          <a href="#how-it-works" className="ed-nav__link">How it works</a>
-          <a href="#features" className="ed-nav__link">Features</a>
-          <a href="#audio-lab" className="ed-nav__link">Audio Lab</a>
+        <nav className="ed-nav__links hidden md:flex" aria-label="Main Navigation">
+          <a href="#showcase" className="ed-nav__link">Showcase</a>
+          <a href="#workflow" className="ed-nav__link">Workflow</a>
+          <a href="#comparison" className="ed-nav__link">Where it sits</a>
+          <a href="#specs" className="ed-nav__link">Specs</a>
           <a href="#pricing" className="ed-nav__link">Pricing</a>
           <a href="#faq" className="ed-nav__link">FAQ</a>
-        </div>
+        </nav>
 
-        <div className="flex items-center gap-3">
-          <a
-            href="/notes"
-            className="text-[13.5px] font-medium text-[var(--ed-text-2)] hover:text-[var(--ed-ink)] transition-colors hidden sm:inline-flex items-center gap-1"
-          >
-            Dashboard
-            <ArrowUpRight className="size-3.5 opacity-60" />
-          </a>
+        <div className="ed-nav__actions flex items-center gap-3">
           <a
             href="https://t.me/notinnbot"
             target="_blank"
             rel="noopener noreferrer"
-            className="ed-btn ed-btn--sm ed-btn--primary"
+            className="ed-btn ed-btn--primary ed-btn--sm"
           >
-            Open Telegram
+            <Bot className="size-3.5" />
+            <span>Open Telegram</span>
+            <ArrowRight className="size-3 opacity-60 hidden sm:inline" />
           </a>
         </div>
       </div>
-    </nav>
+    </header>
   );
 }

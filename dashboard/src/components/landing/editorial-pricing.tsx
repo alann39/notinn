@@ -4,36 +4,37 @@ export function EditorialPricing() {
   return (
     <section id="pricing" className="py-20 border-t border-[var(--ed-line)]">
       <div className="ed-shell">
-        <div className="text-center max-w-2xl mx-auto">
-          <h2 className="text-3xl sm:text-5xl font-semibold tracking-tight text-[var(--ed-ink)]">
-            Capturing is free. Power features for deep thinkers.
+        <div className="text-center max-w-2xl mx-auto mb-14">
+          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-[var(--ed-ink)]">
+            Capturing is free. <br />
+            <em>Only power features are paid.</em>
           </h2>
           <p className="text-base text-[var(--ed-text-2)] mt-3">
-            Start right away on Telegram without entering a credit card or creating a password.
+            Capture every thought immediately on Telegram without giving a credit card or creating a password.
           </p>
         </div>
 
-        <div className="ed-pricing-grid mt-12">
+        <div className="ed-pricing-grid">
           {/* Free Tier */}
           <div className="ed-plan">
             <span className="text-xs font-mono uppercase tracking-wider text-[var(--ed-text-3)] font-semibold">
               Free Forever
             </span>
             <div className="ed-plan__price">
-              $0 <span className="ed-plan__period">no credit card</span>
+              $0 <span className="ed-plan__period">no credit card, ever</span>
             </div>
             <p className="text-sm text-[var(--ed-text-2)] mt-1">
-              Everything you need for everyday mobile note capture on Telegram.
+              Everything you need for spontaneous voice notes and fast Telegram capture.
             </p>
 
             <ul className="mt-8 space-y-3 text-sm text-[var(--ed-ink)] flex-1">
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
-                <span>Unlimited daily Telegram voice &amp; text notes</span>
+                <span>Unlimited voice note captures via Telegram</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
-                <span>Full Cornell synthesis (Cues + Notes + Actions)</span>
+                <span>Full Cornell synthesis (Cues + Notes + Task matrix)</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
@@ -41,7 +42,7 @@ export function EditorialPricing() {
               </li>
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
-                <span>Full-text search across your entire archive</span>
+                <span>Audio deleted immediately after processing</span>
               </li>
             </ul>
 
@@ -68,16 +69,16 @@ export function EditorialPricing() {
               </span>
             </div>
             <div className="ed-plan__price">
-              $9 <span className="ed-plan__period">per month</span>
+              $4.99 <span className="ed-plan__period">per month</span>
             </div>
             <p className="text-sm text-[var(--ed-text-2)] mt-1">
-              For power users recording multi-hour lectures, board meetings, and client research.
+              For knowledge workers recording multi-hour lectures, board meetings, and extensive research.
             </p>
 
             <ul className="mt-8 space-y-3 text-sm text-[var(--ed-ink)] flex-1">
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
-                <span><strong>45 MB in-browser audio recording</strong> (1–2 hour sessions)</span>
+                <span><strong>45 MB in-browser audio recording</strong> (up to 2 hours)</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
@@ -85,11 +86,11 @@ export function EditorialPricing() {
               </li>
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
-                <span>Priority Gemini 2.5 synthesis worker queues</span>
+                <span>Full audio archive storage &amp; timestamped playback</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
-                <span>Direct Markdown &amp; structured JSON export</span>
+                <span>Direct Markdown, PDF &amp; Notion sync</span>
               </li>
             </ul>
 

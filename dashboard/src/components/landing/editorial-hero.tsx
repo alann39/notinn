@@ -19,21 +19,21 @@ export function EditorialHero() {
         {/* Release Pill Badge */}
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-[var(--ed-line)] bg-[var(--ed-surface)] shadow-2xs text-xs font-mono text-[var(--ed-text-2)] mb-6">
           <span className="size-2 rounded-full bg-blue-600 inline-block" />
-          <span>Notinn // iArchii Labs</span>
+          <span>Notinn // Telegram &amp; Web</span>
           <span className="text-[var(--ed-text-3)]">·</span>
-          <span className="text-[var(--ed-ink)] font-medium">AI Workflow v2.4</span>
+          <span className="text-[var(--ed-ink)] font-medium">Zero App Install</span>
         </div>
 
-        {/* Main Headline */}
+        {/* Main Headline - Free Mac editorial rhythm */}
         <h1 className="ed-hero__title">
-          Speak messy thoughts. <br />
-          Read academic clarity.
+          Dump messy thoughts like you are <br />
+          <em>talking to a friend.</em>
         </h1>
 
         {/* Subhead */}
         <p className="ed-hero__sub">
           A zero-friction cognitive inbox on Telegram and Web. Forward any audio, chaotic voice note,
-          or text memo; Notinn extracts the essence and builds structured Cornell notes in seconds.
+          or text memo; Notinn extracts the essence and builds structured Cornell notes in 15 seconds.
         </p>
 
         {/* Action CTAs */}
@@ -56,13 +56,13 @@ export function EditorialHero() {
           </a>
         </div>
 
-        {/* Spec Bar */}
+        {/* Spec Bar - Free Mac style */}
         <div className="ed-hero__meta font-mono text-xs">
           <span>Free to capture</span>
           <span className="ed-hero__meta-dot">•</span>
           <span>45 MB audio ceiling</span>
           <span className="ed-hero__meta-dot">•</span>
-          <span>Screen Wake Lock</span>
+          <span>Audio deleted after scan</span>
           <span className="ed-hero__meta-dot">•</span>
           <span>Cornell format</span>
           <span className="ed-hero__meta-dot">•</span>
@@ -100,7 +100,7 @@ export function EditorialHero() {
               </div>
               <div className="flex items-center gap-2 text-xs font-mono text-[var(--ed-text-3)]">
                 <span className="size-1.5 rounded-full bg-emerald-600 inline-block" />
-                <span>ACTIVE STAGE</span>
+                <span>TRANSFORMATION STAGE</span>
               </div>
             </div>
 

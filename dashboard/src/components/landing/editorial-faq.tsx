@@ -3,40 +3,44 @@ import { ChevronDown } from "lucide-react";
 export function EditorialFaq() {
   const faqs = [
     {
-      q: "Why Telegram instead of a native iOS or Android app?",
-      a: "Because you already have Telegram open all day. Building a separate native app adds 5 seconds of friction: find icon, wait for splash screen, tap new note, wait for sync. With Telegram, you just hold the voice button in your chat with @notinnbot while walking or driving, and you're done. Zero capture friction wins every time.",
+      q: "What is free, and what costs money?",
+      a: "Everything needed to capture, synthesize, and read notes is free forever: recording via Telegram, forwarding audio, generating Cornell summaries, task matrices, and reading on the web dashboard. Pro ($4.99/mo) unlocks persistent audio archiving for long lectures, 45 MB browser uploads with Screen Wake Lock, and deep semantic search across your entire library.",
     },
     {
-      q: "What happens if my phone screen locks during a web recording?",
-      a: "We implemented the Screen Wake Lock API paired with a silent background audio loop. Your browser (Safari, Chrome, Arc) stays awake throughout the entire lecture or meeting, preventing the mobile OS from sleeping or discarding your audio session.",
+      q: "Why Telegram instead of a separate mobile app?",
+      a: "Because you already have Telegram open on your phone and laptop. A separate app adds 5 seconds of friction: find icon, wait for cold start, tap new note, wait for sync. With Telegram, you simply hold the voice button in @notinnbot or forward any audio from another chat. Zero capture friction wins every time.",
     },
     {
-      q: "Why Cornell notes instead of a raw speech transcript?",
-      a: "Speech-to-text models produce 5,000 words of rambling, filler words, and disjointed sentences that nobody ever re-reads. The Cornell Note Taking System deconstructs the audio into three high-signal layers: Cues & Themes on the left, Synthesized Notes in the center, and Checkable Action Items at the bottom.",
+      q: "What happens to my audio recording after processing?",
+      a: "On the Free tier, your audio is held only in ephemeral server memory during transcription and synthesis, then deleted immediately. We do not store raw voice recordings and never train AI models on your speech.",
     },
     {
-      q: "How does the 45 MB audio upload work on serverless?",
-      a: "Most platforms like Vercel have a strict 4.5 MB request body limit. Notinn uses a custom client-side chunking engine: large audio files are sliced into small chunks in the browser and streamed directly to Supabase storage signed URLs, completely bypassing serverless limits.",
+      q: "How is Notinn different from Otter or Fireflies?",
+      a: "Otter and Fireflies send a visible bot to join your Zoom or Google Meet calls, which can feel intrusive. Notinn is built for individual thought and quick forwarding. You capture notes privately without a bot ever entering the room.",
     },
     {
-      q: "Is my audio and data private?",
-      a: "Yes. Your audio files and synthesized notes are tied strictly to your account. We do not sell telemetry, we do not train LLMs on your recordings, and your data is stored encrypted in Supabase with strict Row Level Security (RLS).",
+      q: "What happens if my phone locks during a web recording?",
+      a: "We implemented the Screen Wake Lock API combined with silent audio loop keepalives. Your browser (Safari, Chrome, Arc) stays awake throughout the entire lecture or meeting, preventing the operating system from suspending your session.",
+    },
+    {
+      q: "Can I export my notes to Notion or Obsidian?",
+      a: "Yes. Every note in Notinn generates clean standard Markdown with headings, bullet points, and checkable task lists. One click copies the markdown directly into Obsidian, Logseq, or Notion.",
     },
   ];
 
   return (
     <section id="faq" className="py-20 border-t border-[var(--ed-line)] bg-[var(--ed-bg-subtle)]/30">
       <div className="ed-shell">
-        <div className="text-center max-w-2xl mx-auto">
-          <h2 className="text-3xl sm:text-5xl font-semibold tracking-tight text-[var(--ed-ink)]">
-            Questions? Honest answers.
+        <div className="text-center max-w-2xl mx-auto mb-14">
+          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-[var(--ed-ink)]">
+            Questions?
           </h2>
           <p className="text-base text-[var(--ed-text-2)] mt-3">
-            Everything you need to know about how Notinn handles your voice, text, and knowledge.
+            Straightforward answers about how Notinn handles your voice, privacy, and notes.
           </p>
         </div>
 
-        <div className="ed-faq-list mt-12">
+        <div className="ed-faq-list">
           {faqs.map((f, i) => (
             <details key={i} className="ed-faq-item group">
               <summary>

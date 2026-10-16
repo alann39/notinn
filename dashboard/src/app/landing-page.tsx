@@ -1,8 +1,10 @@
 import { useEffect } from "react";
 import { EditorialNav } from "@/components/landing/editorial-nav";
 import { EditorialHero } from "@/components/landing/editorial-hero";
-import { EditorialBento } from "@/components/landing/editorial-bento";
+import { EditorialShowcase } from "@/components/landing/editorial-showcase";
 import { EditorialSteps } from "@/components/landing/editorial-steps";
+import { EditorialComparison } from "@/components/landing/editorial-comparison";
+import { EditorialSpecs } from "@/components/landing/editorial-specs";
 import { EditorialPricing } from "@/components/landing/editorial-pricing";
 import { EditorialFaq } from "@/components/landing/editorial-faq";
 import { EditorialFooter } from "@/components/landing/editorial-footer";
@@ -25,8 +27,10 @@ export function LandingPage(): React.ReactElement {
       <EditorialNav />
       <main id="main-content" tabIndex={-1}>
         <EditorialHero />
-        <EditorialBento />
+        <EditorialShowcase />
         <EditorialSteps />
+        <EditorialComparison />
+        <EditorialSpecs />
         <EditorialPricing />
         <EditorialFaq />
       </main>
