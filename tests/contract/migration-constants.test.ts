@@ -144,6 +144,7 @@ const FILE_SUFFIXES = [
   "web_edit_versions_filters.sql",
   "web_summary_overlay.sql",
   "web_key_points_overlay.sql",
+  "web_action_items_overlay.sql",
 ];
 
 /** Read the one migration whose filename ends with `suffix`. */
@@ -855,6 +856,7 @@ const WEB_RPC_FUNCTIONS = new Set([
   "web_restore_note_output",
   "web_set_note_summary",
   "web_set_note_key_points",
+  "web_set_note_action_items",
   "web_start_audio_session",
   "web_submit_audio_part",
   "web_finalize_audio_session",
