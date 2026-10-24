@@ -1,17 +1,17 @@
 import { PDFDocument, type PDFFont, type PDFPage, rgb, StandardFonts } from "pdf-lib";
 import { parseStructuredText } from "./structured-text";
+import { loadVariantFonts, renderBrutal, renderClean } from "./pdf-export-variants";
 import type { StructuredNote } from "@/types/notes";
 
 const PDF_WIDTH = 595.28;
 const PDF_HEIGHT = 841.89;
-const PDF_MARGIN = 72;
 const PDF_FOOTER_Y = 28;
 const PDF_CONTENT_BOTTOM = 48;
 const TEXT_MEASURE = 72;
 
-interface PdfItem {
+export interface PdfItem {
   readonly text: string;
-  readonly style: "title" | "heading" | "body" | "bullet" | "detail" | "meta" | "space";
+  readonly style: "title" | "heading" | "body" | "bullet" | "task" | "detail" | "meta" | "space";
 }
 
 interface PdfTextStyle {
@@ -22,6 +22,82 @@ interface PdfTextStyle {
   readonly continuationIndent: number;
   readonly color: ReturnType<typeof rgb>;
 }
+
+export type PdfStyleKey = "brutal" | "clean" | "editorial";
+
+interface PdfFontPair {
+  readonly regular: PDFFont;
+  readonly bold: PDFFont;
+}
+
+interface PdfPreset {
+  readonly label: string;
+  readonly regularFont: StandardFonts;
+  readonly boldFont: StandardFonts;
+  readonly margin: number;
+  readonly titleSize: number;
+  readonly titleLineHeight: number;
+  readonly headingSize: number;
+  readonly headingLineHeight: number;
+  readonly bodySize: number;
+  readonly bodyLineHeight: number;
+  readonly bulletIndent: number;
+  readonly detailSize: number;
+  readonly detailLineHeight: number;
+  readonly detailIndent: number;
+  readonly metaSize: number;
+  readonly metaLineHeight: number;
+  readonly spaceGap: number;
+  readonly titleColor: readonly [number, number, number];
+  readonly headingColor: readonly [number, number, number];
+  readonly bodyColor: readonly [number, number, number];
+  readonly mutedColor: readonly [number, number, number];
+  readonly ruler: boolean;
+}
+
+/** Serif page used by the editorial export; the other two live in pdf-export-variants. */
+const EDITORIAL: PdfPreset = {
+  label: "Editorial",
+  regularFont: StandardFonts.TimesRoman,
+  boldFont: StandardFonts.TimesRomanBold,
+  margin: 82,
+  titleSize: 26,
+  titleLineHeight: 31,
+  headingSize: 14,
+  headingLineHeight: 20,
+  bodySize: 11,
+  bodyLineHeight: 18,
+  bulletIndent: 0,
+  detailSize: 9.5,
+  detailLineHeight: 14,
+  detailIndent: 16,
+  metaSize: 9,
+  metaLineHeight: 13,
+  spaceGap: 10,
+  titleColor: [0.09, 0.09, 0.08],
+  headingColor: [0.29, 0.24, 0.18],
+  bodyColor: [0.13, 0.12, 0.11],
+  mutedColor: [0.42, 0.4, 0.37],
+  ruler: true,
+};
+
+export const PDF_STYLE_OPTIONS: { key: PdfStyleKey; label: string; hint: string }[] = [
+  {
+    key: "brutal",
+    label: "Neobrutalism",
+    hint: "Blok hitam tebal, aksen kuning — tegas",
+  },
+  {
+    key: "clean",
+    label: "Clean professional",
+    hint: "Geist + Manrope, hairline, lapang",
+  },
+  {
+    key: "editorial",
+    label: "Editorial",
+    hint: "Serif klasik, seperti esai cetak",
+  },
+];
 
 function filenameStem(title: string): string {
   const stem = title
@@ -138,7 +214,7 @@ function textExport(note: StructuredNote): string {
   return `${blocks.join("\n\n")}\n`;
 }
 
-function pdfItems(note: StructuredNote): PdfItem[] {
+export function pdfItems(note: StructuredNote): PdfItem[] {
   const items: PdfItem[] = [{ text: note.title, style: "title" }];
   const section = (heading: string, lines: PdfItem[]) => {
     if (lines.length === 0) return;
@@ -182,7 +258,7 @@ function pdfItems(note: StructuredNote): PdfItem[] {
           item.priority ? `Priority: ${item.priority}` : null,
         ].filter((val): val is string => val !== null);
         return [
-          { text: `[ ] ${taskText}`, style: "bullet" as const },
+          { text: taskText, style: "task" as const },
           ...(details.length > 0 ? [{ text: details.join(" · "), style: "detail" as const }] : []),
         ];
       }),
@@ -260,68 +336,119 @@ function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): 
   ]);
 }
 
-function pdfStyle(item: PdfItem, regular: PDFFont, bold: PDFFont): PdfTextStyle {
-  const dark = rgb(0.12, 0.14, 0.18);
+function pdfStyle(
+  item: PdfItem,
+  fonts: PdfFontPair,
+  preset: PdfPreset,
+): PdfTextStyle {
+  const color = (tuple: readonly [number, number, number]) =>
+    rgb(tuple[0], tuple[1], tuple[2]);
   switch (item.style) {
     case "title":
       return {
-        font: bold,
-        size: 24,
-        lineHeight: 29,
+        font: fonts.bold,
+        size: preset.titleSize,
+        lineHeight: preset.titleLineHeight,
         indent: 0,
         continuationIndent: 0,
-        color: dark,
+        color: color(preset.titleColor),
       };
     case "heading":
       return {
-        font: bold,
-        size: 16,
-        lineHeight: 20,
+        font: fonts.bold,
+        size: preset.headingSize,
+        lineHeight: preset.headingLineHeight,
         indent: 0,
         continuationIndent: 0,
-        color: rgb(0.18, 0.27, 0.55),
+        color: color(preset.headingColor),
       };
     case "bullet":
       return {
-        font: regular,
-        size: 11,
-        lineHeight: 17,
-        indent: 0,
-        continuationIndent: 12,
-        color: dark,
+        font: fonts.regular,
+        size: preset.bodySize,
+        lineHeight: preset.bodyLineHeight,
+        indent: preset.bulletIndent,
+        continuationIndent: preset.bulletIndent + 12,
+        color: color(preset.bodyColor),
+      };
+    case "task":
+      return {
+        font: fonts.regular,
+        size: preset.bodySize,
+        lineHeight: preset.bodyLineHeight,
+        indent: 14,
+        continuationIndent: 14,
+        color: color(preset.bodyColor),
       };
     case "detail":
       return {
-        font: regular,
-        size: 9,
-        lineHeight: 13,
-        indent: 14,
-        continuationIndent: 14,
-        color: rgb(0.38, 0.4, 0.45),
+        font: fonts.regular,
+        size: preset.detailSize,
+        lineHeight: preset.detailLineHeight,
+        indent: preset.detailIndent,
+        continuationIndent: preset.detailIndent,
+        color: color(preset.mutedColor),
       };
     case "meta":
       return {
-        font: regular,
-        size: 9,
-        lineHeight: 13,
+        font: fonts.regular,
+        size: preset.metaSize,
+        lineHeight: preset.metaLineHeight,
         indent: 0,
         continuationIndent: 0,
-        color: rgb(0.45, 0.47, 0.52),
+        color: color(preset.mutedColor),
       };
     case "body":
     case "space":
       return {
-        font: regular,
-        size: 11,
-        lineHeight: 17,
+        font: fonts.regular,
+        size: preset.bodySize,
+        lineHeight: preset.bodyLineHeight,
         indent: 0,
         continuationIndent: 0,
-        color: dark,
+        color: color(preset.bodyColor),
       };
   }
 }
 
-export async function exportNoteToPdf(note: StructuredNote): Promise<{ filename: string; blob: Blob }> {
+/** Draws one line with expanded word gaps so both edges sit on the margin. */
+function drawJustifiedLine(
+  page: PDFPage,
+  text: string,
+  x: number,
+  y: number,
+  style: PdfTextStyle,
+  targetWidth: number,
+): void {
+  const words = text.split(" ");
+  if (words.length < 2) {
+    page.drawText(text, { x, y, size: style.size, font: style.font, color: style.color });
+    return;
+  }
+  const natural = style.font.widthOfTextAtSize(text, style.size);
+  if (natural >= targetWidth) {
+    page.drawText(text, { x, y, size: style.size, font: style.font, color: style.color });
+    return;
+  }
+  const spaceWidth = style.font.widthOfTextAtSize(" ", style.size);
+  const slack = targetWidth - natural;
+  if (slack <= 0 || slack > spaceWidth * 2 * (words.length - 1)) {
+    page.drawText(text, { x, y, size: style.size, font: style.font, color: style.color });
+    return;
+  }
+  const extra = slack / (words.length - 1);
+  let cursor = x;
+  words.forEach((word, index) => {
+    page.drawText(word, { x: cursor, y, size: style.size, font: style.font, color: style.color });
+    cursor += style.font.widthOfTextAtSize(word, style.size);
+    if (index < words.length - 1) cursor += spaceWidth + extra;
+  });
+}
+
+export async function exportNoteToPdf(
+  note: StructuredNote,
+  styleKey: PdfStyleKey = "editorial",
+): Promise<{ filename: string; blob: Blob }> {
   const stem = filenameStem(note.title);
   const document = await PDFDocument.create();
   document.setTitle(note.title);
@@ -330,29 +457,76 @@ export async function exportNoteToPdf(note: StructuredNote): Promise<{ filename:
   document.setCreator("Notinn");
   document.setProducer("Notinn");
 
-  const regular = await document.embedFont(StandardFonts.Courier);
-  const bold = await document.embedFont(StandardFonts.CourierBold);
-  const characterSet = new Set(regular.getCharacterSet());
   const exactText = new TextEncoder().encode(textExport(note));
   await document.attach(exactText, `${stem}.txt`, {
     mimeType: "text/plain;charset=utf-8",
     description: "Exact UTF-8 text represented by this PDF export.",
   });
 
+  if (styleKey === "clean" || styleKey === "brutal") {
+    const variantFonts = await loadVariantFonts(document, styleKey);
+    const items = pdfItems(note);
+    if (styleKey === "clean") {
+      renderClean(document, items, variantFonts);
+    } else {
+      renderBrutal(document, items, variantFonts);
+    }
+    const variantPages = document.getPages();
+    variantPages.forEach((variantPage, index) => {
+      const label = `${index + 1} / ${variantPages.length}`;
+      const labelWidth = variantFonts.body.widthOfTextAtSize(label, 7.5);
+      variantPage.drawText(label, {
+        x: (PDF_WIDTH - labelWidth) / 2,
+        y: 26,
+        size: 7.5,
+        font: variantFonts.body,
+        color: rgb(0.55, 0.55, 0.58),
+      });
+    });
+    const variantBytes = await document.save({ useObjectStreams: false });
+    return {
+      filename: `${stem}-${styleKey}.pdf`,
+      blob: new Blob([variantBytes as unknown as BlobPart], {
+        type: "application/pdf",
+      }),
+    };
+  }
+
+  const preset = EDITORIAL;
+  const margin = preset.margin;
+  const regular = await document.embedFont(preset.regularFont);
+  const bold = await document.embedFont(preset.boldFont);
+  const fonts: PdfFontPair = { regular, bold };
+  const characterSet = new Set(regular.getCharacterSet());
+
   let page: PDFPage = document.addPage([PDF_WIDTH, PDF_HEIGHT]);
-  let y = PDF_HEIGHT - PDF_MARGIN;
-  const usableWidth = PDF_WIDTH - PDF_MARGIN * 2;
+  let y = PDF_HEIGHT - margin;
+  const usableWidth = PDF_WIDTH - margin * 2;
   const addPage = () => {
     page = document.addPage([PDF_WIDTH, PDF_HEIGHT]);
-    y = PDF_HEIGHT - PDF_MARGIN;
+    y = PDF_HEIGHT - margin;
   };
 
   for (const item of pdfItems(note)) {
     if (item.style === "space") {
-      y -= 8;
+      y -= preset.spaceGap;
       continue;
     }
-    const style = pdfStyle(item, regular, bold);
+    const style = pdfStyle(item, fonts, preset);
+    if (item.style === "task") {
+      page.drawRectangle({
+        x: margin,
+        y: y - 1,
+        width: 8,
+        height: 8,
+        borderColor: rgb(
+          preset.mutedColor[0],
+          preset.mutedColor[1],
+          preset.mutedColor[2],
+        ),
+        borderWidth: 0.9,
+      });
+    }
     const safe = supportedText(item.text, characterSet);
     const lines = wrapText(safe, style.font, style.size, usableWidth - style.indent);
     if (y - style.lineHeight < PDF_CONTENT_BOTTOM) addPage();
@@ -360,15 +534,38 @@ export async function exportNoteToPdf(note: StructuredNote): Promise<{ filename:
       if (y - style.lineHeight < PDF_CONTENT_BOTTOM) addPage();
       const line = lines[index] ?? "";
       if (line !== "") {
-        page.drawText(line, {
-          x: PDF_MARGIN + (index === 0 ? style.indent : style.continuationIndent),
-          y,
-          size: style.size,
-          font: style.font,
-          color: style.color,
-        });
+        const lineX = margin + (index === 0 ? style.indent : style.continuationIndent);
+        const lineWidth = usableWidth - (index === 0 ? style.indent : style.continuationIndent);
+        const justifyLine =
+          item.style === "body" && index < lines.length - 1 && line.includes(" ");
+        if (justifyLine) {
+          drawJustifiedLine(page, line, lineX, y, style, lineWidth);
+        } else {
+          page.drawText(line, {
+            x: lineX,
+            y,
+            size: style.size,
+            font: style.font,
+            color: style.color,
+          });
+        }
       }
       y -= style.lineHeight;
+    }
+
+    if (item.style === "title" && preset.ruler) {
+      y -= 4;
+      page.drawLine({
+        start: { x: margin, y },
+        end: { x: PDF_WIDTH - margin, y },
+        thickness: 0.7,
+        color: rgb(
+          preset.mutedColor[0],
+          preset.mutedColor[1],
+          preset.mutedColor[2],
+        ),
+      });
+      y -= 12;
     }
   }
 
@@ -388,7 +585,7 @@ export async function exportNoteToPdf(note: StructuredNote): Promise<{ filename:
   const pdfBytes = await document.save({ useObjectStreams: false });
   const blob = new Blob([pdfBytes as unknown as BlobPart], { type: "application/pdf" });
   return {
-    filename: `${stem}.pdf`,
+    filename: styleKey === "editorial" ? `${stem}.pdf` : `${stem}-${styleKey}.pdf`,
     blob,
   };
 }
