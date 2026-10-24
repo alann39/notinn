@@ -56,6 +56,18 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import {
+  Tooltip,
+  TooltipPopup,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  Accordion,
+  AccordionItem,
+  AccordionTrigger,
+  AccordionPanel,
+} from "@/components/ui/accordion";
 import { toastManager } from "@/components/ui/toast";
 import { NoteRichEditor } from "@/components/dashboard/note-rich-editor";
 import type { TemplateOption } from "@/components/dashboard/note-preview-drawer";
@@ -103,6 +115,82 @@ import {
   PDF_STYLE_OPTIONS,
   type PdfStyleKey,
 } from "@/lib/pdf-export";
+
+/**
+ * Marks a field the user edited by hand. Icon only, with the wording moved into
+ * a hover tooltip so headers stay light.
+ */
+const PRIORITY_STYLE: Record<string, { label: string; className: string }> = {
+  high: {
+    label: "High priority",
+    className: "bg-rose-500/15 text-rose-600 border-rose-500/30 dark:text-rose-400",
+  },
+  medium: {
+    label: "Medium priority",
+    className:
+      "bg-amber-500/15 text-amber-600 border-amber-500/30 dark:text-amber-400",
+  },
+  low: {
+    label: "Low priority",
+    className:
+      "bg-emerald-500/15 text-emerald-600 border-emerald-500/30 dark:text-emerald-400",
+  },
+};
+
+/**
+ * One letter instead of the full word, coloured by level. The word itself lives
+ * in the hover tooltip, which keeps tight action-item rows readable.
+ */
+function PriorityBadge({ level }: { level: string }): React.ReactElement | null {
+  const key = level.trim().toLowerCase();
+  const style = PRIORITY_STYLE[key];
+  if (!style) return null;
+
+  return (
+    <TooltipProvider delay={150}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <span
+              className={cn(
+                "inline-flex size-5 shrink-0 cursor-default items-center justify-center rounded-md border text-[10px] font-bold uppercase",
+                style.className,
+              )}
+              aria-label={style.label}
+            >
+              {key.charAt(0)}
+            </span>
+          }
+        />
+        <TooltipPopup side="top" sideOffset={6} className="px-2 py-1">
+          <span className="text-[11px] font-medium">{style.label}</span>
+        </TooltipPopup>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+function ManualBadge(): React.ReactElement {
+  return (
+    <TooltipProvider delay={150}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <span
+              className="inline-flex size-4 shrink-0 cursor-default items-center justify-center rounded-full bg-muted text-muted-foreground"
+              aria-label="Diedit manual"
+            >
+              <Pencil className="size-2.5" />
+            </span>
+          }
+        />
+        <TooltipPopup side="top" sideOffset={6} className="px-2 py-1">
+          <span className="text-[11px] font-medium">Diedit manual</span>
+        </TooltipPopup>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 const SOURCE_LABELS: Record<string, string> = {
   text: "Text",
@@ -839,10 +927,7 @@ export function NoteDetailPage() {
           <List className="size-3.5" />
           <span>Key Points</span>
           {keyPointsOverridden && (
-            <Badge variant="secondary" className="h-4 gap-1 px-1.5 text-[9px] normal-case tracking-normal">
-              <Pencil className="size-2.5" />
-              manual
-            </Badge>
+            <ManualBadge />
           )}
         </h2>
         <ul className="space-y-2 pl-1">
@@ -863,10 +948,7 @@ export function NoteDetailPage() {
           <CheckSquare className="size-3.5" />
           <span>Action Items ({effectiveActionItems.length})</span>
           {actionItemsOverridden && (
-            <Badge variant="secondary" className="h-4 gap-1 px-1.5 text-[9px] normal-case tracking-normal">
-              <Pencil className="size-2.5" />
-              manual
-            </Badge>
+            <ManualBadge />
           )}
         </h2>
         <div className="space-y-2 pl-1">
@@ -898,14 +980,7 @@ export function NoteDetailPage() {
                   </span>
                   {(item.priority || dueDate || assignee) && (
                     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground pt-0.5">
-                      {item.priority && (
-                        <Badge
-                          variant={item.priority.toLowerCase() === "high" ? "default" : "secondary"}
-                          className="text-[10px] uppercase font-semibold"
-                        >
-                          {item.priority}
-                        </Badge>
-                      )}
+                      {item.priority && <PriorityBadge level={item.priority} />}
                       {dueDate && (
                         <span className="font-mono text-[11px]">Due: {dueDate}</span>
                       )}
@@ -1205,12 +1280,61 @@ export function NoteDetailPage() {
               />
             </div>
 
-            <div className="space-y-2 rounded-xl border border-border bg-muted/20 p-3">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+
+            {/* Kept mounted while Source is shown so the editor (and its undo
+                history) survives the toggle. */}
+            <div className={cn(editMode !== "rich" && "hidden")}>
+              <NoteRichEditor
+                markdown={draftContent}
+                onChange={updateDraftContent}
+                editable={!isSavingEdit}
+                active={editMode === "rich"}
+                onSave={handleSaveEdit}
+                onCancel={requestCancelEdit}
+                onToggleSource={() =>
+                  setEditMode((prev) => (prev === "rich" ? "source" : "rich"))
+                }
+                isSaving={isSavingEdit}
+                canSave={isDirtyEdit()}
+                sourceLabel={editMode === "rich" ? "Source" : "Rich"}
+                onMakeSummary={handleMakeSummary}
+                onMakeKeyPoint={handleMakeKeyPoint}
+                onMakeActionItem={handleMakeActionItem}
+              />
+            </div>
+
+            {editMode === "source" && (
+              <textarea
+                value={draftContent}
+                onChange={(event) => updateDraftContent(event.target.value)}
+                maxLength={100000}
+                spellCheck={false}
+                aria-label="Note body in Markdown"
+                className="min-h-[45vh] w-full resize-y rounded-xl border border-border bg-muted/20 p-4 font-mono text-xs leading-relaxed text-foreground outline-none focus-visible:ring-2 focus-visible:ring-foreground/40 sm:text-sm"
+              />
+            )}
+
+            <p className="hidden text-[11px] text-muted-foreground sm:block">
+              Draft disimpan otomatis di browser ini. Cmd/Ctrl + Enter untuk simpan, Esc untuk batal.
+            </p>
+
+            <Accordion
+              multiple
+              defaultValue={[] as string[]}
+              className="rounded-xl border border-border bg-muted/20 px-3"
+            >
+            <AccordionItem value="key-points" className="border-b-0">
+              <AccordionTrigger className="py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <span className="flex items-center gap-2">
                   Key points
-                  {effectiveKeyPoints.length > 0 ? ` (${effectiveKeyPoints.length})` : ""}
+                  {effectiveKeyPoints.length > 0 ? `(${effectiveKeyPoints.length})` : "(0)"}
+                  {keyPointsOverridden && (
+                    <ManualBadge />
+                  )}
                 </span>
+              </AccordionTrigger>
+              <AccordionPanel className="pb-3">
+              <div className="flex items-center justify-end">
                 {keyPointsOverridden && (
                   <button
                     type="button"
@@ -1251,15 +1375,21 @@ export function NoteDetailPage() {
                   ))}
                 </ul>
               )}
-            </div>
-
-            <div className="space-y-2 rounded-xl border border-border bg-muted/20 p-3">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              </AccordionPanel>
+            </AccordionItem>
+            <AccordionItem value="action-items" className="border-b-0">
+              <AccordionTrigger className="py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <span className="flex items-center gap-2">
                   Action items
-                  {actionItems.length > 0 ? ` (${actionItems.length})` : ""}
+                  {actionItems.length > 0 ? `(${actionItems.length})` : "(0)"}
+                  {actionItemsOverridden && (
+                    <ManualBadge />
+                  )}
                 </span>
-                <div className="flex items-center gap-2">
+              </AccordionTrigger>
+              <AccordionPanel className="pb-3">
+              <div className="space-y-2">
+                <div className="flex items-center justify-end gap-2">
                   {actionItemsOverridden && (
                     <button
                       type="button"
@@ -1309,7 +1439,7 @@ export function NoteDetailPage() {
                           maxLength={500}
                           placeholder="Apa yang harus dikerjakan"
                           aria-label="Action item"
-                          className="min-h-8 flex-1 rounded-md border border-border bg-background px-2 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+                          className="min-h-8 flex-1 rounded-md border border-border bg-background px-2 text-xs leading-relaxed text-foreground outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
                         />
                         <button
                           type="button"
@@ -1369,44 +1499,9 @@ export function NoteDetailPage() {
                   ))}
                 </ul>
               )}
-            </div>
-
-            {/* Kept mounted while Source is shown so the editor (and its undo
-                history) survives the toggle. */}
-            <div className={cn(editMode !== "rich" && "hidden")}>
-              <NoteRichEditor
-                markdown={draftContent}
-                onChange={updateDraftContent}
-                editable={!isSavingEdit}
-                active={editMode === "rich"}
-                onSave={handleSaveEdit}
-                onCancel={requestCancelEdit}
-                onToggleSource={() =>
-                  setEditMode((prev) => (prev === "rich" ? "source" : "rich"))
-                }
-                isSaving={isSavingEdit}
-                canSave={isDirtyEdit()}
-                sourceLabel={editMode === "rich" ? "Source" : "Rich"}
-                onMakeSummary={handleMakeSummary}
-                onMakeKeyPoint={handleMakeKeyPoint}
-                onMakeActionItem={handleMakeActionItem}
-              />
-            </div>
-
-            {editMode === "source" && (
-              <textarea
-                value={draftContent}
-                onChange={(event) => updateDraftContent(event.target.value)}
-                maxLength={100000}
-                spellCheck={false}
-                aria-label="Note body in Markdown"
-                className="min-h-[45vh] w-full resize-y rounded-xl border border-border bg-muted/20 p-4 font-mono text-xs leading-relaxed text-foreground outline-none focus-visible:ring-2 focus-visible:ring-foreground/40 sm:text-sm"
-              />
-            )}
-
-            <p className="hidden text-[11px] text-muted-foreground sm:block">
-              Draft disimpan otomatis di browser ini. Cmd/Ctrl + Enter untuk simpan, Esc untuk batal.
-            </p>
+              </AccordionPanel>
+            </AccordionItem>
+            </Accordion>
           </div>
         ) : isRawView ? (
           <div className="space-y-4">
@@ -1635,10 +1730,7 @@ export function NoteDetailPage() {
                       <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                         <span>Summary</span>
                         {summaryOverridden && (
-                          <Badge variant="secondary" className="h-4 gap-1 px-1.5 text-[9px] normal-case tracking-normal">
-                            <Pencil className="size-2.5" />
-                            manual
-                          </Badge>
+                          <ManualBadge />
                         )}
                       </div>
                       <p className={cn("text-foreground/90 leading-relaxed font-sans", textAlignClass)}>
@@ -1668,10 +1760,7 @@ export function NoteDetailPage() {
                     <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                       <span>Summary</span>
                       {summaryOverridden && (
-                        <Badge variant="secondary" className="h-4 gap-1 px-1.5 text-[9px] normal-case tracking-normal">
-                          <Pencil className="size-2.5" />
-                          manual
-                        </Badge>
+                        <ManualBadge />
                       )}
                     </div>
                     <p className={cn("text-foreground/90 leading-relaxed font-sans", textAlignClass)}>

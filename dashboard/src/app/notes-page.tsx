@@ -61,6 +61,12 @@ import {
   SelectPopup,
   SelectItem,
 } from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipPopup,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import type { Note } from "@/types/notes";
 
@@ -162,7 +168,7 @@ export function NotesPage() {
         description="All your captured notes from Telegram"
       />
 
-      <div className="p-4 sm:p-6 md:p-8 max-w-6xl w-full mx-auto space-y-6">
+      <div className="p-4 pb-28 sm:p-6 sm:pb-28 md:p-8 lg:pb-8 max-w-6xl w-full mx-auto space-y-6">
         {/* Controls Bar: Search, Filters & View Switcher */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           {/* Search Input with Ctrl+F Badge */}
@@ -199,43 +205,55 @@ export function NotesPage() {
           </div>
 
           {/* Action Controls: Upload Audio on left, Filter & View Mode Switcher grouped on right */}
-          <div className="flex items-center justify-between gap-2.5">
+          <div className="flex flex-nowrap items-center justify-between gap-2 sm:gap-2.5">
             {/* Multimodal Capture Trigger Button */}
             <Button
               variant="default"
               size="sm"
               onClick={() => setUploadOpen(true)}
-              className="gap-1.5 text-xs font-medium cursor-pointer"
+              className="min-w-0 shrink cursor-pointer gap-1.5 text-xs font-medium"
             >
-              <Plus className="size-3.5" />
-              <span>New Note</span>
+              <Plus className="size-3.5 shrink-0" />
+              <span className="truncate">New Note</span>
             </Button>
 
             {/* Grouped Controls: Filter Toggle + Grid/Table View Switcher */}
             <div className="flex items-center gap-2">
-              {/* Saved Filter Toggle */}
-              <Button
-                variant={savedOnly ? "default" : "outline"}
-                size="sm"
-                onClick={() => {
-                  setSavedOnly(!savedOnly);
-                  setPage(0);
-                }}
-                className="gap-1.5 text-xs font-medium"
-                aria-pressed={savedOnly}
-              >
-                {savedOnly ? (
-                  <>
-                    <BookmarkCheck className="size-3.5" strokeWidth={2.2} />
-                    <span>Saved</span>
-                  </>
-                ) : (
-                  <>
-                    <Bookmark className="size-3.5" strokeWidth={2} />
-                    <span>All</span>
-                  </>
-                )}
-              </Button>
+              {/* Saved Filter Toggle: icon only, wording in the tooltip */}
+              <TooltipProvider delay={150}>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant={savedOnly ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => {
+                          setSavedOnly(!savedOnly);
+                          setPage(0);
+                        }}
+                        className="size-8 p-0"
+                        aria-pressed={savedOnly}
+                        aria-label={
+                          savedOnly
+                            ? "Show all notes"
+                            : "Show saved notes only"
+                        }
+                      >
+                        {savedOnly ? (
+                          <BookmarkCheck className="size-3.5" strokeWidth={2.2} />
+                        ) : (
+                          <Bookmark className="size-3.5" strokeWidth={2} />
+                        )}
+                      </Button>
+                    }
+                  />
+                  <TooltipPopup side="bottom" sideOffset={6} className="px-2 py-1">
+                    <span className="text-[11px] font-medium">
+                      {savedOnly ? "Hanya catatan tersimpan" : "Tampilkan semua catatan"}
+                    </span>
+                  </TooltipPopup>
+                </Tooltip>
+              </TooltipProvider>
 
               {/* Sort Control: date modified / created / title */}
               <Select
@@ -257,15 +275,26 @@ export function NotesPage() {
                 }}
               >
                 <SelectTrigger
-                  className="h-8 gap-1.5 text-xs"
-                  aria-label="Sort notes"
+                  className="h-8 w-8 min-w-0 shrink-0 justify-center gap-0 px-0 text-xs sm:w-auto sm:min-w-36 sm:justify-between sm:gap-1.5 sm:px-[calc(--spacing(3)-1px)] [&>[data-slot=select-icon]]:hidden sm:[&>[data-slot=select-icon]]:inline"
+                  aria-label={`Sort notes, currently ${
+                    SORT_OPTIONS.find((option) => option.value === sortKey)?.label ??
+                    "Last modified"
+                  }`}
+                  title={`Sort: ${
+                    SORT_OPTIONS.find((option) => option.value === sortKey)?.label ??
+                    "Last modified"
+                  }`}
                 >
                   <ArrowUpDown className="size-3.5 text-muted-foreground" />
-                  <SelectValue />
+                  <SelectValue className="hidden sm:block" />
                 </SelectTrigger>
-                <SelectPopup align="end">
+                <SelectPopup align="end" className="text-xs">
                   {SORT_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
+                    <SelectItem
+                      key={option.value}
+                      value={option.value}
+                      className="min-h-7 text-xs"
+                    >
                       {option.label}
                     </SelectItem>
                   ))}
@@ -465,7 +494,7 @@ export function NotesPage() {
                   }}
                   aria-label={`Open note: ${note.title}`}
                 >
-                  <Card className="p-5 flex flex-col justify-between h-full space-y-4 hover:border-foreground/30 transition-all">
+                  <Card className="flex h-full flex-col justify-between space-y-3 p-4 transition-all hover:border-foreground/30 sm:space-y-4 sm:p-5">
                     <CardHeader className="p-0 space-y-2.5">
                       <div className="flex items-start gap-3">
                         <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground border border-border">
@@ -511,7 +540,7 @@ export function NotesPage() {
                             )}
                           </div>
 
-                          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                             <span className="capitalize">{note.source_type}</span>
                             <span>•</span>
                             <span className="tabular-nums font-mono">
@@ -538,7 +567,7 @@ export function NotesPage() {
                     {/* Footer: Tags */}
                     {note.tags && note.tags.length > 0 && (
                       <CardFooter className="p-0 pt-3 flex flex-wrap gap-1.5 border-t border-border">
-                        {note.tags.slice(0, 4).map((tag) => (
+                        {note.tags.map((tag) => (
                           <Badge
                             key={tag}
                             variant="secondary"
@@ -547,11 +576,6 @@ export function NotesPage() {
                             #{tag}
                           </Badge>
                         ))}
-                        {note.tags.length > 4 && (
-                          <span className="text-[10px] text-muted-foreground self-center">
-                            +{note.tags.length - 4} more
-                          </span>
-                        )}
                       </CardFooter>
                     )}
                   </Card>
