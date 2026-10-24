@@ -140,6 +140,10 @@ const FILE_SUFFIXES = [
   "phase8i_web_multimodal_ingestion.sql",
   "fix_web_text_job_constraint.sql",
   "free_starter_lifetime_quota.sql",
+  "multipart_audio_recording_sessions.sql",
+  "web_edit_versions_filters.sql",
+  "web_summary_overlay.sql",
+  "web_key_points_overlay.sql",
 ];
 
 /** Read the one migration whose filename ends with `suffix`. */
@@ -846,6 +850,14 @@ const WEB_RPC_FUNCTIONS = new Set([
   "web_delete_note",
   "web_get_job_status",
   "web_submit_job",
+  "web_update_note",
+  "web_list_note_outputs",
+  "web_restore_note_output",
+  "web_set_note_summary",
+  "web_set_note_key_points",
+  "web_start_audio_session",
+  "web_submit_audio_part",
+  "web_finalize_audio_session",
 ]);
 
 Deno.test("no function is executable by anon, and only web RPCs are executable by authenticated", () => {
