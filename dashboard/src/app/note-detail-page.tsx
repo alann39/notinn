@@ -79,6 +79,7 @@ import {
   Loader2,
   Mic,
   Pencil,
+  Plus,
   Save,
   X,
   Tag,
@@ -88,9 +89,10 @@ import {
   Trash2,
 } from "lucide-react";
 import { formatDate, formatRelativeTime } from "@/lib/utils";
-import type { Note, StructuredNote } from "@/types/notes";
+import type { ActionItem, Note, StructuredNote } from "@/types/notes";
 import { cn } from "@/lib/utils";
 import {
+  ACTION_ITEMS_HEADING,
   KEY_POINTS_HEADING,
   normalizeMarkdownLists,
   stripMarkdownSection,
@@ -157,6 +159,8 @@ export function NoteDetailPage() {
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
   const [versionDialogOpen, setVersionDialogOpen] = useState(false);
   const [keyPointBusy, setKeyPointBusy] = useState(false);
+  const [actionItems, setActionItems] = useState<ActionItem[]>([]);
+  const [actionBusy, setActionBusy] = useState(false);
 
   // The rich editor emits after a short debounce. Mirror every write into a ref
   // so Save always sees the latest keystroke, even before React re-renders.
@@ -284,8 +288,13 @@ export function NoteDetailPage() {
     output_rendered_text?: string;
     manual_edit_rendered_text?: string | null;
     manual_edit_updated_at?: string | null;
-    content_overlay?: { summary?: string; key_points?: string[] } | null;
+    content_overlay?: {
+      summary?: string;
+      key_points?: string[];
+      action_items?: ActionItem[];
+    } | null;
     key_points?: string[];
+    action_items?: ActionItem[];
   }) | null;
 
   const manualEditText = noteRecord?.manual_edit_rendered_text ?? null;
@@ -305,10 +314,25 @@ export function NoteDetailPage() {
         : (rawContent?.key_points ?? []);
   const summaryOverridden = Boolean(noteRecord?.content_overlay?.summary);
   const keyPointsOverridden = Array.isArray(overlayKeyPoints);
+  const overlayActionItems = noteRecord?.content_overlay?.action_items;
+  const effectiveActionItems: ActionItem[] = Array.isArray(overlayActionItems)
+    ? overlayActionItems
+    : Array.isArray(noteRecord?.action_items)
+      ? noteRecord.action_items
+      : (rawContent?.action_items ?? []);
+  const actionItemsOverridden = Array.isArray(overlayActionItems);
+
   const flatBodyMarkdown = manualEditText
-    ? keyPointsOverridden
-      ? stripMarkdownSection(manualEditText, KEY_POINTS_HEADING)
-      : manualEditText
+    ? (() => {
+        let body = manualEditText;
+        if (keyPointsOverridden) {
+          body = stripMarkdownSection(body, KEY_POINTS_HEADING);
+        }
+        if (actionItemsOverridden) {
+          body = stripMarkdownSection(body, ACTION_ITEMS_HEADING);
+        }
+        return body;
+      })()
     : "";
 
   const content: StructuredNote | undefined = rawContent ?? (renderedText ? {
@@ -522,6 +546,21 @@ export function NoteDetailPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   });
 
+  // A stable signature of the server copy: the local list resets only when the
+  // stored data actually changes, never on every keystroke.
+  const actionItemsSignature = JSON.stringify(
+    effectiveActionItems.map((item) => ({
+      text: item.text ?? item.task ?? "",
+      owner: item.owner ?? item.assignee ?? null,
+      due_date: item.due_date ?? item.due_date_text ?? null,
+      priority: item.priority ?? null,
+    })),
+  );
+
+  useEffect(() => {
+    setActionItems(JSON.parse(actionItemsSignature) as ActionItem[]);
+  }, [actionItemsSignature]);
+
   const persistKeyPoints = async (points: string[]) => {
     if (!id) return;
     setKeyPointBusy(true);
@@ -573,6 +612,74 @@ export function NoteDetailPage() {
   const handleRemoveKeyPoint = async (index: number) => {
     const next = effectiveKeyPoints.filter((_, itemIndex) => itemIndex !== index);
     await persistKeyPoints(next);
+  };
+
+  const persistActionItems = async (items: ActionItem[]) => {
+    if (!id) return;
+    setActionBusy(true);
+    try {
+      const { data, error: rpcError } = await supabase.rpc(
+        "web_set_note_action_items",
+        {
+          p_note_id: id,
+          p_action_items: items
+            .map((item) => ({
+              text: (item.text ?? item.task ?? "").trim(),
+              owner: (item.owner ?? item.assignee ?? null) || null,
+              due_date: (item.due_date ?? item.due_date_text ?? null) || null,
+              priority: item.priority ?? null,
+            }))
+            .filter((item) => item.text !== ""),
+        },
+      );
+      if (rpcError) throw rpcError;
+      const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | null;
+      if (row?.outcome !== "updated") {
+        const messages: Record<string, string> = {
+          too_many_items: "Maksimal 50 action item per catatan.",
+          invalid_item: "Ada action item yang formatnya tidak valid.",
+          invalid_payload: "Payload action item tidak valid.",
+          not_found: "Catatan ini tidak bisa diubah.",
+        };
+        throw new Error(messages[row?.outcome ?? ""] ?? "Tidak bisa menyimpan action item.");
+      }
+      await fetchNote();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Tidak bisa menyimpan action item.";
+      toastManager.add({ title: "Gagal", description: message, type: "error" });
+      await fetchNote();
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const patchActionItem = (index: number, patch: Partial<ActionItem>) => {
+    setActionItems((prev) =>
+      prev.map((item, itemIndex) =>
+        itemIndex === index ? { ...item, ...patch } : item,
+      ),
+    );
+  };
+
+  const handleMakeActionItem = async (text: string) => {
+    const next = [
+      ...actionItems,
+      { text: text.replace(/\s+/g, " ").trim(), owner: null, due_date: null, priority: null },
+    ];
+    setActionItems(next);
+    toastManager.add({
+      title: "Action item ditambahkan",
+      description: "Isi owner, due date, atau prioritas kalau perlu.",
+      type: "success",
+    });
+    await persistActionItems(next);
+  };
+
+  const handleRemoveActionItem = async (index: number) => {
+    const next = actionItems.filter((_, itemIndex) => itemIndex !== index);
+    setActionItems(next);
+    await persistActionItems(next);
   };
 
   const handleMakeSummary = async (text: string) => {
@@ -656,6 +763,8 @@ export function NoteDetailPage() {
         ...base,
         summary: effectiveSummary || base.summary,
         key_points: effectiveKeyPoints.length > 0 ? effectiveKeyPoints : base.key_points,
+        action_items:
+          effectiveActionItems.length > 0 ? effectiveActionItems : base.action_items,
       };
 
       const { filename, blob } = await exportNoteToPdf(structuredData, styleKey);
@@ -744,6 +853,72 @@ export function NoteDetailPage() {
             </li>
           ))}
         </ul>
+      </section>
+    ) : null;
+
+  const actionItemsBlock =
+    effectiveActionItems.length > 0 ? (
+      <section className="space-y-3">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+          <CheckSquare className="size-3.5" />
+          <span>Action Items ({effectiveActionItems.length})</span>
+          {actionItemsOverridden && (
+            <Badge variant="secondary" className="h-4 gap-1 px-1.5 text-[9px] normal-case tracking-normal">
+              <Pencil className="size-2.5" />
+              manual
+            </Badge>
+          )}
+        </h2>
+        <div className="space-y-2 pl-1">
+          {effectiveActionItems.map((item, i) => {
+            const isChecked = !!checkedItems[i];
+            const taskText = item.task || item.text || "";
+            const dueDate = item.due_date || item.due_date_text || item.due_date_iso;
+            const assignee = item.owner || item.assignee;
+
+            return (
+              <div key={i} className="flex items-start gap-3 py-1 text-sm sm:text-base group">
+                <Checkbox
+                  checked={isChecked}
+                  onCheckedChange={() => toggleActionItem(i)}
+                  className="mt-1"
+                />
+                <div className="flex-1 min-w-0 space-y-1">
+                  <span
+                    onClick={() => toggleActionItem(i)}
+                    className={cn(
+                      "cursor-pointer leading-snug transition-all select-none block",
+                      isChecked
+                        ? "line-through text-muted-foreground"
+                        : "text-foreground font-normal",
+                      textAlignClass,
+                    )}
+                  >
+                    {taskText}
+                  </span>
+                  {(item.priority || dueDate || assignee) && (
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground pt-0.5">
+                      {item.priority && (
+                        <Badge
+                          variant={item.priority.toLowerCase() === "high" ? "default" : "secondary"}
+                          className="text-[10px] uppercase font-semibold"
+                        >
+                          {item.priority}
+                        </Badge>
+                      )}
+                      {dueDate && (
+                        <span className="font-mono text-[11px]">Due: {dueDate}</span>
+                      )}
+                      {assignee && (
+                        <span className="text-[11px]">Assignee: {assignee}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </section>
     ) : null;
 
@@ -1078,6 +1253,124 @@ export function NoteDetailPage() {
               )}
             </div>
 
+            <div className="space-y-2 rounded-xl border border-border bg-muted/20 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Action items
+                  {actionItems.length > 0 ? ` (${actionItems.length})` : ""}
+                </span>
+                <div className="flex items-center gap-2">
+                  {actionItemsOverridden && (
+                    <button
+                      type="button"
+                      disabled={actionBusy}
+                      onClick={() => persistActionItems([])}
+                      className="text-[11px] font-medium text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline disabled:opacity-50"
+                    >
+                      Kembalikan ke versi AI
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={actionBusy || actionItems.length >= 50}
+                    onClick={() =>
+                      setActionItems((prev) => [
+                        ...prev,
+                        { text: "", owner: null, due_date: null, priority: null },
+                      ])
+                    }
+                    className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-border px-2 text-[11px] font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                  >
+                    <Plus className="size-3" />
+                    <span>Tambah</span>
+                  </button>
+                </div>
+              </div>
+
+              {actionItems.length === 0 ? (
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  Belum ada action item. Blok teks di editor lalu klik tombol
+                  &ldquo;Action&rdquo; di toolbar, atau pakai tombol Tambah.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {actionItems.map((item, index) => (
+                    <li
+                      key={index}
+                      className="space-y-2 rounded-lg border border-border bg-background p-2.5"
+                    >
+                      <div className="flex items-start gap-2">
+                        <input
+                          value={item.text ?? item.task ?? ""}
+                          onChange={(event) =>
+                            patchActionItem(index, { text: event.target.value })
+                          }
+                          onBlur={() => persistActionItems(actionItems)}
+                          maxLength={500}
+                          placeholder="Apa yang harus dikerjakan"
+                          aria-label="Action item"
+                          className="min-h-8 flex-1 rounded-md border border-border bg-background px-2 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+                        />
+                        <button
+                          type="button"
+                          aria-label="Hapus action item"
+                          disabled={actionBusy}
+                          onClick={() => handleRemoveActionItem(index)}
+                          className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          value={item.owner ?? item.assignee ?? ""}
+                          onChange={(event) =>
+                            patchActionItem(index, { owner: event.target.value })
+                          }
+                          onBlur={() => persistActionItems(actionItems)}
+                          maxLength={120}
+                          placeholder="Owner"
+                          aria-label="Owner"
+                          className="min-h-8 w-32 rounded-md border border-border bg-background px-2 text-[11px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+                        />
+                        <input
+                          value={item.due_date ?? item.due_date_text ?? ""}
+                          onChange={(event) =>
+                            patchActionItem(index, { due_date: event.target.value })
+                          }
+                          onBlur={() => persistActionItems(actionItems)}
+                          maxLength={40}
+                          placeholder="Due date"
+                          aria-label="Due date"
+                          className="min-h-8 w-32 rounded-md border border-border bg-background px-2 font-mono text-[11px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+                        />
+                        <select
+                          value={(item.priority ?? "").toLowerCase()}
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            const next = actionItems.map((entry, itemIndex) =>
+                              itemIndex === index
+                                ? { ...entry, priority: value === "" ? null : value }
+                                : entry,
+                            );
+                            setActionItems(next);
+                            void persistActionItems(next);
+                          }}
+                          aria-label="Priority"
+                          className="min-h-8 rounded-md border border-border bg-background px-2 text-[11px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+                        >
+                          <option value="">No priority</option>
+                          <option value="high">High</option>
+                          <option value="medium">Medium</option>
+                          <option value="low">Low</option>
+                        </select>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
             {/* Kept mounted while Source is shown so the editor (and its undo
                 history) survives the toggle. */}
             <div className={cn(editMode !== "rich" && "hidden")}>
@@ -1096,6 +1389,7 @@ export function NoteDetailPage() {
                 sourceLabel={editMode === "rich" ? "Source" : "Rich"}
                 onMakeSummary={handleMakeSummary}
                 onMakeKeyPoint={handleMakeKeyPoint}
+                onMakeActionItem={handleMakeActionItem}
               />
             </div>
 
@@ -1363,6 +1657,7 @@ export function NoteDetailPage() {
                 />
                 </div>
                 {keyPointsOverridden && keyPointsBlock}
+                {actionItemsOverridden && actionItemsBlock}
               </div>
             ) : (
             <div className="space-y-8">
@@ -1439,67 +1734,7 @@ export function NoteDetailPage() {
               )}
 
               {/* Action Items with Notion Interactive Checkboxes */}
-              {content?.action_items && content.action_items.length > 0 && (
-                <section className="space-y-3">
-                  <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                    <CheckSquare className="size-3.5" />
-                    <span>Action Items ({content.action_items.length})</span>
-                  </h2>
-                  <div className="space-y-2 pl-1">
-                    {content.action_items.map((item, i) => {
-                      const isChecked = !!checkedItems[i];
-                      const taskText = item.task || item.text || "";
-                      const dueDate = item.due_date || item.due_date_text || item.due_date_iso;
-                      const assignee = item.owner || item.assignee;
-
-                      return (
-                        <div
-                          key={i}
-                          className="flex items-start gap-3 py-1 text-sm sm:text-base group"
-                        >
-                          <Checkbox
-                            checked={isChecked}
-                            onCheckedChange={() => toggleActionItem(i)}
-                            className="mt-1"
-                          />
-                          <div className="flex-1 min-w-0 space-y-1">
-                            <span
-                              onClick={() => toggleActionItem(i)}
-                              className={cn(
-                                "cursor-pointer leading-snug transition-all select-none block",
-                                isChecked
-                                  ? "line-through text-muted-foreground"
-                                  : "text-foreground font-normal",
-                                textAlignClass,
-                              )}
-                            >
-                              {taskText}
-                            </span>
-                            {(item.priority || dueDate || assignee) && (
-                              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground pt-0.5">
-                                {item.priority && (
-                                  <Badge
-                                    variant={item.priority.toLowerCase() === "high" ? "default" : "secondary"}
-                                    className="text-[10px] uppercase font-semibold"
-                                  >
-                                    {item.priority}
-                                  </Badge>
-                                )}
-                                {dueDate && (
-                                  <span className="font-mono text-[11px]">Due: {dueDate}</span>
-                                )}
-                                {assignee && (
-                                  <span className="text-[11px]">Assignee: {assignee}</span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </section>
-              )}
+              {actionItemsBlock}
 
               {/* Source References */}
               {content?.source_references && content.source_references.length > 0 && (

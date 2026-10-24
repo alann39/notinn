@@ -15,6 +15,7 @@ import TurndownService from "turndown";
 import { gfm } from "turndown-plugin-gfm";
 import {
   Bold,
+  CheckSquare,
   FileText,
   Code2,
   Heading2,
@@ -69,6 +70,8 @@ type NoteRichEditorProps = {
   onMakeSummary?: (text: string) => void;
   /** Called with the selected text when the user adds it as a key point. */
   onMakeKeyPoint?: (text: string) => void;
+  /** Called with the selected text when the user adds it as an action item. */
+  onMakeActionItem?: (text: string) => void;
 };
 
 const EMIT_DELAY_MS = 250;
@@ -255,6 +258,7 @@ export function NoteRichEditor({
   sourceLabel = "Source",
   onMakeSummary,
   onMakeKeyPoint,
+  onMakeActionItem,
 }: NoteRichEditorProps) {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [linkValue, setLinkValue] = useState("");
@@ -657,6 +661,24 @@ export function NoteRichEditor({
             >
               <List className="size-3.5" />
               <span>Key point</span>
+            </button>
+          )}
+          {onMakeActionItem && (
+            <button
+              type="button"
+              disabled={!toolbarState?.hasSelection}
+              onClick={() => {
+                const instance = editorRef.current;
+                if (!instance) return;
+                const { from, to } = instance.state.selection;
+                const text = instance.state.doc.textBetween(from, to, " ").trim();
+                if (text) onMakeActionItem(text);
+              }}
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-border px-2 text-[11px] font-medium text-foreground transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-40"
+              title="Tambah teks terpilih sebagai action item"
+            >
+              <CheckSquare className="size-3.5" />
+              <span>Action</span>
             </button>
           )}
           {onToggleSource && (
