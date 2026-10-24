@@ -76,6 +76,9 @@ import {
   Image,
   Loader2,
   Mic,
+  Pencil,
+  Save,
+  X,
   Tag,
   CheckSquare,
   List,
@@ -132,6 +135,12 @@ export function NoteDetailPage() {
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftContent, setDraftContent] = useState("");
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [showDraftPreview, setShowDraftPreview] = useState(false);
+  const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
 
   const fetchNote = useCallback(async () => {
     if (!id) return;
@@ -249,7 +258,11 @@ export function NoteDetailPage() {
   const noteRecord = note as (Note & {
     output_content_json?: StructuredNote;
     output_rendered_text?: string;
+    manual_edit_rendered_text?: string | null;
+    manual_edit_updated_at?: string | null;
   }) | null;
+
+  const manualEditText = noteRecord?.manual_edit_rendered_text ?? null;
 
   const rawContent = noteRecord?.output_content_json || note?.current_output?.content_json;
   const renderedText = noteRecord?.output_rendered_text || note?.current_output?.rendered_text;
@@ -278,6 +291,7 @@ export function NoteDetailPage() {
 
   const getEffectiveMarkdown = () => {
     if (!note) return "";
+    if (manualEditText) return manualEditText;
     if (renderedText) return renderedText;
     if (rawContent) {
       const parts = [`# ${note.title}\n`];
@@ -309,6 +323,158 @@ export function NoteDetailPage() {
     }
     return note.title;
   };
+
+  /* ---------- Manual edit: title + markdown body ---------- */
+
+  const draftStorageKey = id ? `notinn:note-edit:${id}` : null;
+  const baselineContent = manualEditText ?? getEffectiveMarkdown();
+
+  const isDirtyEdit =
+    isEditing && note
+      ? draftTitle.trim() !== note.title.trim() || draftContent !== baselineContent
+      : false;
+
+  const clearStoredDraft = () => {
+    if (!draftStorageKey) return;
+    try {
+      window.localStorage.removeItem(draftStorageKey);
+    } catch {
+      // storage unavailable — drafts simply will not persist
+    }
+  };
+
+  const startEditing = () => {
+    if (!note) return;
+    let nextTitle = note.title;
+    let nextContent = baselineContent;
+    if (draftStorageKey) {
+      try {
+        const stored = window.localStorage.getItem(draftStorageKey);
+        if (stored) {
+          const parsed = JSON.parse(stored) as { title?: unknown; content?: unknown };
+          if (typeof parsed.title === "string") nextTitle = parsed.title;
+          if (typeof parsed.content === "string") nextContent = parsed.content;
+        }
+      } catch {
+        // corrupted draft — fall back to the server copy
+      }
+    }
+    setDraftTitle(nextTitle);
+    setDraftContent(nextContent);
+    setIsEditing(true);
+    setIsRawView(false);
+    setShowDraftPreview(false);
+  };
+
+  const finishCancelEdit = () => {
+    clearStoredDraft();
+    setDiscardDialogOpen(false);
+    setIsEditing(false);
+    setShowDraftPreview(false);
+  };
+
+  const requestCancelEdit = () => {
+    if (isDirtyEdit) {
+      setDiscardDialogOpen(true);
+      return;
+    }
+    finishCancelEdit();
+  };
+
+  const handleSaveEdit = async () => {
+    if (!id) return;
+    const nextTitle = draftTitle.trim();
+    const nextContent = draftContent.trim();
+    if (!nextTitle) {
+      toastManager.add({
+        title: "Title cannot be empty",
+        description: "Give the note a title before saving.",
+        type: "error",
+      });
+      return;
+    }
+    if (!nextContent) {
+      toastManager.add({
+        title: "Content cannot be empty",
+        description: "The note body cannot be saved blank.",
+        type: "error",
+      });
+      return;
+    }
+
+    setIsSavingEdit(true);
+    try {
+      const { data, error: rpcError } = await supabase.rpc("web_update_note", {
+        p_note_id: id,
+        p_title: nextTitle,
+        p_rendered_text: nextContent,
+      });
+      if (rpcError) throw rpcError;
+
+      const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | null;
+      if (row?.outcome !== "updated") {
+        const messages: Record<string, string> = {
+          invalid_title: "That title is not valid (max 300 characters).",
+          invalid_content: "The note body cannot be empty.",
+          content_too_long: "The note body is too long to save.",
+          not_found: "This note no longer exists or you cannot edit it.",
+        };
+        throw new Error(messages[row?.outcome ?? ""] ?? "Could not save changes.");
+      }
+
+      clearStoredDraft();
+      setIsEditing(false);
+      setShowDraftPreview(false);
+      await fetchNote();
+      toastManager.add({
+        title: "Note updated",
+        description: "Your changes are saved.",
+        type: "success",
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Could not save changes.";
+      toastManager.add({
+        title: "Could not save changes",
+        description: msg,
+        type: "error",
+      });
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  // Autosave the in-progress draft to localStorage so a refresh never loses it.
+  useEffect(() => {
+    if (!isEditing || !draftStorageKey) return;
+    const timer = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(
+          draftStorageKey,
+          JSON.stringify({ title: draftTitle, content: draftContent, savedAt: Date.now() }),
+        );
+      } catch {
+        // storage full or blocked
+      }
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [isEditing, draftStorageKey, draftTitle, draftContent]);
+
+  // Esc cancels, Cmd/Ctrl+Enter saves.
+  useEffect(() => {
+    if (!isEditing) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        requestCancelEdit();
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        event.preventDefault();
+        void handleSaveEdit();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
 
   const handleCopyMarkdown = async () => {
     if (!note) return;
@@ -481,6 +647,19 @@ export function NoteDetailPage() {
         <Sparkles className="size-3.5 text-primary" />
       </Button>
 
+      {/* Edit Note Button (Icon-Only) */}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={startEditing}
+        disabled={isEditing}
+        title="Edit note"
+        aria-label="Edit note"
+        className="size-8 p-0"
+      >
+        <Pencil className="size-3.5" />
+      </Button>
+
       {/* Delete Note Button (Icon-Only) */}
       <Button
         variant="outline"
@@ -577,7 +756,7 @@ export function NoteDetailPage() {
     <>
       <Header title={note.title} />
 
-      <div className="p-4 sm:p-6 md:p-8 space-y-6 max-w-4xl w-full mx-auto">
+      <div className={cn("p-4 sm:p-6 md:p-8 space-y-6 max-w-4xl w-full mx-auto", isEditing && "pb-28 sm:pb-8")}>
         {/* Navigation Breadcrumb & Actions Topbar */}
         <div className="flex items-center justify-between gap-4 border-b border-border pb-4">
           <Breadcrumb>
@@ -609,8 +788,87 @@ export function NoteDetailPage() {
           </div>
         </div>
 
-        {/* Raw Markdown / Text View */}
-        {isRawView ? (
+        {/* Manual Edit Canvas */}
+        {isEditing ? (
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2">
+              <span className="text-xs font-medium text-muted-foreground">
+                Editing note · Markdown
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowDraftPreview((prev) => !prev)}
+                  className="gap-1.5 text-xs min-h-9"
+                  aria-label={showDraftPreview ? "Back to Markdown source" : "Preview rendered Markdown"}
+                >
+                  {showDraftPreview ? <Pencil className="size-3.5" /> : <FileText className="size-3.5" />}
+                  <span>{showDraftPreview ? "Source" : "Preview"}</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={requestCancelEdit}
+                  disabled={isSavingEdit}
+                  className="gap-1.5 text-xs min-h-9"
+                >
+                  <X className="size-3.5" />
+                  <span>Cancel</span>
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSaveEdit}
+                  disabled={isSavingEdit}
+                  className="gap-1.5 text-xs min-h-9"
+                >
+                  {isSavingEdit ? <Spinner className="size-3.5" /> : <Save className="size-3.5" />}
+                  <span>{isSavingEdit ? "Saving…" : "Save"}</span>
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label
+                htmlFor="note-edit-title"
+                className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
+              >
+                Title
+              </label>
+              <input
+                id="note-edit-title"
+                value={draftTitle}
+                onChange={(event) => setDraftTitle(event.target.value)}
+                maxLength={300}
+                placeholder="Note title"
+                className="w-full border-b border-border bg-transparent pb-2 text-2xl font-bold tracking-tight text-foreground outline-none transition-colors focus:border-foreground sm:text-3xl"
+              />
+            </div>
+
+            {showDraftPreview ? (
+              <div
+                className={cn(
+                  "min-h-[45vh] rounded-xl border border-border bg-muted/10 p-5 font-sans text-sm leading-relaxed text-foreground/90 prose prose-neutral dark:prose-invert max-w-none sm:p-8 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1.5 [&_p]:my-2 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:bg-muted [&_code]:font-mono [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:bg-muted/70 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:italic",
+                  textAlignClass,
+                )}
+                dangerouslySetInnerHTML={{ __html: renderMarkdownHtml(draftContent) }}
+              />
+            ) : (
+              <textarea
+                value={draftContent}
+                onChange={(event) => setDraftContent(event.target.value)}
+                maxLength={100000}
+                spellCheck={false}
+                aria-label="Note body in Markdown"
+                className="min-h-[45vh] w-full resize-y rounded-xl border border-border bg-muted/20 p-4 font-mono text-xs leading-relaxed text-foreground outline-none focus-visible:ring-2 focus-visible:ring-foreground/40 sm:text-sm"
+              />
+            )}
+
+            <p className="text-[11px] text-muted-foreground">
+              Draft disimpan otomatis di browser ini. Cmd/Ctrl + Enter untuk simpan, Esc untuk batal.
+            </p>
+          </div>
+        ) : isRawView ? (
           <div className="space-y-4">
             {/* Mobile Action Toolbar when in Raw View */}
             <div className="flex sm:hidden items-center gap-2 justify-start flex-wrap">
@@ -628,6 +886,15 @@ export function NoteDetailPage() {
               <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground leading-tight font-sans">
                 {note.title}
               </h1>
+
+              {manualEditText && (
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary" className="gap-1 text-[10px]">
+                    <Pencil className="size-3" />
+                    <span>Edited manually</span>
+                  </Badge>
+                </div>
+              )}
 
               {/* Mobile Compact Metadata Bar: Centered, Equal-Width Grid */}
               <div
@@ -820,6 +1087,17 @@ export function NoteDetailPage() {
             <hr className="border-border" />
 
             {/* Document Content Flow (Flat on Canvas, Notion Style) */}
+            {manualEditText ? (
+              <div className="px-3 sm:px-4">
+                <div
+                  className={cn(
+                    "text-sm sm:text-base leading-relaxed text-foreground/90 font-sans prose prose-neutral dark:prose-invert max-w-none [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1.5 [&_p]:my-3 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:text-lg [&_h3]:font-semibold [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:bg-muted [&_code]:font-mono [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:bg-muted/70 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:italic",
+                    textAlignClass,
+                  )}
+                  dangerouslySetInnerHTML={{ __html: renderMarkdownHtml(manualEditText) }}
+                />
+              </div>
+            ) : (
             <div className="space-y-8">
               {/* Summary as Notion Callout without Icon */}
               {content?.summary && (
@@ -995,9 +1273,48 @@ export function NoteDetailPage() {
               )}
               </div>
             </div>
+            )}
           </article>
         )}
       </div>
+
+      {/* Mobile sticky save bar while editing */}
+      {isEditing && (
+        <div className="fixed inset-x-0 bottom-0 z-40 flex gap-2 border-t border-border bg-background/95 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur sm:hidden">
+          <Button
+            variant="outline"
+            onClick={requestCancelEdit}
+            disabled={isSavingEdit}
+            className="min-h-11 flex-1"
+          >
+            Cancel
+          </Button>
+          <Button onClick={handleSaveEdit} disabled={isSavingEdit} className="min-h-11 flex-1 gap-1.5">
+            {isSavingEdit ? <Spinner className="size-3.5" /> : <Save className="size-3.5" />}
+            <span>{isSavingEdit ? "Saving…" : "Save"}</span>
+          </Button>
+        </div>
+      )}
+
+      {/* Discard Unsaved Edit Dialog */}
+      <AlertDialog open={discardDialogOpen} onOpenChange={setDiscardDialogOpen}>
+        <AlertDialogPopup className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Your edits to this note have not been saved. Leaving now will drop them.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setDiscardDialogOpen(false)}>
+              Keep editing
+            </Button>
+            <Button variant="destructive" size="sm" onClick={finishCancelEdit}>
+              Discard
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
 
       {/* Change Template Dialog */}
       <Dialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen}>
