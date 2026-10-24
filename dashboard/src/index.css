@@ -70,10 +70,16 @@ a,
   touch-action: manipulation;
 }
 
-input,
-textarea,
-select {
-  font-size: 16px;
+/* Inside @layer base so a utility class (text-xs, text-sm) can win. Unlayered
+   CSS beats every layered rule, which is why compact inputs kept rendering at
+   16px while their class said 12px. Still 16px by default, so iOS does not
+   zoom the viewport when a field is focused. */
+@layer base {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
 }
 
 html.light {
