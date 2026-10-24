@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
@@ -57,6 +57,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toastManager } from "@/components/ui/toast";
+import { NoteRichEditor } from "@/components/dashboard/note-rich-editor";
 import type { TemplateOption } from "@/components/dashboard/note-preview-drawer";
 import {
   AlertCircle,
@@ -73,6 +74,7 @@ import {
   Download,
   FileIcon,
   FileText,
+  History,
   Image,
   Loader2,
   Mic,
@@ -88,7 +90,17 @@ import {
 import { formatDate, formatRelativeTime } from "@/lib/utils";
 import type { Note, StructuredNote } from "@/types/notes";
 import { cn } from "@/lib/utils";
-import { exportNoteToPdf } from "@/lib/pdf-export";
+import {
+  KEY_POINTS_HEADING,
+  normalizeMarkdownLists,
+  stripMarkdownSection,
+} from "@/lib/markdown-lists";
+import { NoteVersionHistory } from "@/components/dashboard/note-version-history";
+import {
+  exportNoteToPdf,
+  PDF_STYLE_OPTIONS,
+  type PdfStyleKey,
+} from "@/lib/pdf-export";
 
 const SOURCE_LABELS: Record<string, string> = {
   text: "Text",
@@ -114,7 +126,9 @@ const SOURCE_ICONS: Record<string, typeof FileText> = {
 
 function renderMarkdownHtml(markdownText: string): string {
   if (!markdownText) return "";
-  const rawHtml = marked.parse(markdownText, { async: false }) as string;
+  const rawHtml = marked.parse(normalizeMarkdownLists(markdownText), {
+    async: false,
+  }) as string;
   return DOMPurify.sanitize(rawHtml);
 }
 
@@ -139,8 +153,18 @@ export function NoteDetailPage() {
   const [draftTitle, setDraftTitle] = useState("");
   const [draftContent, setDraftContent] = useState("");
   const [isSavingEdit, setIsSavingEdit] = useState(false);
-  const [showDraftPreview, setShowDraftPreview] = useState(false);
+  const [editMode, setEditMode] = useState<"rich" | "source">("rich");
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
+  const [versionDialogOpen, setVersionDialogOpen] = useState(false);
+  const [keyPointBusy, setKeyPointBusy] = useState(false);
+
+  // The rich editor emits after a short debounce. Mirror every write into a ref
+  // so Save always sees the latest keystroke, even before React re-renders.
+  const draftContentRef = useRef("");
+  const updateDraftContent = useCallback((value: string) => {
+    draftContentRef.current = value;
+    setDraftContent(value);
+  }, []);
 
   const fetchNote = useCallback(async () => {
     if (!id) return;
@@ -260,6 +284,8 @@ export function NoteDetailPage() {
     output_rendered_text?: string;
     manual_edit_rendered_text?: string | null;
     manual_edit_updated_at?: string | null;
+    content_overlay?: { summary?: string; key_points?: string[] } | null;
+    key_points?: string[];
   }) | null;
 
   const manualEditText = noteRecord?.manual_edit_rendered_text ?? null;
@@ -268,6 +294,23 @@ export function NoteDetailPage() {
   const renderedText = noteRecord?.output_rendered_text || note?.current_output?.rendered_text;
 
   // Ensure we always have content to display in the structured view, even if it's just renderedText
+  const effectiveSummary = (note?.summary ?? "").trim() || rawContent?.summary || "";
+  const overlayKeyPoints = noteRecord?.content_overlay?.key_points;
+  const mergedKeyPoints = noteRecord?.key_points;
+  const effectiveKeyPoints: string[] =
+    Array.isArray(overlayKeyPoints) && overlayKeyPoints.length > 0
+      ? overlayKeyPoints
+      : Array.isArray(mergedKeyPoints)
+        ? mergedKeyPoints
+        : (rawContent?.key_points ?? []);
+  const summaryOverridden = Boolean(noteRecord?.content_overlay?.summary);
+  const keyPointsOverridden = Array.isArray(overlayKeyPoints);
+  const flatBodyMarkdown = manualEditText
+    ? keyPointsOverridden
+      ? stripMarkdownSection(manualEditText, KEY_POINTS_HEADING)
+      : manualEditText
+    : "";
+
   const content: StructuredNote | undefined = rawContent ?? (renderedText ? {
     title: note?.title || "",
     summary: "",
@@ -329,10 +372,13 @@ export function NoteDetailPage() {
   const draftStorageKey = id ? `notinn:note-edit:${id}` : null;
   const baselineContent = manualEditText ?? getEffectiveMarkdown();
 
-  const isDirtyEdit =
-    isEditing && note
-      ? draftTitle.trim() !== note.title.trim() || draftContent !== baselineContent
-      : false;
+  const isDirtyEdit = () => {
+    if (!isEditing || !note) return false;
+    return (
+      draftTitle.trim() !== note.title.trim() ||
+      draftContentRef.current !== baselineContent
+    );
+  };
 
   const clearStoredDraft = () => {
     if (!draftStorageKey) return;
@@ -360,21 +406,21 @@ export function NoteDetailPage() {
       }
     }
     setDraftTitle(nextTitle);
-    setDraftContent(nextContent);
+    updateDraftContent(nextContent);
     setIsEditing(true);
     setIsRawView(false);
-    setShowDraftPreview(false);
+    setEditMode("rich");
   };
 
   const finishCancelEdit = () => {
     clearStoredDraft();
     setDiscardDialogOpen(false);
     setIsEditing(false);
-    setShowDraftPreview(false);
+    setEditMode("rich");
   };
 
   const requestCancelEdit = () => {
-    if (isDirtyEdit) {
+    if (isDirtyEdit()) {
       setDiscardDialogOpen(true);
       return;
     }
@@ -384,7 +430,7 @@ export function NoteDetailPage() {
   const handleSaveEdit = async () => {
     if (!id) return;
     const nextTitle = draftTitle.trim();
-    const nextContent = draftContent.trim();
+    const nextContent = draftContentRef.current.trim();
     if (!nextTitle) {
       toastManager.add({
         title: "Title cannot be empty",
@@ -424,7 +470,7 @@ export function NoteDetailPage() {
 
       clearStoredDraft();
       setIsEditing(false);
-      setShowDraftPreview(false);
+      setEditMode("rich");
       await fetchNote();
       toastManager.add({
         title: "Note updated",
@@ -476,6 +522,90 @@ export function NoteDetailPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   });
 
+  const persistKeyPoints = async (points: string[]) => {
+    if (!id) return;
+    setKeyPointBusy(true);
+    try {
+      const { data, error: rpcError } = await supabase.rpc("web_set_note_key_points", {
+        p_note_id: id,
+        p_key_points: points,
+      });
+      if (rpcError) throw rpcError;
+      const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | null;
+      if (row?.outcome !== "updated") {
+        const messages: Record<string, string> = {
+          too_many_points: "Maksimal 50 key point per catatan.",
+          invalid_point: "Ada key point yang kepanjangan (maks 1000 karakter).",
+          not_found: "Catatan ini tidak bisa diubah.",
+        };
+        throw new Error(messages[row?.outcome ?? ""] ?? "Tidak bisa menyimpan key point.");
+      }
+      await fetchNote();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Tidak bisa menyimpan key point.";
+      toastManager.add({ title: "Gagal", description: message, type: "error" });
+      await fetchNote();
+    } finally {
+      setKeyPointBusy(false);
+    }
+  };
+
+  const handleMakeKeyPoint = async (text: string) => {
+    const point = text.replace(/\s+/g, " ").trim();
+    if (!point) return;
+    if (effectiveKeyPoints.includes(point)) {
+      toastManager.add({
+        title: "Sudah ada",
+        description: "Teks itu sudah jadi key point.",
+        type: "info",
+      });
+      return;
+    }
+    toastManager.add({
+      title: "Key point ditambahkan",
+      description: "Daftar key point catatan ini diperbarui.",
+      type: "success",
+    });
+    await persistKeyPoints([...effectiveKeyPoints, point]);
+  };
+
+  const handleRemoveKeyPoint = async (index: number) => {
+    const next = effectiveKeyPoints.filter((_, itemIndex) => itemIndex !== index);
+    await persistKeyPoints(next);
+  };
+
+  const handleMakeSummary = async (text: string) => {
+    if (!id) return;
+    const summaryText = text.replace(/\s+/g, " ").trim();
+    if (!summaryText) return;
+    try {
+      const { data, error: rpcError } = await supabase.rpc("web_set_note_summary", {
+        p_note_id: id,
+        p_summary: summaryText,
+      });
+      if (rpcError) throw rpcError;
+      const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | null;
+      if (row?.outcome !== "updated") {
+        throw new Error(
+          row?.outcome === "summary_too_long"
+            ? "Teks kepanjangan buat summary (maks 4000 karakter)."
+            : "Tidak bisa menyimpan summary.",
+        );
+      }
+      await fetchNote();
+      toastManager.add({
+        title: "Summary diperbarui",
+        description: "Teks terpilih sekarang dipakai sebagai summary catatan ini.",
+        type: "success",
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Tidak bisa menyimpan summary.";
+      toastManager.add({ title: "Gagal", description: message, type: "error" });
+    }
+  };
+
   const handleCopyMarkdown = async () => {
     if (!note) return;
     const textToCopy = getEffectiveMarkdown();
@@ -504,11 +634,11 @@ export function NoteDetailPage() {
     URL.revokeObjectURL(url);
   };
 
-  const handleDownloadPdf = async () => {
+  const handleDownloadPdf = async (styleKey: PdfStyleKey = "editorial") => {
     if (!note) return;
     setIsExportingPdf(true);
     try {
-      const structuredData: StructuredNote = content ?? {
+      const base: StructuredNote = content ?? {
         title: note.title,
         summary: "",
         key_points: [],
@@ -521,8 +651,14 @@ export function NoteDetailPage() {
         sections: renderedText ? [{ heading: "Content", content: renderedText }] : [],
         source_references: [],
       };
+      // The human summary override wins over whatever the model produced.
+      const structuredData: StructuredNote = {
+        ...base,
+        summary: effectiveSummary || base.summary,
+        key_points: effectiveKeyPoints.length > 0 ? effectiveKeyPoints : base.key_points,
+      };
 
-      const { filename, blob } = await exportNoteToPdf(structuredData);
+      const { filename, blob } = await exportNoteToPdf(structuredData, styleKey);
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -587,6 +723,30 @@ export function NoteDetailPage() {
         ? "text-center"
         : "text-left";
 
+  const keyPointsBlock =
+    effectiveKeyPoints.length > 0 ? (
+      <section className="space-y-3">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+          <List className="size-3.5" />
+          <span>Key Points</span>
+          {keyPointsOverridden && (
+            <Badge variant="secondary" className="h-4 gap-1 px-1.5 text-[9px] normal-case tracking-normal">
+              <Pencil className="size-2.5" />
+              manual
+            </Badge>
+          )}
+        </h2>
+        <ul className="space-y-2 pl-1">
+          {effectiveKeyPoints.map((point, i) => (
+            <li key={i} className="flex items-start gap-3 text-sm sm:text-base text-foreground leading-relaxed">
+              <span className="text-foreground/70 font-bold select-none">•</span>
+              <span className={cn("flex-1 leading-relaxed", textAlignClass)}>{point}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    ) : null;
+
   const actionToolbarContent = (
     <>
       {/* Coss Toggle Group for Text Alignment */}
@@ -647,6 +807,18 @@ export function NoteDetailPage() {
         <Sparkles className="size-3.5 text-primary" />
       </Button>
 
+      {/* Version History Button (Icon-Only) */}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setVersionDialogOpen(true)}
+        title="Version history"
+        aria-label="Version history"
+        className="size-8 p-0"
+      >
+        <History className="size-3.5" />
+      </Button>
+
       {/* Edit Note Button (Icon-Only) */}
       <Button
         variant="outline"
@@ -693,18 +865,26 @@ export function NoteDetailPage() {
               </Button>
             }
           />
-          <MenuPopup align="end" className="w-52">
-            <MenuItem
-              onClick={handleDownloadPdf}
-              disabled={isExportingPdf}
-              className="cursor-pointer gap-2.5 text-xs py-2"
-            >
-              <FileIcon className="size-4 text-muted-foreground" />
-              <div className="flex flex-col">
-                <span className="font-medium">Export PDF Document</span>
-                <span className="text-[10px] text-muted-foreground">Formatted printable .pdf</span>
-              </div>
-            </MenuItem>
+          <MenuPopup align="end" className="w-64">
+            <div className="px-2.5 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              PDF style
+            </div>
+            {PDF_STYLE_OPTIONS.map((option) => (
+              <MenuItem
+                key={option.key}
+                onClick={() => handleDownloadPdf(option.key)}
+                disabled={isExportingPdf}
+                className="cursor-pointer gap-2.5 text-xs py-2"
+              >
+                <FileIcon className="size-4 text-muted-foreground" />
+                <div className="flex flex-col">
+                  <span className="font-medium">Export PDF — {option.label}</span>
+                  <span className="text-[10px] text-muted-foreground">{option.hint}</span>
+                </div>
+              </MenuItem>
+            ))}
+
+            <MenuSeparator />
 
             <MenuItem
               onClick={() => handleDownloadText("markdown")}
@@ -756,7 +936,7 @@ export function NoteDetailPage() {
     <>
       <Header title={note.title} />
 
-      <div className={cn("p-4 sm:p-6 md:p-8 space-y-6 max-w-4xl w-full mx-auto", isEditing && "pb-28 sm:pb-8")}>
+      <div className={cn("p-4 sm:p-6 md:p-8 space-y-6 w-full mx-auto", isEditing ? "max-w-6xl pb-28 sm:pb-8" : "max-w-4xl")}>
         {/* Navigation Breadcrumb & Actions Topbar */}
         <div className="flex items-center justify-between gap-4 border-b border-border pb-4">
           <Breadcrumb>
@@ -791,6 +971,7 @@ export function NoteDetailPage() {
         {/* Manual Edit Canvas */}
         {isEditing ? (
           <div className="space-y-5">
+            {editMode === "source" && (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2">
               <span className="text-xs font-medium text-muted-foreground">
                 Editing note · Markdown
@@ -799,19 +980,22 @@ export function NoteDetailPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setShowDraftPreview((prev) => !prev)}
-                  className="gap-1.5 text-xs min-h-9"
-                  aria-label={showDraftPreview ? "Back to Markdown source" : "Preview rendered Markdown"}
+                  onClick={() =>
+                    setEditMode((prev) => (prev === "rich" ? "source" : "rich"))
+                  }
+                  className="gap-1.5 text-xs min-h-11 sm:min-h-9"
+                  aria-label="Switch to rich text editor"
+                  title="Switch to rich text editor"
                 >
-                  {showDraftPreview ? <Pencil className="size-3.5" /> : <FileText className="size-3.5" />}
-                  <span>{showDraftPreview ? "Source" : "Preview"}</span>
+                  <Pencil className="size-3.5" />
+                  <span>Rich</span>
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={requestCancelEdit}
                   disabled={isSavingEdit}
-                  className="gap-1.5 text-xs min-h-9"
+                  className="hidden gap-1.5 text-xs min-h-9 sm:inline-flex"
                 >
                   <X className="size-3.5" />
                   <span>Cancel</span>
@@ -819,14 +1003,15 @@ export function NoteDetailPage() {
                 <Button
                   size="sm"
                   onClick={handleSaveEdit}
-                  disabled={isSavingEdit}
-                  className="gap-1.5 text-xs min-h-9"
+                  disabled={isSavingEdit || !isDirtyEdit()}
+                  className="hidden gap-1.5 text-xs min-h-9 sm:inline-flex"
                 >
                   {isSavingEdit ? <Spinner className="size-3.5" /> : <Save className="size-3.5" />}
                   <span>{isSavingEdit ? "Saving…" : "Save"}</span>
                 </Button>
               </div>
             </div>
+            )}
 
             <div className="space-y-2">
               <label
@@ -845,18 +1030,79 @@ export function NoteDetailPage() {
               />
             </div>
 
-            {showDraftPreview ? (
-              <div
-                className={cn(
-                  "min-h-[45vh] rounded-xl border border-border bg-muted/10 p-5 font-sans text-sm leading-relaxed text-foreground/90 prose prose-neutral dark:prose-invert max-w-none sm:p-8 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1.5 [&_p]:my-2 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:bg-muted [&_code]:font-mono [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:bg-muted/70 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:italic",
-                  textAlignClass,
+            <div className="space-y-2 rounded-xl border border-border bg-muted/20 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Key points
+                  {effectiveKeyPoints.length > 0 ? ` (${effectiveKeyPoints.length})` : ""}
+                </span>
+                {keyPointsOverridden && (
+                  <button
+                    type="button"
+                    disabled={keyPointBusy}
+                    onClick={() => persistKeyPoints([])}
+                    className="text-[11px] font-medium text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline disabled:opacity-50"
+                  >
+                    Kembalikan ke versi AI
+                  </button>
                 )}
-                dangerouslySetInnerHTML={{ __html: renderMarkdownHtml(draftContent) }}
+              </div>
+              {effectiveKeyPoints.length === 0 ? (
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  Belum ada key point. Blok teks di editor, lalu klik tombol
+                  &ldquo;Key point&rdquo; di toolbar.
+                </p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {effectiveKeyPoints.map((point, index) => (
+                    <li
+                      key={`${index}-${point.slice(0, 16)}`}
+                      className="flex items-start gap-2 rounded-lg border border-border bg-background px-2.5 py-1.5"
+                    >
+                      <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-muted-foreground" />
+                      <span className="flex-1 text-[12px] leading-relaxed text-foreground/90">
+                        {point}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label="Hapus key point"
+                        disabled={keyPointBusy}
+                        onClick={() => handleRemoveKeyPoint(index)}
+                        className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {/* Kept mounted while Source is shown so the editor (and its undo
+                history) survives the toggle. */}
+            <div className={cn(editMode !== "rich" && "hidden")}>
+              <NoteRichEditor
+                markdown={draftContent}
+                onChange={updateDraftContent}
+                editable={!isSavingEdit}
+                active={editMode === "rich"}
+                onSave={handleSaveEdit}
+                onCancel={requestCancelEdit}
+                onToggleSource={() =>
+                  setEditMode((prev) => (prev === "rich" ? "source" : "rich"))
+                }
+                isSaving={isSavingEdit}
+                canSave={isDirtyEdit()}
+                sourceLabel={editMode === "rich" ? "Source" : "Rich"}
+                onMakeSummary={handleMakeSummary}
+                onMakeKeyPoint={handleMakeKeyPoint}
               />
-            ) : (
+            </div>
+
+            {editMode === "source" && (
               <textarea
                 value={draftContent}
-                onChange={(event) => setDraftContent(event.target.value)}
+                onChange={(event) => updateDraftContent(event.target.value)}
                 maxLength={100000}
                 spellCheck={false}
                 aria-label="Note body in Markdown"
@@ -864,7 +1110,7 @@ export function NoteDetailPage() {
               />
             )}
 
-            <p className="text-[11px] text-muted-foreground">
+            <p className="hidden text-[11px] text-muted-foreground sm:block">
               Draft disimpan otomatis di browser ini. Cmd/Ctrl + Enter untuk simpan, Esc untuk batal.
             </p>
           </div>
@@ -883,7 +1129,7 @@ export function NoteDetailPage() {
           <article className="w-full max-w-3xl mx-auto py-2 sm:py-6 space-y-8 transition-colors">
             {/* Notion Page Title */}
             <div className="space-y-4">
-              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground leading-tight font-sans">
+              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground leading-tight font-heading">
                 {note.title}
               </h1>
 
@@ -1088,26 +1334,53 @@ export function NoteDetailPage() {
 
             {/* Document Content Flow (Flat on Canvas, Notion Style) */}
             {manualEditText ? (
-              <div className="px-3 sm:px-4">
+              <div className="space-y-6 px-3 sm:px-4">
+                {effectiveSummary && (
+                  <div className="rounded-lg border border-border bg-muted/40 p-4 text-foreground text-sm sm:text-base leading-relaxed">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        <span>Summary</span>
+                        {summaryOverridden && (
+                          <Badge variant="secondary" className="h-4 gap-1 px-1.5 text-[9px] normal-case tracking-normal">
+                            <Pencil className="size-2.5" />
+                            manual
+                          </Badge>
+                        )}
+                      </div>
+                      <p className={cn("text-foreground/90 leading-relaxed font-sans", textAlignClass)}>
+                        {effectiveSummary}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                <div>
                 <div
                   className={cn(
                     "text-sm sm:text-base leading-relaxed text-foreground/90 font-sans prose prose-neutral dark:prose-invert max-w-none [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1.5 [&_p]:my-3 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:text-lg [&_h3]:font-semibold [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:bg-muted [&_code]:font-mono [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:bg-muted/70 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:italic",
                     textAlignClass,
                   )}
-                  dangerouslySetInnerHTML={{ __html: renderMarkdownHtml(manualEditText) }}
+                  dangerouslySetInnerHTML={{ __html: renderMarkdownHtml(flatBodyMarkdown) }}
                 />
+                </div>
+                {keyPointsOverridden && keyPointsBlock}
               </div>
             ) : (
             <div className="space-y-8">
               {/* Summary as Notion Callout without Icon */}
-              {content?.summary && (
+              {effectiveSummary && (
                 <div className="rounded-lg border border-border bg-muted/40 p-4 text-foreground text-sm sm:text-base leading-relaxed">
                   <div className="space-y-1">
-                    <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                      Summary
+                    <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      <span>Summary</span>
+                      {summaryOverridden && (
+                        <Badge variant="secondary" className="h-4 gap-1 px-1.5 text-[9px] normal-case tracking-normal">
+                          <Pencil className="size-2.5" />
+                          manual
+                        </Badge>
+                      )}
                     </div>
                     <p className={cn("text-foreground/90 leading-relaxed font-sans", textAlignClass)}>
-                      {content.summary}
+                      {effectiveSummary}
                     </p>
                   </div>
                 </div>
@@ -1122,7 +1395,7 @@ export function NoteDetailPage() {
                     const bodyText = section.content || section.body || "";
                     return (
                       <section key={i} className="space-y-3">
-                        <h2 className="text-lg sm:text-xl font-semibold tracking-tight text-foreground font-sans">
+                        <h2 className="text-lg sm:text-xl font-semibold tracking-tight text-foreground font-heading">
                           {section.heading}
                         </h2>
                         {bodyText ? (
@@ -1145,22 +1418,7 @@ export function NoteDetailPage() {
               )}
 
               {/* Key Points with Notion Bullets */}
-              {content?.key_points && content.key_points.length > 0 && (
-                <section className="space-y-3">
-                  <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                    <List className="size-3.5" />
-                    <span>Key Points</span>
-                  </h2>
-                  <ul className="space-y-2 pl-1">
-                    {content.key_points.map((point, i) => (
-                      <li key={i} className="flex items-start gap-3 text-sm sm:text-base text-foreground leading-relaxed">
-                        <span className="text-foreground/70 font-bold select-none">•</span>
-                        <span className={cn("flex-1 leading-relaxed", textAlignClass)}>{point}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
+              {keyPointsBlock}
 
               {/* Decisions (if present) */}
               {content?.decisions && content.decisions.length > 0 && (
@@ -1289,7 +1547,11 @@ export function NoteDetailPage() {
           >
             Cancel
           </Button>
-          <Button onClick={handleSaveEdit} disabled={isSavingEdit} className="min-h-11 flex-1 gap-1.5">
+          <Button
+            onClick={handleSaveEdit}
+            disabled={isSavingEdit || !isDirtyEdit()}
+            className="min-h-11 flex-1 gap-1.5"
+          >
             {isSavingEdit ? <Spinner className="size-3.5" /> : <Save className="size-3.5" />}
             <span>{isSavingEdit ? "Saving…" : "Save"}</span>
           </Button>
@@ -1316,6 +1578,16 @@ export function NoteDetailPage() {
         </AlertDialogPopup>
       </AlertDialog>
 
+      {id && (
+        <NoteVersionHistory
+          noteId={id}
+          currentOutputId={noteRecord?.output_id ?? null}
+          open={versionDialogOpen}
+          onOpenChange={setVersionDialogOpen}
+          onRestored={fetchNote}
+        />
+      )}
+
       {/* Change Template Dialog */}
       <Dialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen}>
         <DialogPopup className="sm:max-w-md">
@@ -1325,8 +1597,13 @@ export function NoteDetailPage() {
               <span>Change note template</span>
             </DialogTitle>
             <DialogDescription>
-              Choose a new template to restructure this note. The original transcript will be reprocessed by AI.
+              Choose a new template to restructure this note. The original transcript
+              will be reprocessed by AI.
             </DialogDescription>
+            <p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">
+              Regenerate memakai <strong>1 kuota generasi</strong>. Versi lama tidak
+              hilang — bisa dikembalikan lewat Riwayat versi kapan saja.
+            </p>
           </DialogHeader>
 
           <div className="p-6 pt-2 space-y-4">

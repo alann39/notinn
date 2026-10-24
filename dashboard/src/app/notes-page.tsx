@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  ArrowUpDown,
   Bookmark,
   BookmarkCheck,
   ChevronLeft,
@@ -53,8 +54,23 @@ import {
   EmptyDescription,
   EmptyContent,
 } from "@/components/ui/empty";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "@/components/ui/select";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import type { Note } from "@/types/notes";
+
+const SORT_OPTIONS = [
+  { value: "updated_desc", label: "Last modified" },
+  { value: "created_desc", label: "Newest created" },
+  { value: "created_asc", label: "Oldest created" },
+  { value: "title_asc", label: "Title A–Z" },
+] as const;
+
 
 const SOURCE_ICONS: Record<string, typeof FileText> = {
   text: FileText,
@@ -73,6 +89,9 @@ export function NotesPage() {
   const [notes, setNotes] = useState<readonly Note[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortKey, setSortKey] = useState<
+    "updated_desc" | "created_desc" | "created_asc" | "title_asc"
+  >("updated_desc");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [savedOnly, setSavedOnly] = useState(true);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -108,6 +127,7 @@ export function NotesPage() {
           p_query: debouncedQuery,
           p_limit: PAGE_SIZE,
           p_saved_only: savedOnly,
+          p_sort: sortKey,
         });
         if (error) throw error;
         setNotes(data ?? []);
@@ -117,6 +137,7 @@ export function NotesPage() {
           p_offset: page * PAGE_SIZE,
           p_limit: PAGE_SIZE + 1,
           p_saved_only: savedOnly,
+          p_sort: sortKey,
         });
         if (error) throw error;
         const rows = data ?? [];
@@ -128,7 +149,7 @@ export function NotesPage() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedQuery, savedOnly, page]);
+  }, [debouncedQuery, savedOnly, page, sortKey]);
 
   useEffect(() => {
     fetchNotes();
@@ -215,6 +236,41 @@ export function NotesPage() {
                   </>
                 )}
               </Button>
+
+              {/* Sort Control: date modified / created / title */}
+              <Select
+                value={sortKey}
+                items={SORT_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: option.label,
+                }))}
+                onValueChange={(value) => {
+                  if (
+                    value === "updated_desc" ||
+                    value === "created_desc" ||
+                    value === "created_asc" ||
+                    value === "title_asc"
+                  ) {
+                    setSortKey(value);
+                    setPage(0);
+                  }
+                }}
+              >
+                <SelectTrigger
+                  className="h-8 gap-1.5 text-xs"
+                  aria-label="Sort notes"
+                >
+                  <ArrowUpDown className="size-3.5 text-muted-foreground" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectPopup align="end">
+                  {SORT_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
 
               {/* Coss Segmented Control for Grid vs List */}
               <div

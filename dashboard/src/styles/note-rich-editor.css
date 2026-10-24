@@ -1,0 +1,129 @@
+/* Tiptap adds task-item chrome that the read canvas does not style. Keep the
+   checkbox layout and empty-state hint here; typography comes from Tailwind
+   utilities in note-rich-editor.tsx so it matches the read mode exactly. */
+
+.note-rich-editor .ProseMirror {
+  outline: none;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.note-rich-editor .ProseMirror p:only-child:empty::before,
+.note-rich-editor
+  .ProseMirror
+  p:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
+  content: "Tulis catatan…";
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--color-muted-foreground);
+}
+
+.note-rich-editor .ProseMirror ul[data-type="taskList"] {
+  list-style: none;
+  margin: 0.75rem 0;
+  padding-left: 0.25rem;
+}
+
+.note-rich-editor .ProseMirror ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.375rem 0;
+}
+
+.note-rich-editor .ProseMirror ul[data-type="taskList"] li > label {
+  flex: 0 0 auto;
+  margin-top: 0.3em;
+}
+
+.note-rich-editor
+  .ProseMirror
+  ul[data-type="taskList"]
+  li
+  > label
+  input[type="checkbox"] {
+  width: 0.95rem;
+  height: 0.95rem;
+  cursor: pointer;
+  accent-color: var(--color-foreground);
+}
+
+.note-rich-editor .ProseMirror ul[data-type="taskList"] li > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.note-rich-editor .ProseMirror ul[data-type="taskList"] li > div > :first-child {
+  margin-top: 0;
+}
+
+.note-rich-editor .ProseMirror ul[data-type="taskList"] li > div > :last-child {
+  margin-bottom: 0;
+}
+
+.note-rich-editor .ProseMirror ul[data-type="taskList"] ul[data-type="taskList"] {
+  margin: 0.25rem 0;
+}
+
+.note-rich-editor
+  .ProseMirror
+  li[data-type="taskItem"][data-checked="true"]
+  > div {
+  color: var(--color-muted-foreground);
+  text-decoration: line-through;
+}
+
+/* Tiptap's task node view hides the accessible label with inline styles; make
+   sure the checkbox itself stays tappable on touch. */
+.note-rich-editor .ProseMirror ul[data-type="taskList"] label {
+  touch-action: manipulation;
+}
+
+/* Vertical rhythm. Margins live here instead of utility classes so the scale
+   survives every ProseMirror node type and stays identical in both modes:
+   generous space above a heading, tighter below it, real paragraph breaks. */
+.note-rich-editor .ProseMirror > * + * {
+  margin-top: 0.85rem;
+}
+
+.note-rich-editor .ProseMirror h1,
+.note-rich-editor .ProseMirror h2,
+.note-rich-editor .ProseMirror h3 {
+  margin-top: 1.9rem;
+  margin-bottom: 0;
+  line-height: 1.25;
+}
+
+.note-rich-editor .ProseMirror > h1:first-child,
+.note-rich-editor .ProseMirror > h2:first-child,
+.note-rich-editor .ProseMirror > h3:first-child {
+  margin-top: 0;
+}
+
+/* First block after a heading belongs to that heading — keep it close. */
+.note-rich-editor .ProseMirror h1 + *,
+.note-rich-editor .ProseMirror h2 + *,
+.note-rich-editor .ProseMirror h3 + * {
+  margin-top: 0.6rem;
+}
+
+.note-rich-editor .ProseMirror p {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.note-rich-editor .ProseMirror ul,
+.note-rich-editor .ProseMirror ol {
+  margin-top: 0.7rem;
+  margin-bottom: 0.7rem;
+  padding-left: 1.25rem;
+}
+
+.note-rich-editor .ProseMirror li > p {
+  margin: 0;
+}
+
+.note-rich-editor .ProseMirror li + li {
+  margin-top: 0.3rem;
+}
