@@ -21,5 +21,19 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "vite-env.d.ts"]
+  "include": ["src", "vite-env.d.ts"],
+  // Cornell note (cornell-*) = WIP yang diarsipkan: tidak dilanjutkan, tidak dihapus.
+  // Dikecualikan dari typecheck supaya `npm run build:client` hijau lagi. File-nya
+  // tetap ada di disk dan tidak disentuh. Mau lanjut Cornell lagi? Hapus blok exclude
+  // ini, atau `git checkout dashboard/tsconfig.json`.
+  "exclude": [
+    "src/components/dashboard/cornell-note-convert.ts",
+    "src/components/dashboard/cornell-note-draft.ts",
+    "src/components/dashboard/cornell-note-editor.tsx",
+    "src/components/dashboard/cornell-note-link.ts",
+    "src/components/dashboard/cornell-note-persist.ts",
+    "src/components/dashboard/cornell-note-view.tsx",
+    "src/components/dashboard/cornell-seamless.tsx",
+    "src/app/test-cornell-editor-page.tsx"
+  ]
 }

@@ -1,0 +1,695 @@
+# Outline lengkap — frame `Notinn — Redesign v2`
+
+Sumber: `notinn-design.pen` (plaintext JSON, version 2.21). 1440 lebar, 647 node.
+Anotasi `fill→token` pakai pemetaan variable Notinn. `text-primary(merged)` = hex `#3D3D3D` yang digabung ke text-primary.
+
+---
+
+## [0] Hero — fill_containerx920
+
+- Hero [frame fill_containerx920] fill→bg-subtle
+  - Grid [group]
+    - VRule 0 [rectangle 1x920] fill→ink-hover
+    - VRule 1 [rectangle 1x920] fill→ink-hover
+    - VRule 2 [rectangle 1x920] fill→ink-hover
+    - VRule 3 [rectangle 1x920] fill→ink-hover
+    - VRule 4 [rectangle 1x920] fill→ink-hover
+    - VRule 5 [rectangle 1x920] fill→ink-hover
+    - VRule 6 [rectangle 1x920] fill→ink-hover
+    - VRule 7 [rectangle 1x920] fill→ink-hover
+    - VRule 8 [rectangle 1x920] fill→ink-hover
+    - VRule 9 [rectangle 1x920] fill→ink-hover
+    - VRule 10 [rectangle 1x920] fill→ink-hover
+    - VRule 11 [rectangle 1x920] fill→ink-hover
+    - HRule 88 [rectangle 1440x1] fill→ink-hover
+    - HRule 300 [rectangle 1440x1] fill→ink-hover
+    - HRule 620 [rectangle 1440x1] fill→ink-hover
+    - HRule 860 [rectangle 1440x1] fill→ink-hover
+  - Brand [frame]
+    - Logo [rectangle 30x30]
+    - <unnamed> [text] "Notinn." 16/700 → text-primary
+  - Live counter [frame] fill→bg/on-dark stroke→border
+    - <unnamed> [ellipse 7x7] fill→success
+    - <unnamed> [text] "1,284 notes today" 12/normal → body
+  - Hero Headline [frame 560xNone]
+    - Index [text] "(01)" 14/normal → accent
+    - H1 [text 560x150] "Notes that ⏎ write themselves." 62/500 → text-primary
+    - sp1 [rectangle 1x18]
+    - sp2 [rectangle 1x22]
+    - Hero sub [text 440xNone] "Forward text, voice notes, screenshots, or documents to Notinn on Telegram. Get a clear, structured note back " 14/normal → body
+    - sp3 [rectangle 1x32]
+    - Hero CTA [frame Nonex50]
+      - Hero CTA primary [frame Nonex50] fill→text-primary
+        - Hero CTA label [text] "Open in Telegram" 14/500 → bg/on-dark
+        - Hero CTA icon [icon 15x15] icon=send(lucide) → bg/on-dark
+      - Hero CTA secondary [frame Nonex50] fill→bg-muted stroke→border
+        - Hero CTA secondary label [text] "How it works" 14/500 → text-primary
+  - Specimen Sheet [frame 668x660] fill→bg/on-dark stroke→border
+    - Sheet head [frame 668x44] fill→bg-elevated? stroke→border
+      - head left [frame]
+        - dot [ellipse 8x8] fill→danger?
+        - dot [ellipse 8x8] fill→warning
+        - dot [ellipse 8x8] fill→success
+        - file [text] "note_2026-10-21.md" 14/normal → text-muted
+      - right [text] "saved" 14/normal → text-muted
+    - Sheet body [frame 604xNone]
+      - crumb [text] "FROM TELEGRAM · 10:42 · 4 ATTACHMENTS" 14/normal → text-muted
+      - sp [rectangle 1x14]
+      - Note title [text 604xNone] "Pricing & Roadmap Sync" 32/500 → text-primary
+      - hr [rectangle fill_containerx1] fill→border
+      - sp2 [rectangle 1x22]
+      - sec1 [text] "SUMMARY" 14/700 → accent
+      - sp3 [rectangle 1x8]
+      - sum [text 604xNone] "The team aligned on shipping Q3 in two stages: auth migration first, then the Telegram bot beta. Pricing stays" 14/normal → text-primary(merged)
+      - sp4 [rectangle 1x22]
+      - sec2 [text] "ACTION ITEMS" 14/700 → accent
+      - sp5 [rectangle 1x10]
+      - Review auth mi [frame fill_containerxNone]
+        - box [frame 14x14] fill→text-primary
+          - c [icon 9x9] icon=check(lucide) → bg/on-dark
+        - t [text 470xNone] "Review auth migration scope with engineering" 14/normal → text-muted
+        - who [text] "@arun" 14/normal → text-muted
+      - Move beta laun [frame fill_containerxNone]
+        - box [frame 14x14] stroke→border-strong?
+        - t [text 470xNone] "Move beta launch to the 14th" 14/normal → text-primary
+        - who [text] "@faiz" 14/normal → text-muted
+      - Confirm Early  [frame fill_containerxNone]
+        - box [frame 14x14] stroke→border-strong?
+        - t [text 470xNone] "Confirm Early Bird cap at 100 users" 14/normal → text-primary
+        - who [text] "@ops" 14/normal → text-muted
+    - Tags [frame]
+      - #pricing [frame] fill→bg-muted
+        - x [text] "#pricing" 14/normal → body
+      - #roadmap [frame] fill→bg-muted
+        - x [text] "#roadmap" 14/normal → body
+      - #auth [frame] fill→bg-muted
+        - x [text] "#auth" 14/normal → body
+      - #q3 [frame] fill→bg-muted
+        - x [text] "#q3" 14/normal → body
+    - AI chip [frame] fill→text-primary
+      - sp [icon 12x12] icon=sparkles(lucide) → accent
+      - t [text] "Ask this note a question" 14/500 → bg/on-dark
+  - Index list [frame 560xNone]
+    - CAPTURE [frame fill_containerxNone] stroke→border
+      - n [text] "01" 14/normal → accent
+      - k [text] "CAPTURE" 14/600 → text-primary
+      - v [text] "voice · text · files" 14/normal → text-muted
+    - STRUCTURE [frame fill_containerxNone] stroke→border
+      - n [text] "02" 14/normal → accent
+      - k [text] "STRUCTURE" 14/600 → text-primary
+      - v [text] "title · summary · tags" 14/normal → text-muted
+    - RETRIEVE [frame fill_containerxNone] stroke→border
+      - n [text] "03" 14/normal → accent
+      - k [text] "RETRIEVE" 14/600 → text-primary
+      - v [text] "search · ask · export" 14/normal → text-muted
+---
+
+## [1] Input Marquee — Editorial — fill_containerx96
+
+- Input Marquee — Editorial [frame fill_containerx96] fill→accent-surface-soft?
+  - <unnamed> [text] "Text" 28/500 → text-primary
+  - <unnamed> [ellipse 7x7] fill→accent
+  - <unnamed> [text] "Voice notes" 28/300 → text-primary
+  - <unnamed> [ellipse 7x7] fill→accent
+  - <unnamed> [text] "Screenshots" 28/500 → text-primary
+  - <unnamed> [ellipse 7x7] fill→accent
+  - <unnamed> [text] "Documents" 28/300 → text-primary
+  - <unnamed> [ellipse 7x7] fill→accent
+  - <unnamed> [text] "Forwarded messages" 28/500 → text-primary
+  - <unnamed> [ellipse 7x7] fill→accent
+  - <unnamed> [text] "Clean notes" 28/300 → text-primary
+  - <unnamed> [ellipse 7x7] fill→accent
+  - <unnamed> [text] "Text" 28/500 → text-primary
+  - <unnamed> [ellipse 7x7] fill→accent
+  - <unnamed> [text] "Voice notes" 28/300 → text-primary
+  - <unnamed> [ellipse 7x7] fill→accent
+  - <unnamed> [text] "Screenshots" 28/500 → text-primary
+  - <unnamed> [ellipse 7x7] fill→accent
+  - <unnamed> [text] "Documents" 28/300 → text-primary
+  - <unnamed> [ellipse 7x7] fill→accent
+  - <unnamed> [text] "Forwarded messages" 28/500 → text-primary
+  - <unnamed> [ellipse 7x7] fill→accent
+  - <unnamed> [text] "Clean notes" 28/300 → text-primary
+  - <unnamed> [ellipse 7x7] fill→accent
+---
+
+## [2] How It Works — fill_containerxNone
+
+- How It Works [frame fill_containerxNone] fill→bg/on-dark
+  - How Header [frame fill_containerxNone]
+    - Eyebrow Row [frame]
+      - Pill [frame] fill→bg-muted stroke=$v2-border
+        - route [icon 12x12] icon=route(lucide) → accent
+        - Pill label [text] "How it works" 14/600 → text-primary
+    - H2 [text 760xNone] "Stay in Telegram. ⏎ Three steps only." 52/500 → text-primary
+  - Grid [frame fill_containerxfit_content(459)]
+    - Card 01 [frame fill_containerxfill_container]
+      - Top [frame fill_containerxfill_container]
+        - Head Row [frame fill_containerxNone]
+          - Big Num [text] "01" 44/300
+          - mic [icon 20x20] icon=mic(lucide)
+        - Text [frame fill_containerxNone]
+          - Label [text fill_containerxNone] "SEND ANYTHING" 19/600
+          - Body [text fill_containerxNone] "Voice notes, screenshots, PDFs, or plain text." 14/normal
+      - Foot [frame fill_containerxNone]
+        - Meta [text] "in‑chat" 12/500
+        - arw [icon 14x14] icon=arrow-up-right(lucide)
+      - Illustration — Capture [frame 341x196]
+    - Card 02 [frame fill_containerxfill_container]
+      - Top [frame fill_containerxfill_container]
+        - Head Row [frame fill_containerxNone]
+          - Big Num [text] "02" 44/300
+          - sparkles [icon 20x20] icon=sparkles(lucide)
+        - Text [frame fill_containerxNone]
+          - Label [text fill_containerxNone] "GETS STRUCTURED" 19/600
+          - Body [text fill_containerxNone] "Titles, summaries, action items, tags." 14/normal
+      - Foot [frame fill_containerxNone]
+        - Meta [text] "~4s" 12/500
+        - arw [icon 14x14] icon=arrow-up-right(lucide)
+      - Illustration — Structure [frame 341x196]
+    - Card 03 [frame fill_containerxfill_container]
+      - Top [frame fill_containerxfill_container]
+        - Head Row [frame fill_containerxNone]
+          - Big Num [text] "03" 44/300
+          - search [icon 20x20] icon=search(lucide)
+        - Text [frame fill_containerxNone]
+          - Label [text fill_containerxNone] "STAYS USEFUL" 19/600
+          - Body [text fill_containerxNone] "Search, ask, export — chat or dashboard." 14/normal
+      - Foot [frame fill_containerxNone]
+        - Meta [text] "forever" 12/500
+        - arw [icon 14x14] icon=arrow-up-right(lucide)
+      - Illustration — Utility [frame 341x196]
+  - Footer Note [frame fill_containerxNone]
+    - zap [icon 14x14] icon=zap(lucide) → accent
+    - note [text] "No app install. No bot commands to memorise. It all happens where you already talk." 13/normal → body
+---
+
+## [3] Bento — fill_containerxNone
+
+- Bento [frame fill_containerxNone] stroke=$border
+  - Bento Header [frame fill_containerx135]
+    - Bento Title [frame]
+      - Bento eyebrow [text] "02 — THE WEB DASHBOARD" 14/normal
+      - Bento H2 [text 720xNone] "Capture in the chat. ⏎ Think on the canvas." 48/500
+    - Bento intro [text 420xNone] "Send voice memos, screenshots, links, and documents to @NotinnBot while you're on the move. When you're back a" 14/normal
+  - Bento Grid [frame fill_containerxNone]
+    - Bento Row A [frame fill_containerxNone]
+      - Dashboard Tile [frame 812x520] stroke=$border
+        - Dash shot [rectangle 812x457]
+        - Dash fade [rectangle 812x127]
+        - Dash caption [frame 812x52]
+          - Dash cap left [frame]
+            - icon [icon 14x14] icon=layout-grid(lucide)
+            - Dash cap label [text] "Notes library · grid view" 14/normal
+          - Dash cap right [frame]
+            - Count [text] "Showing 3 notes" 14/normal
+      - Side Tiles [frame fill_containerxNone]
+        - Search Tile [frame fill_containerx252] stroke=#00000000
+          - Search label [text] "SEARCH" 14/normal
+          - Search field [frame fill_containerxNone] stroke=$on-accent-field-border
+            - search [icon 13x13] icon=search(lucide)
+            - Query [text] "pricing decisions" 14/normal
+          - Search title [text] "Full-text & semantic search" 14/500
+          - Search body [text fill_containerxNone] "Ask in plain language. Results come back with citations pointing to the exact note." 14/normal
+          - Citations [frame fill_containerxNone]
+            - note 1 [frame]
+              - c [text] "note 1" 14/normal
+            - note 2 [frame]
+              - c [text] "note 2" 14/normal
+          - Search hint [text fill_containerxNone] "Try: “roadmap”, “pricing”, or a phrase you remember." 14/normal
+        - Ask Tile [frame fill_containerx252]
+          - Ask label [text] "ASK" 14/normal
+          - Ask bubble [frame fill_containerxNone]
+            - sparkles [icon 13x13] icon=sparkles(lucide)
+            - Ask q [text fill_containerxNone] "What did we decide about Early Bird pricing?" 14/normal
+          - Ask answer [text fill_containerxNone] "Pro starts at Rp 10.000 for the first 100 users." 14/normal
+          - Ask title [text fill_containerxNone] "300 Ask queries / month" 14/500
+    - Bento Row B [frame fill_containerxNone]
+      - Formats Tile [frame 404x284] stroke=$border-dark
+        - f label [text] "INPUTS ACCEPTED" 14/normal
+        - Format chips [frame fill_containerxNone]
+          - Voice [frame fill_containerxNone] stroke=$border-dark
+            - Voice i [icon 15x15] icon=mic(lucide)
+            - l [text] "Voice" 14/normal
+          - PDF [frame fill_containerxNone] stroke=$border-dark
+            - PDF i [icon 15x15] icon=file-text(lucide)
+            - l [text] "PDF" 14/normal
+          - Image [frame fill_containerxNone] stroke=$border-dark
+            - Image i [icon 15x15] icon=image(lucide)
+            - l [text] "Image" 14/normal
+          - DOCX [frame fill_containerxNone] stroke=$border-dark
+            - DOCX i [icon 15x15] icon=file-type(lucide)
+            - l [text] "DOCX" 14/normal
+        - f title [text] "Every format, one result" 14/500
+        - f body [text fill_containerxNone] "Voice up to 30 minutes, PDFs, screenshots, DOCX — send anything, get back a clean structured note." 14/normal
+      - Voice Tile [frame 404x284]
+        - v label [text] "VOICE · UP TO 30 MIN" 14/normal
+        - Big waveform [frame fill_containerx56]
+          - w [rectangle 5x10]
+          - w [rectangle 5x22]
+          - w [rectangle 5x38]
+          - w [rectangle 5x52]
+          - w [rectangle 5x30]
+          - w [rectangle 5x44]
+          - w [rectangle 5x20]
+          - w [rectangle 5x34]
+          - w [rectangle 5x48]
+          - w [rectangle 5x26]
+          - w [rectangle 5x14]
+          - w [rectangle 5x36]
+          - w [rectangle 5x50]
+          - w [rectangle 5x28]
+          - w [rectangle 5x18]
+          - w [rectangle 5x40]
+          - w [rectangle 5x24]
+          - w [rectangle 5x12]
+          - w [rectangle 5x32]
+          - w [rectangle 5x44]
+          - w [rectangle 5x20]
+          - w [rectangle 5x28]
+          - w [rectangle 5x38]
+          - w [rectangle 5x16]
+          - w [rectangle 5x26]
+          - w [rectangle 5x34]
+          - w [rectangle 5x10]
+          - w [rectangle 5x20]
+          - w [rectangle 5x30]
+          - w [rectangle 5x14]
+          - w [rectangle 5x22]
+          - w [rectangle 5x36]
+          - w [rectangle 5x18]
+          - w [rectangle 5x12]
+          - w [rectangle 5x26]
+        - v time [text] "0:42 / 2:00" 14/normal
+        - v title [text] "Speak it. It's written." 14/500
+        - v body [text fill_containerxNone] "No typing required. Record a memo on a walk and it comes back transcribed, titled, and tagged." 14/normal
+      - Export Tile [frame fill_containerx284] stroke=$border-dark
+        - e label [text] "EXPORT & TEMPLATE" 14/normal
+        - Export files [frame fill_containerxNone]
+          - Q3-plan [frame fill_containerxNone] stroke=$border-dark
+            - Q3-plan i [icon 14x14] icon=file-text(lucide)
+            - fname [text] "Brief" 14/normal
+            - ext [text] "PDF" 14/normal
+          - Roadmap [frame fill_containerxNone] stroke=$border-dark
+            - Roadmap i [icon 14x14] icon=file-text(lucide)
+            - fname [text] "Roadmap" 14/normal
+            - ext [text] "MD" 14/normal
+          - Sync [frame fill_containerxNone] stroke=$border-dark
+            - Sync i [icon 14x14] icon=file-text(lucide)
+            - fname [text] "Sync" 14/normal
+            - ext [text] "DOCX" 14/normal
+        - e title [text] "Notes that keep working" 14/500
+        - e body [text fill_containerxNone] "Export to PDF and Markdown, or reformat with a template. Not an archive — a working knowledge base." 14/normal
+---
+
+## [4] Before After — fill_containerxNone
+
+- Before After [frame fill_containerxNone] fill→bg/on-dark
+  - BA Header [frame fill_containerxNone]
+    - BA Title [frame]
+      - BA eyebrow [text] "03 — BEFORE AND AFTER" 14/normal → text-tertiary
+      - BA H2 [text 720xNone] "The same thought, ⏎ handled two ways." 48/500 → text-primary
+    - BA intro [text 380xNone] "A note app you have to open is a note you won't write. Notinn sits inside the chat you already use." 14/normal → body
+  - Illustrated Bento [frame 1232xNone]
+    - <unnamed> [frame fill_containerxNone]
+      - Card You just had an idea [frame fill_containerx224] stroke=$border
+        - Art [frame 176x176] stroke=$accent-line-soft
+          - <unnamed> [rectangle 150x150]
+        - <unnamed> [frame fill_containerxNone]
+          - <unnamed> [text] "You just had an idea" 18/600
+          - <unnamed> [rectangle 1x2]
+          - <unnamed> [frame fill_containerxNone]
+            - <unnamed> [frame 18x18] stroke=$border
+              - <unnamed> [icon 10x10] icon=close(Material Symbols Rounded)
+            - <unnamed> [text fill_containerxNone] "It stays in your head. Later you can't find it." 14/normal
+          - <unnamed> [frame fill_containerxNone]
+            - <unnamed> [frame 18x18]
+              - <unnamed> [icon 11x11] icon=check(Material Symbols Rounded) → bg/on-dark
+            - <unnamed> [text fill_containerxNone] "Send a voice note in Telegram on the walk back." 14/500
+      - Card A meeting ends [frame fill_containerx224] stroke=$border
+        - Art [frame 176x176] stroke=$accent-line-soft
+          - <unnamed> [rectangle 150x150]
+        - <unnamed> [frame fill_containerxNone]
+          - <unnamed> [text] "A meeting ends" 18/600
+          - <unnamed> [rectangle 1x2]
+          - <unnamed> [frame fill_containerxNone]
+            - <unnamed> [frame 18x18] stroke=$border
+              - <unnamed> [icon 10x10] icon=close(Material Symbols Rounded)
+            - <unnamed> [text fill_containerxNone] "Action items get buried in a wall of chat." 14/normal
+          - <unnamed> [frame fill_containerxNone]
+            - <unnamed> [frame 18x18]
+              - <unnamed> [icon 11x11] icon=check(Material Symbols Rounded) → bg/on-dark
+            - <unnamed> [text fill_containerxNone] "A structured note with a summary and action items." 14/500
+    - <unnamed> [frame fill_containerxNone]
+      - Card You need the source [frame fill_containerx224] stroke=$border
+        - Art [frame 176x176] stroke=$accent-line-soft
+          - <unnamed> [rectangle 150x150]
+        - <unnamed> [frame fill_containerxNone]
+          - <unnamed> [text] "You need the source" 18/600
+          - <unnamed> [rectangle 1x2]
+          - <unnamed> [frame fill_containerxNone]
+            - <unnamed> [frame 18x18] stroke=$border
+              - <unnamed> [icon 10x10] icon=close(Material Symbols Rounded)
+            - <unnamed> [text fill_containerxNone] "Scroll back through four chats and an album." 14/normal
+          - <unnamed> [frame fill_containerxNone]
+            - <unnamed> [frame 18x18]
+              - <unnamed> [icon 11x11] icon=check(Material Symbols Rounded) → bg/on-dark
+            - <unnamed> [text fill_containerxNone] "Search, or ask a question with citations." 14/500
+      - Card A quarter later [frame fill_containerx224] stroke=$border
+        - Art [frame 176x176] stroke=$accent-line-soft
+          - <unnamed> [rectangle 150x150]
+        - <unnamed> [frame fill_containerxNone]
+          - <unnamed> [text] "A quarter later" 18/600
+          - <unnamed> [rectangle 1x2]
+          - <unnamed> [frame fill_containerxNone]
+            - <unnamed> [frame 18x18] stroke=$border
+              - <unnamed> [icon 10x10] icon=close(Material Symbols Rounded)
+            - <unnamed> [text fill_containerxNone] "The context is gone. You start from zero." 14/normal
+          - <unnamed> [frame fill_containerxNone]
+            - <unnamed> [frame 18x18]
+              - <unnamed> [icon 11x11] icon=check(Material Symbols Rounded) → bg/on-dark
+            - <unnamed> [text fill_containerxNone] "Export the note to PDF and reopen it in a minute." 14/500
+  - Trust Bar [frame fill_containerxNone]
+    - Trust list [frame]
+      - Telegram-first capture [frame]
+        - Telegram-first capture i [icon 13x13] icon=check(lucide) → accent
+        - t [text] "Telegram-first capture" 14/500 → text-primary
+      - Structured by default [frame]
+        - Structured by default i [icon 13x13] icon=check(lucide) → accent
+        - t [text] "Structured by default" 14/500 → text-primary
+      - Useful after saving [frame]
+        - Useful after saving i [icon 13x13] icon=check(lucide) → accent
+        - t [text] "Useful after saving" 14/500 → text-primary
+    - Trust CTA [frame] fill→text-primary
+      - tbl [text] "Try Notinn on Telegram" 14/600 → bg/on-dark
+      - tbi [icon 14x14] icon=arrow-up-right(lucide) → bg/on-dark
+---
+
+## [5] Section Transition — Pricing → Closing CTA — 1440x120
+
+- Section Transition — Pricing → Closing CTA [frame 1440x120]
+---
+
+## [6] Pricing L2 — Receipt — 1440x980
+
+- Pricing L2 — Receipt [frame 1440x980] fill→accent-surface-soft?
+  - <unnamed> [text] "04 — PRICING" 14/normal → accent-ink
+  - <unnamed> [text] "Pro, the price ⏎ of two coffees." 60/500 → text-primary
+  - <unnamed> [text 380xNone] "One plan. Every capture feature. Cancel in Telegram with one word — “stop”." 16/normal → body
+  - FAQ chat [frame 653xNone]
+    - <unnamed> [frame fill_containerxNone] stroke→accent-line-soft
+      - <unnamed> [text] "Do I need to install an app?" 16/500 → text-primary
+      - <unnamed> [text fill_containerxNone] "No. Notinn runs natively inside Telegram — no separate app to maintain." 14/normal → body
+    - <unnamed> [frame fill_containerxNone] stroke→accent-line-soft
+      - <unnamed> [text] "What formats can I send?" 16/500 → text-primary
+      - <unnamed> [text fill_containerxNone] "Text, voice notes up to 2 hours, screenshots, PDFs, DOCX, and links." 14/normal → body
+    - <unnamed> [frame fill_containerxNone] stroke→accent-line-soft
+      - <unnamed> [text] "What about my privacy?" 16/500 → text-primary
+      - <unnamed> [text fill_containerxNone] "Originals stay in your Telegram chat. Notinn stores only the structured note." 14/normal → body
+    - <unnamed> [frame fill_containerxNone] stroke→accent-line-soft
+      - <unnamed> [text] "Can I cancel anytime?" 16/500 → text-primary
+      - <unnamed> [text fill_containerxNone] "Yes. Send “stop” to @NotinnBot. Your notes stay readable in the dashboard." 14/normal → body
+    - <unnamed> [frame fill_containerxNone] stroke→accent-line-soft
+      - <unnamed> [text] "Is there a free trial?" 16/500 → text-primary
+      - <unnamed> [text fill_containerxNone] "The Free Starter plan is free forever — 30 notes a month, no card required." 14/normal → body
+  - Receipt [frame 440xNone]
+    - <unnamed> [rectangle 1x6]
+    - <unnamed> [frame fill_containerxNone]
+      - <unnamed> [text] "NOTINN" 18/600 → text-primary
+      - <unnamed> [text] "CAPTURE STATION · @NOTINNBOT" 10/normal → label
+    - <unnamed> [rectangle 1x14]
+    - <unnamed> [rectangle fill_containerx1] fill→text-primary
+    - <unnamed> [rectangle 1x12]
+    - <unnamed> [frame fill_containerxNone]
+      - <unnamed> [frame fill_containerxNone]
+        - <unnamed> [text] "DATE" 11/normal → text-muted
+        - <unnamed> [text] "2026-10-21" 11/normal → text-primary(merged)
+      - <unnamed> [frame fill_containerxNone]
+        - <unnamed> [text] "TIME" 11/normal → text-muted
+        - <unnamed> [text] "10:42 WIB" 11/normal → text-primary(merged)
+      - <unnamed> [frame fill_containerxNone]
+        - <unnamed> [text] "RECEIPT Nº" 11/normal → text-muted
+        - <unnamed> [text] "000042" 11/normal → text-primary(merged)
+      - <unnamed> [frame fill_containerxNone]
+        - <unnamed> [text] "CUSTOMER" 11/normal → text-muted
+        - <unnamed> [text] "@archii" 11/normal → text-primary(merged)
+    - <unnamed> [rectangle 1x12]
+    - <unnamed> [rectangle fill_containerx1] fill→border-strong?
+    - <unnamed> [rectangle 1x12]
+    - <unnamed> [frame fill_containerxNone]
+      - <unnamed> [frame]
+        - <unnamed> [text] "1" 12/normal → text-primary
+        - <unnamed> [text] "1,000 notes" 12/600 → text-primary(merged)
+      - <unnamed> [text] "MONTHLY" 11/normal → accent-ink
+    - <unnamed> [frame fill_containerxNone]
+      - <unnamed> [frame]
+        - <unnamed> [text] "Voice capture" 12/600 → text-primary(merged)
+      - <unnamed> [text] "UP TO 2HRS" 11/normal → accent-ink
+    - <unnamed> [frame fill_containerxNone]
+      - <unnamed> [frame]
+        - <unnamed> [text] "300 Ask queries" 12/600 → text-primary(merged)
+      - <unnamed> [text] "MONTHLY" 11/normal → accent-ink
+    - <unnamed> [frame fill_containerxNone]
+      - <unnamed> [frame]
+        - <unnamed> [text] "·" 12/normal → text-primary
+        - <unnamed> [text] "Semantic search" 12/normal → text-primary(merged)
+      - <unnamed> [text] "INCL." 11/normal → accent-ink
+    - <unnamed> [frame fill_containerxNone]
+      - <unnamed> [frame]
+        - <unnamed> [text] "·" 12/normal → text-primary
+        - <unnamed> [text] "Web dashboard" 12/normal → text-primary(merged)
+      - <unnamed> [text] "PERM." 11/normal → accent-ink
+    - <unnamed> [frame fill_containerxNone]
+      - <unnamed> [frame]
+        - <unnamed> [text] "·" 12/normal → text-primary
+        - <unnamed> [text] "Priority queue" 12/normal → text-primary(merged)
+      - <unnamed> [text] "INCL." 11/normal → accent-ink
+    - <unnamed> [rectangle 1x12]
+    - <unnamed> [rectangle fill_containerx1] fill→text-primary
+    - <unnamed> [rectangle 1x12]
+    - <unnamed> [frame fill_containerxNone]
+      - <unnamed> [frame fill_containerxNone]
+        - <unnamed> [text] "SUBTOTAL" 12/normal → text-muted
+        - <unnamed> [text] "Rp 20.000" 12/normal → text-muted
+      - <unnamed> [frame fill_containerxNone]
+        - <unnamed> [text] "EARLY BIRD -50%" 12/normal → accent-ink
+        - <unnamed> [text] "-Rp 10.000" 12/normal → accent-ink
+    - <unnamed> [rectangle 1x10]
+    - <unnamed> [frame fill_containerxNone]
+      - <unnamed> [text] "TOTAL" 13/600 → text-primary
+      - <unnamed> [text] "Rp 10.000/mo" 24/600 → text-primary
+    - <unnamed> [rectangle 1x10]
+    - <unnamed> [rectangle fill_containerx1] fill→border-strong?
+    - <unnamed> [rectangle 1x14]
+    - barcode [frame fill_containerx40]
+      - <unnamed> [rectangle 2x40] fill→text-primary
+      - <unnamed> [rectangle 1x40] fill→text-primary
+      - <unnamed> [rectangle 3x40] fill→text-primary
+      - <unnamed> [rectangle 1x40] fill→text-primary
+      - <unnamed> [rectangle 2x40] fill→text-primary
+      - <unnamed> [rectangle 2x40] fill→text-primary
+      - <unnamed> [rectangle 1x40] fill→text-primary
+      - <unnamed> [rectangle 3x40] fill→text-primary
+      - <unnamed> [rectangle 1x40] fill→text-primary
+      - <unnamed> [rectangle 1x40] fill→text-primary
+      - <unnamed> [rectangle 2x40] fill→text-primary
+      - <unnamed> [rectangle 3x40] fill→text-primary
+      - <unnamed> [rectangle 1x40] fill→text-primary
+      - <unnamed> [rectangle 2x40] fill→text-primary
+      - <unnamed> [rectangle 1x40] fill→text-primary
+      - <unnamed> [rectangle 1x40] fill→text-primary
+      - <unnamed> [rectangle 3x40] fill→text-primary
+      - <unnamed> [rectangle 2x40] fill→text-primary
+      - <unnamed> [rectangle 1x40] fill→text-primary
+      - <unnamed> [rectangle 2x40] fill→text-primary
+      - <unnamed> [rectangle 3x40] fill→text-primary
+      - <unnamed> [rectangle 1x40] fill→text-primary
+      - <unnamed> [rectangle 1x40] fill→text-primary
+      - <unnamed> [rectangle 2x40] fill→text-primary
+      - <unnamed> [rectangle 1x40] fill→text-primary
+      - <unnamed> [rectangle 3x40] fill→text-primary
+      - <unnamed> [rectangle 2x40] fill→text-primary
+      - <unnamed> [rectangle 1x40] fill→text-primary
+      - <unnamed> [rectangle 1x40] fill→text-primary
+      - <unnamed> [rectangle 3x40] fill→text-primary
+      - <unnamed> [rectangle 2x40] fill→text-primary
+      - <unnamed> [rectangle 1x40] fill→text-primary
+      - <unnamed> [rectangle 2x40] fill→text-primary
+      - <unnamed> [rectangle 1x40] fill→text-primary
+      - <unnamed> [rectangle 3x40] fill→text-primary
+      - <unnamed> [rectangle 1x40] fill→text-primary
+      - <unnamed> [rectangle 2x40] fill→text-primary
+      - <unnamed> [rectangle 2x40] fill→text-primary
+      - <unnamed> [rectangle 1x40] fill→text-primary
+      - <unnamed> [rectangle 3x40] fill→text-primary
+    - <unnamed> [rectangle 1x8]
+    - <unnamed> [text fill_containerxNone] "N0T1NN-PR0-0042-WIB" 10/normal → label
+    - <unnamed> [rectangle 1x8]
+    - <unnamed> [text fill_containerxNone] "KEEP THIS RECEIPT FOR YOUR RECORDS ⏎ REFUND WITHIN 14 DAYS · CANCEL: TEXT “STOP”" 9/normal → text-muted
+---
+
+## [7] Section Transition — Pricing → Closing CTA — 1440x120
+
+- Section Transition — Pricing → Closing CTA [frame 1440x120]
+---
+
+## [8] Closing CTA — fill_containerx520
+
+- Closing CTA [frame fill_containerx520] fill→bg-subtle
+  - Grid [group]
+    - VR 0 [rectangle 1x520] fill→ink-hover
+    - VR 1 [rectangle 1x520] fill→ink-hover
+    - VR 2 [rectangle 1x520] fill→ink-hover
+    - VR 3 [rectangle 1x520] fill→ink-hover
+    - VR 4 [rectangle 1x520] fill→ink-hover
+    - VR 5 [rectangle 1x520] fill→ink-hover
+    - VR 6 [rectangle 1x520] fill→ink-hover
+    - VR 7 [rectangle 1x520] fill→ink-hover
+    - VR 8 [rectangle 1x520] fill→ink-hover
+    - VR 9 [rectangle 1x520] fill→ink-hover
+    - VR 10 [rectangle 1x520] fill→ink-hover
+    - VR 11 [rectangle 1x520] fill→ink-hover
+  - CTA Content [frame 1336xNone]
+    - CTA eyebrow [frame]
+      - CTA pill [frame] fill→bg/on-dark stroke→border
+        - ii [icon 14x14] icon=send(lucide) → accent
+        - pill text [text] "GET STARTED TODAY" 14/600 → text-primary
+    - CTA headline [text 1000x112] "Ready to begin?" 84/500 → text-primary
+    - CTA sub [text] "Start free on Telegram with 30 notes. No downloads, no setup wizard, no new habit to build." 14/normal → body
+    - CTA buttons [frame]
+      - Primary [frame] fill→text-primary
+        - b1l [text] "Open in Telegram" 14/500 → bg/on-dark
+        - b1i [icon 16x16] icon=send(lucide) → bg/on-dark
+      - Secondary [frame] fill→bg/on-dark stroke→border
+        - b2l [text] "Web Dashboard" 14/500 → text-primary
+        - space_dashboard icon [icon 20x20] icon=space_dashboard(Material Symbols Rounded)
+  - CTA trust [frame 1336xNone]
+    - No app install [frame]
+      - No app install i [icon 12x12] icon=check(lucide) → text-muted
+      - tl [text] "No app install" 14/normal → text-muted
+    - No credit card [frame]
+      - No credit card i [icon 12x12] icon=check(lucide) → text-muted
+      - tl [text] "No credit card" 14/normal → text-muted
+    - Cancel anytime [frame]
+      - Cancel anytime i [icon 12x12] icon=check(lucide) → text-muted
+      - tl [text] "Cancel anytime" 14/normal → text-muted
+---
+
+## [9] Footer — fill_containerxNone
+
+- Footer [frame fill_containerxNone] fill→text-primary
+  - Footer Marquee — Counters [frame fill_containerx88] fill→surface-dark
+    - <unnamed> [frame]
+      - <unnamed> [text] "01" 20/600 → accent
+      - <unnamed> [text] "KNOWLEDGE INBOX" 11/normal → on-dark-label
+      - <unnamed> [rectangle 1x22] fill→border-dark
+    - <unnamed> [frame]
+      - <unnamed> [text] "02" 20/600 → accent
+      - <unnamed> [text] "TELEGRAM CAPTURE" 11/normal → on-dark-label
+      - <unnamed> [rectangle 1x22] fill→border-dark
+    - <unnamed> [frame]
+      - <unnamed> [text] "03" 20/600 → accent
+      - <unnamed> [text] "AI STRUCTURING" 11/normal → on-dark-label
+      - <unnamed> [rectangle 1x22] fill→border-dark
+    - <unnamed> [frame]
+      - <unnamed> [text] "04" 20/600 → accent
+      - <unnamed> [text] "WEB DASHBOARD" 11/normal → on-dark-label
+      - <unnamed> [rectangle 1x22] fill→border-dark
+    - <unnamed> [frame]
+      - <unnamed> [text] "05" 20/600 → accent
+      - <unnamed> [text] "ABSOLUTE PRIVACY" 11/normal → on-dark-label
+      - <unnamed> [rectangle 1x22] fill→border-dark
+    - <unnamed> [frame]
+      - <unnamed> [text] "06" 20/600 → accent
+      - <unnamed> [text] "CLEAN NOTES" 11/normal → on-dark-label
+      - <unnamed> [rectangle 1x22] fill→border-dark
+    - <unnamed> [frame]
+      - <unnamed> [text] "01" 20/600 → accent
+      - <unnamed> [text] "KNOWLEDGE INBOX" 11/normal → on-dark-label
+      - <unnamed> [rectangle 1x22] fill→border-dark
+    - <unnamed> [frame]
+      - <unnamed> [text] "02" 20/600 → accent
+      - <unnamed> [text] "TELEGRAM CAPTURE" 11/normal → on-dark-label
+      - <unnamed> [rectangle 1x22] fill→border-dark
+    - <unnamed> [frame]
+      - <unnamed> [text] "03" 20/600 → accent
+      - <unnamed> [text] "AI STRUCTURING" 11/normal → on-dark-label
+      - <unnamed> [rectangle 1x22] fill→border-dark
+    - <unnamed> [frame]
+      - <unnamed> [text] "04" 20/600 → accent
+      - <unnamed> [text] "WEB DASHBOARD" 11/normal → on-dark-label
+      - <unnamed> [rectangle 1x22] fill→border-dark
+    - <unnamed> [frame]
+      - <unnamed> [text] "05" 20/600 → accent
+      - <unnamed> [text] "ABSOLUTE PRIVACY" 11/normal → on-dark-label
+      - <unnamed> [rectangle 1x22] fill→border-dark
+    - <unnamed> [frame]
+      - <unnamed> [text] "06" 20/600 → accent
+      - <unnamed> [text] "CLEAN NOTES" 11/normal → on-dark-label
+      - <unnamed> [rectangle 1x22] fill→border-dark
+    - <unnamed> [frame]
+      - <unnamed> [text] "01" 20/600 → accent
+      - <unnamed> [text] "KNOWLEDGE INBOX" 11/normal → on-dark-label
+      - <unnamed> [rectangle 1x22] fill→border-dark
+    - <unnamed> [frame]
+      - <unnamed> [text] "02" 20/600 → accent
+      - <unnamed> [text] "TELEGRAM CAPTURE" 11/normal → on-dark-label
+      - <unnamed> [rectangle 1x22] fill→border-dark
+    - <unnamed> [frame]
+      - <unnamed> [text] "03" 20/600 → accent
+      - <unnamed> [text] "AI STRUCTURING" 11/normal → on-dark-label
+      - <unnamed> [rectangle 1x22] fill→border-dark
+    - <unnamed> [frame]
+      - <unnamed> [text] "04" 20/600 → accent
+      - <unnamed> [text] "WEB DASHBOARD" 11/normal → on-dark-label
+      - <unnamed> [rectangle 1x22] fill→border-dark
+    - <unnamed> [frame]
+      - <unnamed> [text] "05" 20/600 → accent
+      - <unnamed> [text] "ABSOLUTE PRIVACY" 11/normal → on-dark-label
+      - <unnamed> [rectangle 1x22] fill→border-dark
+    - <unnamed> [frame]
+      - <unnamed> [text] "06" 20/600 → accent
+      - <unnamed> [text] "CLEAN NOTES" 11/normal → on-dark-label
+      - <unnamed> [rectangle 1x22] fill→border-dark
+  - F2 CTA [frame fill_containerx320]
+    - <unnamed> [text] "Questions? ⏎ Talk to a human." 48/500 → bg/on-dark
+    - <unnamed> [frame fill_containerxNone]
+      - <unnamed> [frame] fill→text-primary
+        - <unnamed> [text] "contact@alann.works" 16/600 → bg/on-dark
+        - <unnamed> [icon 15x15] icon=arrow_outward(Material Symbols Rounded) → bg/on-dark
+      - <unnamed> [frame]
+        - <unnamed> [text] "Product" 14/normal
+        - <unnamed> [text] "Pricing" 14/normal
+        - <unnamed> [text] "FAQ" 14/normal
+        - <unnamed> [text] "Privacy" 14/normal
+        - <unnamed> [text] "Terms" 14/normal
+  - Footer bottom [frame fill_containerxNone] stroke=#FFFFFF1A
+    - cr [text] "© 2026 NOTINN · KNOWLEDGE INBOX ON TELEGRAM" 14/normal
+    - by [text] "NOTINN BY ARCH LABS" 14/normal
+---
+
+## [10] Viewport Overlay — fixed dock — 1440x6241
+
+- Viewport Overlay — fixed dock [frame 1440x6241]
+  - Dock Shell — progressive blur [frame 1440x170]
+    - Fixed blur 3 [frame 1440x120]
+    - Fixed blur 7 [frame 1440x98]
+    - Fixed blur 13 [frame 1440x76]
+    - Fixed blur 22 [frame 1440x54]
+    - Bottom Dock [frame 1440x70]
+      - Dock Bar [frame 353x52] stroke→border-dark
+        - Dock item — Capture [frame 40x40] fill→accent
+          - graphic_eq icon [icon 20x20] icon=graphic_eq(Material Symbols Rounded) → bg/on-dark
+        - Dock item — Structure [frame 40x40]
+          - bolt icon [icon 20x20] icon=bolt(Material Symbols Rounded)
+        - Dock item — Retrieve [frame 40x40]
+          - search icon [icon 20x20] icon=search(Material Symbols Rounded)
+        - Dock item — Tags [frame 40x40]
+          - sell icon [icon 20x20] icon=sell(Material Symbols Rounded)
+        - Dock item — FAQ [frame 40x40]
+          - help icon [icon 20x20] icon=help(Material Symbols Rounded)
+        - Divider [rectangle 1x22]
+        - Dock CTA — Telegram [frame 40x40] fill→accent
+          - send icon [icon 20x20] icon=send(Material Symbols Rounded) → bg/on-dark
+        - Dock CTA — Dashboard [frame 40x40] fill→accent
+          - space_dashboard icon [icon 20x20] icon=space_dashboard(Material Symbols Rounded) → bg/on-dark

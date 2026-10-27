@@ -419,8 +419,41 @@ a:active {
   --sidebar-border: --alpha(var(--color-white) / 5%);
   --sidebar-foreground: color-mix(in srgb, var(--color-neutral-100) 64%, var(--sidebar));
   --sidebar-primary: var(--color-neutral-100);
-  --sidebar-primary-foreground: var(--color-neutral-800);
+  --sidebar-primary-foreground: var(--color-neutral-100);
   --sidebar-ring: var(--color-neutral-400);
+}
+
+/* ─── Notinn landing v2 palette ───────────────────────────────────────
+   Scoped to .landing-v2 on purpose: --accent, --success, --warning and
+   --border already carry coss-theme meanings that every authenticated
+   screen consumes. Redefining them at :root would repaint the dashboard.
+   Scoping keeps one palette for the marketing page, one for the app. */
+.landing-v2 {
+  --text-primary: #0a0a0a;
+  --ink-hover: #0a0a0a0a;
+  --accent: #ff6308;
+  --accent-line-soft: #ff630833;
+  --bg: #ffffff;
+  --on-dark: #ffffff;
+  --border-dark: #ffffff1f;
+  --on-dark-label: #ffffff99;
+  --body: #5b5b5b;
+  --text-muted: #a7a7a7;
+  --border: #e6e5e2;
+  --bg-muted: #f2f1ef;
+  --bg-subtle: #f9f8f6;
+  --accent-ink: #b45309;
+  --success: #28c840;
+  --surface-dark: #0b0b0a;
+  --label: #767270;
+  --text-tertiary: #7d8187;
+  --warning: #febc2e;
+  --border-strong: #c7c4be;
+  --accent-surface-soft: #fff4ec;
+  /* v2 surfaces measured from the pen export. */
+  --surface-sunken: #f5f4f1;
+  --sheet-head: #fcfbfa;
+  --receipt-surface: #fffdf9;
 }
 
 @layer base {

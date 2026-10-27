@@ -1,23 +1,32 @@
 import { useEffect } from "react";
-import { LandingFloatingMenu } from "@/components/landing/landing-floating-menu";
-import { LandingMarquee } from "@/components/landing/landing-marquee";
-import { PrismaHero } from "@/components/ui/prisma-hero";
-import { DashboardShowoff } from "@/components/ui/hero-05";
-import { FeaturesSection } from "@/components/ui/feature";
-import { HowItWorks } from "@/components/ui/how-it-works";
-import { Comparison03 } from "@/components/ui/comparison-03";
-import { Pricing } from "@/components/ui/pricing-1";
-import { CinematicFooter } from "@/components/ui/motion-footer";
+import { BeforeAfter } from "@/components/landing/v2/before-after";
+import { Bento } from "@/components/landing/v2/bento";
+import { ClosingCta } from "@/components/landing/v2/closing-cta";
+import { FloatingDock } from "@/components/landing/v2/floating-dock";
+import { Footer } from "@/components/landing/v2/footer";
+import { Hero } from "@/components/landing/v2/hero";
+import { HowItWorks } from "@/components/landing/v2/how-it-works";
+import { InputMarquee } from "@/components/landing/v2/input-marquee";
+import { PricingReceipt } from "@/components/landing/v2/pricing-receipt";
+import { SectionTransition } from "@/components/landing/v2/section-transition";
 import { applyPageMetadata } from "@/lib/page-metadata";
-import "../styles/landing.css";
-import "../styles/prisma-hero.css";
+import "../styles/landing-v2.css";
 
 function focusHashTarget(): void {
   const { hash } = window.location;
   if (!hash || hash.length < 2) return;
-  const target = document.getElementById(hash.slice(1));
+  const id = hash.slice(1);
+  const target = document.getElementById(id);
   if (!(target instanceof HTMLElement)) return;
   target.focus({ preventScroll: true });
+  // Firefox and WebKit move focus back to the clicked anchor after the
+  // `hashchange` handler has run, so focusing once leaves the target blurred.
+  // Re-apply it after the click's default action, still without scrolling.
+  window.requestAnimationFrame(() => {
+    if (document.getElementById(id) === target) {
+      target.focus({ preventScroll: true });
+    }
+  });
 }
 
 export function LandingPage(): React.ReactElement {
@@ -31,21 +40,23 @@ export function LandingPage(): React.ReactElement {
   }, []);
 
   return (
-    <div className="landing-theme landing-home">
+    <div className="landing-v2">
       <a className="skip-link" href="#main-content">
         Skip to main content
       </a>
-      <LandingFloatingMenu />
       <main id="main-content" tabIndex={-1}>
-        <PrismaHero />
-        <LandingMarquee />
-        <DashboardShowoff />
-        <FeaturesSection />
+        <Hero />
+        <InputMarquee />
         <HowItWorks />
-        <Comparison03 />
-        <Pricing />
+        <Bento />
+        <BeforeAfter />
+        <SectionTransition to="pricing" />
+        <PricingReceipt />
+        <SectionTransition to="cta" />
+        <ClosingCta />
       </main>
-      <CinematicFooter />
+      <Footer />
+      <FloatingDock />
     </div>
   );
 }

@@ -2,8 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 test("landing has no critical accessibility violations", async ({ page }) => {
-  // Full-page axe analysis in the slowest engine needs budget: the hero now
-  // streams multi-MB video while the analysis runs.
+  // Full-page axe analysis in the slowest engine needs budget.
   test.setTimeout(90_000);
   await page.goto("/");
   const results = await new AxeBuilder({ page })
