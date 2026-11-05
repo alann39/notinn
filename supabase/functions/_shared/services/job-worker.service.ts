@@ -700,12 +700,11 @@ async function generateAudioSegmentWithRetry(
       return await deps.provider.generateAudio(request);
     } catch (thrown) {
       const error = toAppError(thrown);
-      if (attempt === 1 && isTransientProviderFailure(error)) {
+      if (attempt <= 2 && isTransientProviderFailure(error)) {
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
         continue;
       }
-      throw AppError.inputTooLarge("audio segment failed transcription validation", {
-        publicMessage: "That is over the 2-hour limit — split it into parts under 2 hours each.",
-      });
+      throw error;
     }
   }
 }
@@ -721,6 +720,27 @@ async function processSegmentedAudio(
   template: GenerationTemplate,
   templateKey: TemplateKey,
 ): Promise<AudioGenerationResult> {
+  const normalizedMime = mimeType.toLowerCase();
+  const isWebM = normalizedMime.includes("webm");
+
+  // Raw byte slicing corrupts EBML/cluster containers in WebM opus.
+  // Never raw-slice WebM chunks; retry generateLargeAudio with backoff instead.
+  if (isWebM && deps.provider.generateLargeAudio) {
+    deps.logger.info("worker.large_audio_retry_without_slicing", {
+      job_id: job.jobId,
+      mime_type: mimeType,
+      byte_length: audio.byteLength,
+    });
+    return await deps.provider.generateLargeAudio({
+      audio,
+      mimeType,
+      template,
+      templateKey,
+      outputLanguage: job.outputLanguage === "mirror" ? null : job.outputLanguage,
+      timeoutMs: LARGE_AUDIO_TIMEOUT_MS,
+    });
+  }
+
   const segmentCount = Math.ceil(audio.byteLength / LARGE_AUDIO_SEGMENT_BYTES);
   if (segmentCount > MAX_LARGE_AUDIO_SEGMENTS) {
     throw AppError.inputTooLarge("audio segments exceeded maximum chunk count", {
