@@ -426,18 +426,6 @@ async function generateNewNote(
       };
     } finally {
       image.fill(0);
-      if (job.storagePath !== null && deps.storage) {
-        try {
-          await deps.storage.remove("audio_uploads", [job.storagePath]);
-        } catch (cleanupThrown) {
-          const cleanupErr = toAppError(cleanupThrown);
-          deps.logger[cleanupErr.logLevel]("worker.storage_cleanup_failed", {
-            job_id: job.jobId,
-            error_code: cleanupErr.code,
-            error_detail: cleanupErr.internalDetail,
-          });
-        }
-      }
     }
   }
 
@@ -484,18 +472,6 @@ async function generateNewNote(
       };
     } finally {
       pdf.fill(0);
-      if (job.storagePath !== null && deps.storage) {
-        try {
-          await deps.storage.remove("audio_uploads", [job.storagePath]);
-        } catch (cleanupThrown) {
-          const cleanupErr = toAppError(cleanupThrown);
-          deps.logger[cleanupErr.logLevel]("worker.storage_cleanup_failed", {
-            job_id: job.jobId,
-            error_code: cleanupErr.code,
-            error_detail: cleanupErr.internalDetail,
-          });
-        }
-      }
     }
   }
 
@@ -672,21 +648,8 @@ async function generateNewNote(
       documentPages: null,
     };
   } finally {
-    // Best-effort memory scrubbing. It does not replace the no-persistence rule,
-    // but shortens the lifetime of raw audio inside a warm isolate.
+    // Best-effort memory scrubbing.
     audio.fill(0);
-    if (job.storagePath !== null && deps.storage) {
-      try {
-        await deps.storage.remove("audio_uploads", [job.storagePath]);
-      } catch (cleanupThrown) {
-        const cleanupErr = toAppError(cleanupThrown);
-        deps.logger[cleanupErr.logLevel]("worker.storage_cleanup_failed", {
-          job_id: job.jobId,
-          error_code: cleanupErr.code,
-          error_detail: cleanupErr.internalDetail,
-        });
-      }
-    }
   }
 }
 async function generateAudioSegmentWithRetry(
@@ -854,18 +817,9 @@ async function handleFailure(
       await editStatusBestEffort(deps, job, error.publicMessage);
     }
   }
-  if (job.storagePath !== null && deps.storage) {
-    try {
-      await deps.storage.remove("audio_uploads", [job.storagePath]);
-    } catch (cleanupThrown) {
-      const cleanupErr = toAppError(cleanupThrown);
-      deps.logger[cleanupErr.logLevel]("worker.storage_cleanup_failed", {
-        job_id: job.jobId,
-        error_code: cleanupErr.code,
-        error_detail: cleanupErr.internalDetail,
-      });
-    }
-  }
+  // Note: We intentionally do NOT delete failed job files immediately.
+  // Files are retained for at least 6 hours so failed jobs can be recovered/retried.
+  // A scheduled retention sweep purges failed/stale uploads older than 6 hours.
   return "discarded";
 }
 
@@ -964,6 +918,20 @@ export async function processQueueMessage(
     const completed = await deps.jobs.complete(job.userId, job.jobId);
     if (!completed) throw AppError.internal("delivered job did not complete");
     await deps.jobs.deleteQueueMessage(message.queueMessageId);
+
+    // Clean up temporary upload on successful completion
+    if (job.storagePath !== null && deps.storage) {
+      try {
+        await deps.storage.remove("audio_uploads", [job.storagePath]);
+      } catch (cleanupThrown) {
+        const cleanupErr = toAppError(cleanupThrown);
+        deps.logger[cleanupErr.logLevel]("worker.storage_cleanup_failed", {
+          job_id: job.jobId,
+          error_code: cleanupErr.code,
+          error_detail: cleanupErr.internalDetail,
+        });
+      }
+    }
 
     deps.logger.info("worker.job_completed", {
       job_id: job.jobId,
