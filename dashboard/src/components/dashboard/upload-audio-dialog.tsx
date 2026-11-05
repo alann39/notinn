@@ -155,6 +155,16 @@ function readAudioDuration(file: File): Promise<number | null> {
     };
 
     audio.onloadedmetadata = () => {
+      // Fix: Chrome/WebM recordings often have duration = Infinity or 0 until seeked
+      if (!Number.isFinite(audio.duration) || audio.duration === 0) {
+        audio.currentTime = 1e101;
+        audio.ontimeupdate = () => {
+          audio.ontimeupdate = null;
+          const d = Math.round(audio.duration);
+          finish(Number.isFinite(d) && d > 0 ? d : null);
+        };
+        return;
+      }
       const d = Math.round(audio.duration);
       finish(Number.isFinite(d) && d > 0 ? d : null);
     };
@@ -636,6 +646,13 @@ export function UploadAudioDialog({
       setStatusText("Queuing AI note generation...");
       setBytesProgress(null);
 
+      // Fallback duration estimation for audio if duration is missing or <= 1
+      let finalDurationSeconds = durationSeconds;
+      if (detectedModality === "audio" && (!finalDurationSeconds || finalDurationSeconds <= 1)) {
+        // Estimate assuming ~32kbps opus audio (4000 bytes/sec)
+        finalDurationSeconds = Math.max(1, Math.round(selectedFile.size / 4000));
+      }
+
       const submitResponse = await fetch(`${SUPABASE_URL}/functions/v1/web-submit-audio-job`, {
         method: "POST",
         headers: {
@@ -648,7 +665,7 @@ export function UploadAudioDialog({
           storage_path: storagePath,
           mime_type: mimeType,
           size_bytes: selectedFile.size,
-          duration_seconds: detectedModality === "audio" ? durationSeconds : null,
+          duration_seconds: detectedModality === "audio" ? finalDurationSeconds : null,
           template_key: fileTemplateKey,
         }),
       });

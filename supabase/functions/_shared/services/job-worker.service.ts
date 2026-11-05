@@ -426,18 +426,6 @@ async function generateNewNote(
       };
     } finally {
       image.fill(0);
-      if (job.storagePath !== null && deps.storage) {
-        try {
-          await deps.storage.remove("audio_uploads", [job.storagePath]);
-        } catch (cleanupThrown) {
-          const cleanupErr = toAppError(cleanupThrown);
-          deps.logger[cleanupErr.logLevel]("worker.storage_cleanup_failed", {
-            job_id: job.jobId,
-            error_code: cleanupErr.code,
-            error_detail: cleanupErr.internalDetail,
-          });
-        }
-      }
     }
   }
 
@@ -484,18 +472,6 @@ async function generateNewNote(
       };
     } finally {
       pdf.fill(0);
-      if (job.storagePath !== null && deps.storage) {
-        try {
-          await deps.storage.remove("audio_uploads", [job.storagePath]);
-        } catch (cleanupThrown) {
-          const cleanupErr = toAppError(cleanupThrown);
-          deps.logger[cleanupErr.logLevel]("worker.storage_cleanup_failed", {
-            job_id: job.jobId,
-            error_code: cleanupErr.code,
-            error_detail: cleanupErr.internalDetail,
-          });
-        }
-      }
     }
   }
 
@@ -672,21 +648,8 @@ async function generateNewNote(
       documentPages: null,
     };
   } finally {
-    // Best-effort memory scrubbing. It does not replace the no-persistence rule,
-    // but shortens the lifetime of raw audio inside a warm isolate.
+    // Best-effort memory scrubbing.
     audio.fill(0);
-    if (job.storagePath !== null && deps.storage) {
-      try {
-        await deps.storage.remove("audio_uploads", [job.storagePath]);
-      } catch (cleanupThrown) {
-        const cleanupErr = toAppError(cleanupThrown);
-        deps.logger[cleanupErr.logLevel]("worker.storage_cleanup_failed", {
-          job_id: job.jobId,
-          error_code: cleanupErr.code,
-          error_detail: cleanupErr.internalDetail,
-        });
-      }
-    }
   }
 }
 async function generateAudioSegmentWithRetry(
@@ -700,12 +663,11 @@ async function generateAudioSegmentWithRetry(
       return await deps.provider.generateAudio(request);
     } catch (thrown) {
       const error = toAppError(thrown);
-      if (attempt === 1 && isTransientProviderFailure(error)) {
+      if (attempt <= 2 && isTransientProviderFailure(error)) {
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
         continue;
       }
-      throw AppError.inputTooLarge("audio segment failed transcription validation", {
-        publicMessage: "That is over the 2-hour limit — split it into parts under 2 hours each.",
-      });
+      throw error;
     }
   }
 }
@@ -721,6 +683,27 @@ async function processSegmentedAudio(
   template: GenerationTemplate,
   templateKey: TemplateKey,
 ): Promise<AudioGenerationResult> {
+  const normalizedMime = mimeType.toLowerCase();
+  const isWebM = normalizedMime.includes("webm");
+
+  // Raw byte slicing corrupts EBML/cluster containers in WebM opus.
+  // Never raw-slice WebM chunks; retry generateLargeAudio with backoff instead.
+  if (isWebM && deps.provider.generateLargeAudio) {
+    deps.logger.info("worker.large_audio_retry_without_slicing", {
+      job_id: job.jobId,
+      mime_type: mimeType,
+      byte_length: audio.byteLength,
+    });
+    return await deps.provider.generateLargeAudio({
+      audio,
+      mimeType,
+      template,
+      templateKey,
+      outputLanguage: job.outputLanguage === "mirror" ? null : job.outputLanguage,
+      timeoutMs: LARGE_AUDIO_TIMEOUT_MS,
+    });
+  }
+
   const segmentCount = Math.ceil(audio.byteLength / LARGE_AUDIO_SEGMENT_BYTES);
   if (segmentCount > MAX_LARGE_AUDIO_SEGMENTS) {
     throw AppError.inputTooLarge("audio segments exceeded maximum chunk count", {
@@ -834,18 +817,9 @@ async function handleFailure(
       await editStatusBestEffort(deps, job, error.publicMessage);
     }
   }
-  if (job.storagePath !== null && deps.storage) {
-    try {
-      await deps.storage.remove("audio_uploads", [job.storagePath]);
-    } catch (cleanupThrown) {
-      const cleanupErr = toAppError(cleanupThrown);
-      deps.logger[cleanupErr.logLevel]("worker.storage_cleanup_failed", {
-        job_id: job.jobId,
-        error_code: cleanupErr.code,
-        error_detail: cleanupErr.internalDetail,
-      });
-    }
-  }
+  // Note: We intentionally do NOT delete failed job files immediately.
+  // Files are retained for at least 6 hours so failed jobs can be recovered/retried.
+  // A scheduled retention sweep purges failed/stale uploads older than 6 hours.
   return "discarded";
 }
 
@@ -944,6 +918,20 @@ export async function processQueueMessage(
     const completed = await deps.jobs.complete(job.userId, job.jobId);
     if (!completed) throw AppError.internal("delivered job did not complete");
     await deps.jobs.deleteQueueMessage(message.queueMessageId);
+
+    // Clean up temporary upload on successful completion
+    if (job.storagePath !== null && deps.storage) {
+      try {
+        await deps.storage.remove("audio_uploads", [job.storagePath]);
+      } catch (cleanupThrown) {
+        const cleanupErr = toAppError(cleanupThrown);
+        deps.logger[cleanupErr.logLevel]("worker.storage_cleanup_failed", {
+          job_id: job.jobId,
+          error_code: cleanupErr.code,
+          error_detail: cleanupErr.internalDetail,
+        });
+      }
+    }
 
     deps.logger.info("worker.job_completed", {
       job_id: job.jobId,

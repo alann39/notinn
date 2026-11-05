@@ -242,47 +242,63 @@ export class GeminiNoteProvider implements NoteAIProvider, LibraryAnswerProvider
       additionalProperties: false,
     };
 
-    const uploaded = await this.#uploadFile(request.audio, request.mimeType);
-    try {
-      const candidate = await this.#generate(
-        audioSystemInstruction(request),
-        [
-          {
-            type: "text",
-            text: "Transcribe this audio and turn it into the requested structured note.",
-          },
-          {
-            type: "audio",
-            uri: uploaded.uri,
-            mime_type: request.mimeType,
-          },
-        ],
-        responseJsonSchema,
-        { timeoutMs: request.timeoutMs ?? LARGE_AUDIO_TIMEOUT_MS },
-      );
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      let uploaded: { name: string; uri: string } | null = null;
+      try {
+        uploaded = await this.#uploadFile(request.audio, request.mimeType);
+        const candidate = await this.#generate(
+          audioSystemInstruction(request),
+          [
+            {
+              type: "text",
+              text: "Transcribe this audio and turn it into the requested structured note.",
+            },
+            {
+              type: "audio",
+              uri: uploaded.uri,
+              mime_type: request.mimeType,
+            },
+          ],
+          responseJsonSchema,
+          { timeoutMs: request.timeoutMs ?? LARGE_AUDIO_TIMEOUT_MS },
+        );
 
-      const envelope = AudioEnvelopeSchema.safeParse(candidate.value);
-      if (!envelope.success) {
-        throw AppError.outputValidationFailed("gemini large audio result had an invalid envelope");
+        const envelope = AudioEnvelopeSchema.safeParse(candidate.value);
+        if (!envelope.success) {
+          throw AppError.outputValidationFailed("gemini large audio result had an invalid envelope");
+        }
+
+        const note = parseStructuredNote(envelope.data.note, AppError.outputValidationFailed);
+        if (note.template_key !== request.templateKey) {
+          throw AppError.outputValidationFailed("template_key did not match the requested template");
+        }
+
+        return {
+          transcript: envelope.data.transcript,
+          note,
+          provider: this.#config.provider,
+          model: candidate.model,
+          providerRequestId: candidate.providerRequestId,
+          inputTokens: candidate.inputTokens,
+          outputTokens: candidate.outputTokens,
+        };
+      } catch (err) {
+        lastError = err;
+        const isTransient = isTransientProviderFailure(err);
+        if (!isTransient || attempt === 3) {
+          throw err;
+        }
+        // Exponential backoff: 2s, 4s
+        await new Promise((resolve) => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+      } finally {
+        if (uploaded) {
+          await this.#deleteFile(uploaded.name);
+        }
       }
-
-      const note = parseStructuredNote(envelope.data.note, AppError.outputValidationFailed);
-      if (note.template_key !== request.templateKey) {
-        throw AppError.outputValidationFailed("template_key did not match the requested template");
-      }
-
-      return {
-        transcript: envelope.data.transcript,
-        note,
-        provider: this.#config.provider,
-        model: candidate.model,
-        providerRequestId: candidate.providerRequestId,
-        inputTokens: candidate.inputTokens,
-        outputTokens: candidate.outputTokens,
-      };
-    } finally {
-      await this.#deleteFile(uploaded.name);
     }
+
+    throw lastError;
   }
 
   async #uploadFile(

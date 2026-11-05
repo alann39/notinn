@@ -102,6 +102,7 @@ export function InBrowserRecorder({
   // Multi-part state
   const [completedParts, setCompletedParts] = useState<RecordedPart[]>([]);
   const [currentPartNumber, setCurrentPartNumber] = useState(1);
+  const currentPartNumberRef = useRef(1);
   const [activeReviewPartIndex, setActiveReviewPartIndex] = useState(0);
   const [autoCutNotice, setAutoCutNotice] = useState<string | null>(null);
 
@@ -118,6 +119,15 @@ export function InBrowserRecorder({
   const wakeLockSentinelRef = useRef<WakeLockSentinel | null>(null);
   const recordingStartTimeRef = useRef<number>(0);
   const accumulatedDurationRef = useRef<number>(0);
+  const durationRef = useRef<number>(0);
+
+  const getExactDuration = useCallback((): number => {
+    if (state === "recording") {
+      const elapsed = Math.floor((Date.now() - recordingStartTimeRef.current) / 1000);
+      return accumulatedDurationRef.current + elapsed;
+    }
+    return durationRef.current;
+  }, [state]);
 
   // Request Screen Wake Lock to prevent phone screen from sleeping / pausing
   const requestWakeLock = useCallback(async () => {
@@ -201,11 +211,12 @@ export function InBrowserRecorder({
     if (isAutoCuttingRef.current || !mediaRecorderRef.current || !mediaStreamRef.current) return;
     isAutoCuttingRef.current = true;
 
-    const currentNumber = currentPartNumber;
+    const currentNumber = currentPartNumberRef.current;
     const blobType = mimeConfig.mimeType || "audio/webm";
     const partBlob = new Blob(audioChunksRef.current, { type: blobType });
     const partUrl = URL.createObjectURL(partBlob);
-    const partDuration = Math.max(1, duration - partStartDurationRef.current);
+    const totalCurrentDuration = getExactDuration();
+    const partDuration = Math.max(1, totalCurrentDuration - partStartDurationRef.current);
     const partSize = partBlob.size;
 
     // Register completed part
@@ -230,8 +241,9 @@ export function InBrowserRecorder({
     // Reset buffer for next part
     audioChunksRef.current = [];
     setLiveBytes(0);
-    partStartDurationRef.current = duration;
+    partStartDurationRef.current = totalCurrentDuration;
     const nextNumber = currentNumber + 1;
+    currentPartNumberRef.current = nextNumber;
     setCurrentPartNumber(nextNumber);
 
     setAutoCutNotice(
@@ -292,19 +304,22 @@ export function InBrowserRecorder({
       isDiscardingRef.current = false;
       audioChunksRef.current = [];
       setCompletedParts([]);
+      currentPartNumberRef.current = 1;
       setCurrentPartNumber(1);
       accumulatedDurationRef.current = 0;
+      durationRef.current = 0;
       setDuration(0);
       setLiveBytes(0);
       setState("idle");
       return;
     }
 
-    const currentNumber = currentPartNumber;
+    const currentNumber = currentPartNumberRef.current;
     const blobType = mimeConfig.mimeType || "audio/webm";
     const partBlob = new Blob(audioChunksRef.current, { type: blobType });
     const partUrl = URL.createObjectURL(partBlob);
-    const partDuration = Math.max(1, duration - partStartDurationRef.current);
+    const totalCurrentDuration = getExactDuration();
+    const partDuration = Math.max(1, totalCurrentDuration - partStartDurationRef.current);
     const partSize = partBlob.size;
 
     const finalPart: RecordedPart = {
@@ -358,9 +373,13 @@ export function InBrowserRecorder({
     setError(null);
     setAutoCutNotice(null);
     setCompletedParts([]);
+    currentPartNumberRef.current = 1;
     setCurrentPartNumber(1);
     setActiveReviewPartIndex(0);
     partStartDurationRef.current = 0;
+    accumulatedDurationRef.current = 0;
+    durationRef.current = 0;
+    setDuration(0);
     setState("requesting");
 
     try {
@@ -408,6 +427,7 @@ export function InBrowserRecorder({
       timerIntervalRef.current = window.setInterval(() => {
         const elapsed = Math.floor((Date.now() - recordingStartTimeRef.current) / 1000);
         const total = accumulatedDurationRef.current + elapsed;
+        durationRef.current = total;
         setDuration(total);
         if (total >= maxDurationSeconds) {
           stopRecording();
@@ -438,6 +458,7 @@ export function InBrowserRecorder({
         timerIntervalRef.current = null;
       }
       accumulatedDurationRef.current += Math.floor((Date.now() - recordingStartTimeRef.current) / 1000);
+      durationRef.current = accumulatedDurationRef.current;
       setDuration(accumulatedDurationRef.current);
       updateMediaSession("paused");
       setState("paused");
@@ -454,6 +475,7 @@ export function InBrowserRecorder({
       timerIntervalRef.current = window.setInterval(() => {
         const elapsed = Math.floor((Date.now() - recordingStartTimeRef.current) / 1000);
         const total = accumulatedDurationRef.current + elapsed;
+        durationRef.current = total;
         setDuration(total);
         if (total >= maxDurationSeconds) stopRecording();
       }, 500);
